@@ -1,82 +1,83 @@
-ENTITY: MailAttachments
+ENTITY: MailMessages
 
 PRIMARY KEY
 -----------
-MailAttachmentId
+MailMessageId
 
 FOREIGN KEYS
 ------------
-MailMessageId
-    → MailMessages.MailMessageId
-
-ItemId
-    → Items.ItemId
-    (nullable)
-
-MaterialId
-    → Materials.MaterialId
-    (nullable)
-
-ConsumableDefinitionId
-    → ConsumableDefinitions.ConsumableDefinitionId
-    (nullable)
+CharacterId
+    → Characters.CharacterId
 
 CARDINALITY
 -----------
+Characters
+└── MailMessages (1:N)
+
 MailMessages
 └── MailAttachments (1:N)
 
 PURPOSE
 -------
-Stores rewards and assets attached
-to mailbox messages.
-
-BUSINESS RULES
---------------
-Exactly one attachment type should exist:
-
-- Gold
-- Item
-- Material
-- Consumable
+Stores mailbox messages used for:
+- marketplace sales
+- marketplace purchases
+- system rewards
+- admin messages
+- season rewards
+- achievement rewards
+- crafting rewards
 
 CORE COLUMNS
 ------------
-MailAttachmentId
-
 MailMessageId
 
-AttachmentType
+CharacterId
+
+Subject
+
+Body
+
+MessageType
 (
-  Gold,
-  Item,
-  Material,
-  Consumable
+  MarketplaceSale,
+  MarketplacePurchase,
+  AchievementReward,
+  DailyBossReward,
+  SeasonReward,
+  CraftingReward,
+  AdminMessage,
+  SystemMessage
 )
 
-GoldAmount
+IsRead
 
-ItemId
+HasAttachments
 
-MaterialId
-MaterialQuantity
-
-ConsumableDefinitionId
-ConsumableQuantity
-
-IsCollected
-
-CollectedAt
+ExpiresAt
 
 CreatedAt
 
+ReadAt
+
 INDEXES
 -------
-PK_MailAttachmentId
+PK_MailMessageId
 
-IX_MailAttachments_MailMessageId
-IX_MailAttachments_IsCollected
+IX_MailMessages_CharacterId
 
-IX_MailAttachments_ItemId
-IX_MailAttachments_MaterialId
-IX_MailAttachments_ConsumableDefinitionId
+IX_MailMessages_IsRead
+
+IX_MailMessages_MessageType
+
+IX_MailMessages_ExpiresAt
+
+BUSINESS RULES
+--------------
+- Mail acts as a delivery mechanism
+- Mail may contain multiple attachments
+- Expired mail is removed automatically
+- Marketplace transactions generate mail
+- Reward delivery uses mail
+- Read state is tracked per message
+`
