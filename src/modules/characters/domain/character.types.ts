@@ -34,7 +34,7 @@ export type ResourceRegenerationRates = {
 export type CharacterBaseStatistics = {
   attack: number;
   defense: number;
-  spellPowerPercent: number;
+  spellPower: number;
 };
 
 export type CharacterProgression = {

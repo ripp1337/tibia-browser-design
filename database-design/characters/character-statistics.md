@@ -50,3 +50,12 @@ LongestNoDeathStreak
 
 CreatedAt
 UpdatedAt
+
+Effective Statistics Recalculation
+
+Any modification affecting effective statistics
+must trigger statistics recalculation.
+
+If effective maximum resources decrease,
+resource clamping is executed before saving.
+`

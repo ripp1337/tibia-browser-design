@@ -74,7 +74,7 @@ function createSnapshot(): CharacterSnapshot {
     baseStatistics: {
       attack: 7,
       defense: 7,
-      spellPowerPercent: 100,
+      spellPower: 100,
     },
 
     unlocks: {

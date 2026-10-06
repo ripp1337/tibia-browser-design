@@ -101,7 +101,7 @@ describe("PostgresCharacterRepository", () => {
     expect(snapshot.baseStatistics).toEqual({
       attack: 7,
       defense: 7,
-      spellPowerPercent: 100,
+      spellPower: 100,
     });
 
     const graphCounts = await testPool.query<{

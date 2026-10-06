@@ -170,6 +170,17 @@ Passive bonuses are not part of combat calculations:
 
 ---
 
+## Combat Statistic Minimums
+
+Combat uses finalized Effective Character Statistics.
+
+Effective Attack, Defense, and Spell Power cannot be lower than 0.
+
+Combat does not apply separate statistic clamping and does not recalculate
+effective statistics independently. Minimum values are enforced by the
+authoritative Effective Character Statistics calculator before the statistics
+are used by combat.
+
 # 7. Character Combat Resources
 
 ## Health
@@ -206,7 +217,11 @@ Mana may only be restored through:
 - Mana Potions
 
 Mana cannot exceed maximum Mana.
+---
 
+Combat never calculates maximum resources.
+ 
+Combat uses EffectiveCharacterStats exclusively.
 ---
 
 # 8. Physical Combat

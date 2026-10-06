@@ -41,3 +41,11 @@ PK_AffixTemplateId
 
 IX_AffixTemplates_AffixType
 IX_AffixTemplates_RequiredItemLevel
+
+## BUSINESS RULES
+
+- Attack, Defense, SpellPower, Health, Mana, and Energy values are flat modifiers.
+- GoldPercent and ExperiencePercent values are percentage-point modifiers.
+- Percentage-point modifiers affecting the same statistic are combined additively.
+- Affix templates do not perform final-stat calculations.
+- Final aggregation and rounding belong to the authoritative Effective Character Statistics calculator.

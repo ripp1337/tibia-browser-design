@@ -70,3 +70,10 @@ UX_ItemBases_Name
 IX_ItemBases_ItemLevel
 IX_ItemBases_Slot
 IX_ItemBases_IsBossExclusive
+
+## BUSINESS RULES
+
+- Attack, Defense, SpellPower, Health, Mana, and Energy are flat modifiers.
+- GoldPercent and ExperiencePercent are percentage-point modifiers.
+- Percentage-point modifiers are combined additively with modifiers from all other sources.
+- Item base statistics are inputs to the authoritative Effective Character Statistics calculator.

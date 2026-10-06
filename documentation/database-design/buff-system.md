@@ -109,6 +109,24 @@ Duration:
 
 - Fixed number of turns
 
+### Stat Debuff Minimums
+
+Stat debuffs use flat negative values.
+
+Multiple applicable modifiers are resolved before the final statistic minimum
+is enforced.
+
+A stat debuff may reduce effective Attack, Defense, or Spell Power to 0,
+but never below 0.
+
+The authoritative Effective Character Statistics calculator is responsible
+for enforcing these minimums.
+
+Example:
+
+Calculated Defense before finalization: -5
+Effective Defense after finalization: 0
+
 ---
 
 # Damage Over Time
@@ -375,6 +393,26 @@ Not Allowed:
 Only one boost of each category may be active.
 
 Using a new boost replaces the currently active boost of the same category.
+
+## Buff Percentage Aggregation
+
+Effects of the same BuffType do not stack with one another.
+
+Applying another effect of the same BuffType refreshes or replaces the
+existing effect according to the effect-specific rule. It does not create
+an additional simultaneous modifier.
+
+The value of the single active effect is combined additively with percentage
+modifiers from equipment, item affixes, set bonuses, achievements, permanent
+bonuses, and other compatible effect categories.
+
+Example:
+
+Equipment Gold Bonus: +20%
+Active Gold Boost: +15%
+Total Gold Bonus: +35%
+
+Two active Gold Boost effects cannot contribute simultaneously.
 
 ---
 

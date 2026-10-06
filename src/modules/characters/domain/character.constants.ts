@@ -28,7 +28,7 @@ export const INITIAL_CHARACTER = {
 
   baseAttack: 7,
   baseDefense: 7,
-  baseSpellPowerPercent: 100,
+  baseSpellPower: 100,
 
   craftingLevel: 1,
   craftingExperience: 0n,

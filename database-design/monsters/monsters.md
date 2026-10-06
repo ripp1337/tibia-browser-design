@@ -69,7 +69,7 @@ Health
 Attack
 Defense
 
-SpellPowerPercent
+spellPower
 
 CooldownSeconds
 

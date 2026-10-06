@@ -88,3 +88,15 @@ BUSINESS RULES
 - Achievements never reset
 - Achievements are auto-claimed
 - Achievement Score = sum of earned points
+- Permanent rewards from completed achievements apply to every character belonging to the account
+- Permanent rewards also apply to characters created after the achievement was completed
+- RewardAttack and RewardDefense are flat values
+- RewardGoldPercent and RewardExperiencePercent are percentage values
+- Percentage rewards from multiple completed achievements are added together
+- Only completed achievements provide permanent rewards
+- Achievement rewards are resolved dynamically through the character owner's AccountId
+- Achievement rewards are not copied into character records
+- RewardAttack and RewardDefense are flat modifiers.
+- RewardGoldPercent and RewardExperiencePercent are percentage-point modifiers.
+- Percentage achievement rewards affecting the same statistic are combined additively.
+- Completed achievement bonuses are inputs to the authoritative Effective Character Statistics calculator.

@@ -55,7 +55,7 @@ export type PostgreSqlCharacterSnapshotRow = {
   crafting_slots_unlocked: number;
   inventory_slots: number;
 
-  current_spell_power_percent: string;
+  current_spell_power: string;
 
   created_at: Date;
   updated_at: Date;
@@ -92,15 +92,15 @@ function parseSafeInteger(
   return parsedValue;
 }
 
-function parseSpellPowerPercent(value: string): number {
+function parseSpellPower(value: string): number {
   const parsedValue = Number(value);
 
   if (
     !Number.isFinite(parsedValue) ||
-    parsedValue < 100
+    parsedValue < 0
   ) {
     throw new CharacterResourceStateInvalidError(
-      "current_spell_power_percent must be at least 100."
+      "current_spell_power must be a non-negative number."
     );
   }
 
@@ -232,8 +232,8 @@ export function mapCharacterSnapshotRow(
       attack: INITIAL_CHARACTER.baseAttack,
       defense: INITIAL_CHARACTER.baseDefense,
 
-      spellPowerPercent: parseSpellPowerPercent(
-        row.current_spell_power_percent
+      spellPower: parseSpellPower(
+        row.current_spell_power
       ),
     },
 

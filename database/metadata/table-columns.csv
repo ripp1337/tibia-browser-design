@@ -182,7 +182,7 @@ character_spell_mastery,1,character_spell_mastery_id,uuid,uuid,NO,gen_random_uui
 character_spell_mastery,2,character_id,uuid,uuid,NO,,,,
 character_spell_mastery,3,mastery_level,integer,int4,NO,1,,32,0
 character_spell_mastery,4,mastery_experience,bigint,int8,NO,0,,64,0
-character_spell_mastery,5,current_spell_power_percent,numeric,numeric,NO,100.0000,,8,4
+character_spell_mastery,5,current_spell_power,numeric,numeric,NO,100.0000,,8,4
 character_spell_mastery,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
 character_spell_mastery,7,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
 character_spells,1,character_spell_id,uuid,uuid,NO,gen_random_uuid(),,,

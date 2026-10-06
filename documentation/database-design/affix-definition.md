@@ -367,6 +367,22 @@ This is intended behavior.
 
 ---
 
+## Duplicate Percentage Affixes
+
+Duplicate percentage affixes affecting the same statistic are combined
+additively.
+
+Example:
+
+Gold Affix: +8%
+Gold Affix: +5%
+Combined Gold Bonus: +13%
+
+Duplicate percentage affixes are never multiplied by one another.
+
+Affix values are passed to the authoritative Effective Character Statistics
+calculator without performing a separate final-stat calculation.
+
 # 10. Affix Scaling
 
 Affixes scale with item progression.

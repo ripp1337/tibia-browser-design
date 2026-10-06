@@ -60,3 +60,10 @@ BUSINESS RULES
 - Progress never resets
 - Completion is permanent
 - Hidden achievements become visible after completion
+- Completed achievement rewards apply to every character belonging to the account
+- Completed achievement rewards also apply to characters created after completion
+- Only records with IsCompleted = true activate achievement rewards
+- Achievement rewards are resolved dynamically through the character owner's AccountId
+- Achievement reward values are read from the related Achievements record
+- Achievement rewards are not copied into AchievementProgress or character records
+- Creating, archiving, or deleting a character does not duplicate or remove AchievementProgress

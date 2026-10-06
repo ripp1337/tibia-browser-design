@@ -1172,7 +1172,7 @@ CREATE TABLE character_spell_mastery (
 
     mastery_level INTEGER NOT NULL DEFAULT 1,
     mastery_experience BIGINT NOT NULL DEFAULT 0,
-    current_spell_power_percent NUMERIC(8, 4) NOT NULL DEFAULT 100.0000,
+    current_spell_power NUMERIC(8, 4) NOT NULL DEFAULT 100.0000,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -1192,7 +1192,7 @@ CREATE TABLE character_spell_mastery (
         CHECK (mastery_experience >= 0),
 
     CONSTRAINT chk_character_spell_mastery_power
-        CHECK (current_spell_power_percent >= 100)
+        CHECK (current_spell_power >= 100)
 );
 
 -- =====================================================

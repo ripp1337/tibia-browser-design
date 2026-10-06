@@ -38,3 +38,11 @@ INDEXES
 PK_SetBonusId
 
 IX_SetBonuses_SetTemplateId
+
+## BUSINESS RULES
+
+- A set bonus becomes active when the required number of set pieces is equipped.
+- Flat set bonuses are added to the corresponding flat statistic.
+- Percentage set bonuses are percentage-point modifiers.
+- Percentage set bonuses affecting the same statistic are combined additively with modifiers from all other sources.
+- Set bonuses do not calculate or store final character statistics.

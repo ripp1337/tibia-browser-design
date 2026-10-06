@@ -100,7 +100,7 @@ const SNAPSHOT_QUERY = `
     u.crafting_slots_unlocked,
     u.inventory_slots,
 
-    m.current_spell_power_percent,
+    m.current_spell_power,
 
     c.created_at,
     c.updated_at

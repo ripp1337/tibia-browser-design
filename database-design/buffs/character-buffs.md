@@ -116,3 +116,11 @@ IX_CharacterBuffs_BuffType
 IX_CharacterBuffs_ExpiresAt
 
 IX_CharacterBuffs_IsPositive
+
+## BUSINESS RULES
+
+- Effects of the same BuffType do not stack with one another.
+- Only one active effect of a given BuffType may contribute to effective statistics.
+- Percentage-based buff values are percentage-point modifiers.
+- The active modifier is combined additively with compatible percentage modifiers from other sources.
+- CharacterBuffs does not calculate or store final character statistics.

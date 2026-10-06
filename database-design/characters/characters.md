@@ -135,3 +135,12 @@ IX_Characters_Level
 IX_Characters_Experience
 
 UX_Characters_Name
+
+Current resources must always satisfy:
+
+current_health <= max_health
+current_mana <= max_mana
+current_energy <= max_energy
+
+Application services are responsible for clamping values before persistence.
+Database constraints provide final protection.

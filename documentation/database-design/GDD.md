@@ -197,6 +197,12 @@ Examples:
 Gold bonuses
 Attack bonuses
 Experience bonuses
+
+Removing equipment or losing bonuses may reduce maximum resources.
+ 
+If this occurs, current resource values are immediately reduced
+to their new maximum values.
+
 5. Combat System
 
 Combat is fully turn-based.

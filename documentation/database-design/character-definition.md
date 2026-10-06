@@ -27,7 +27,7 @@ Players define their builds through:
 
 ---
 
-# Character Philosophy
+## Character Philosophy
 
 The game is built around a classless progression model.
 
@@ -49,9 +49,9 @@ Character Levels provide progression, but equipment remains the primary source o
 
 ---
 
-# Character Slots
+## Character Slots
 
-## Account Limits
+### Account Limits
 
 Maximum Characters Per Account:
 
@@ -59,31 +59,23 @@ Maximum Characters Per Account:
 
 Every character progresses independently.
 
----
-
-## Character Names
+### Character Names
 
 Character names are globally unique.
 
 No two characters may share the same name.
 
----
-
-## Character States
+### Character States
 
 Characters may exist in one of two states:
 
-### Active
+#### Active
 
 Fully playable.
 
----
+#### Archived
 
-### Archived
-
-Archived characters become:
-
-- View Only
+Archived characters become view only.
 
 Archiving frees a character slot.
 
@@ -91,9 +83,9 @@ Progress is never deleted through archiving.
 
 ---
 
-# Character Progression
+## Character Progression
 
-## Character Level
+### Character Level
 
 Character Level is the primary progression metric.
 
@@ -108,12 +100,10 @@ Experience requirements continue indefinitely through a custom scaling formula.
 
 Level progression is intended to take months rather than days.
 
----
-
-## Example Experience Milestones
+### Example Experience Milestones
 
 | Level | Total Experience |
-|---------|---------:|
+|---:|---:|
 | 1 | 0 |
 | 2 | 100 |
 | 3 | 200 |
@@ -129,89 +119,48 @@ The experience curve continues infinitely.
 
 ---
 
-# Character Resources
+## Character Resources
 
-The character maintains both:
+The character maintains both current and maximum values for each resource.
 
-- Current Values
-- Maximum Values
-
-for each resource.
-
-## Health
+### Health
 
 Determines survival during combat.
 
----
-
-## Mana
+### Mana
 
 Required for spell casting.
 
----
-
-## Energy
+### Energy
 
 Required to initiate combat.
 
 Controls active progression speed.
 
----
+### Resource Rules
 
-## Resource Rules
-
-Resources regenerate:
-
-- Online
-- Offline
+Resources regenerate online and offline.
 
 Resources may never exceed their maximum values.
 
-Energy may additionally be restored through:
-
-- Energy Potions
+Energy may additionally be restored through Energy Potions.
 
 ---
 
-# Base Statistics
+## Base Statistics
 
-All characters begin with the following base values.
+All characters begin with the following base values:
 
-## Base Health
+| Statistic | Base value |
+|---|---:|
+| Health | 180 |
+| Mana | 35 |
+| Attack | 7 |
+| Defense | 7 |
+| Spell Power | 100 |
+| Energy | 100 |
 
-180
-
----
-
-## Base Mana
-
-35
-
----
-
-## Base Attack
-
-7
-
----
-
-## Base Defense
-
-7
-
----
-
-## Base Spell Power
-
-100%
-
----
-
-## Base Energy
-
-100
-
----
+Spell Power is stored as the flat numeric value `100` and displayed to players as `100%`.
 
 These values are modified through:
 
@@ -223,136 +172,197 @@ These values are modified through:
 
 ---
 
-# Level Rewards
+## Effective Statistic Value Types
+
+The effective character statistics system uses exactly two modifier categories.
+
+### Flat Statistics
+
+The following statistics always use flat numeric values:
+
+- Attack
+- Defense
+- Spell Power
+- Maximum Health
+- Maximum Mana
+- Maximum Energy
+
+All contributions to these statistics are added directly.
+
+Example:
+
+```text
+Base Attack: 7
+Equipment Attack: 50
+Affix Attack: 15
+Set Attack: 10
+Buff Attack: 20
+Debuff Attack: -12
+
+Effective Attack:
+7 + 50 + 15 + 10 + 20 - 12 = 90
+```
+
+No percentage-based modifiers exist for Attack, Defense, Spell Power, Maximum Health, Maximum Mana, or Maximum Energy.
+
+Spell Power uses a flat numeric representation. Its base value is `100`, displayed to players as `100%`.
+
+Example:
+
+```text
+Base Spell Power: 100
+Equipment Spell Power: 20
+Affix Spell Power: 15
+
+Effective Spell Power:
+100 + 20 + 15 = 135
+Displayed value: 135%
+```
+
+A `+20 Spell Power` modifier adds 20 directly to the Spell Power value. It does not multiply the existing value by 20%.
+
+### Percentage Bonuses
+
+Only the following effective statistics use percentage-point values:
+
+- Gold Bonus
+- Experience Bonus
+
+Gold and Experience bonuses are never flat values.
+
+All percentage bonuses from equipment, affixes, set bonuses, achievements, permanent bonuses, and active boosts are added together.
+
+Example:
+
+```text
+Equipment Gold Bonus: 5%
+Affix Gold Bonus: 8%
+Achievement Gold Bonus: 2%
+Active Gold Boost: 10%
+
+Effective Gold Bonus:
+5% + 8% + 2% + 10% = 25%
+```
+
+Percentage bonuses are additive, not multiplicative.
+
+The final accumulated bonus is applied once:
+
+```text
+finalReward = floor(baseReward * (100 + effectiveBonusPercent) / 100)
+```
+
+Example:
+
+```text
+Base Gold Reward: 100
+Effective Gold Bonus: 25%
+
+Final Gold Reward:
+floor(100 * 125 / 100) = 125
+```
+
+Gold and Experience rewards are rounded down only when the final reward is calculated.
+
+---
+
+## Level Rewards
 
 Every level grants:
 
-## Health
-
-+30 Health
-
----
-
-## Mana
-
-+15 Mana
-
----
+- +30 Maximum Health
+- +15 Maximum Mana
 
 These rewards apply automatically.
 
 ---
 
-# Energy Progression
+## Energy Progression
 
 Energy grows at milestone intervals.
 
-## Formula
+### Rules
 
-Base Energy:
+- Base Energy is 100.
+- Characters below level 20 have 100 maximum Energy.
+- Reaching level 20 grants 10 maximum Energy.
+- Starting from level 30, every 10 levels grant 5 maximum Energy.
+- Maximum Energy cannot exceed 200.
+- Level progression does not increase maximum Energy beyond level 200.
 
-100
+### Formula
 
-Gain:
+```text
+if level < 20:
+    maximumEnergy = 100
+else:
+    maximumEnergy = min(
+        200,
+        110 + floor((level - 20) / 10) * 5
+    )
+```
 
-+5 Energy every 20 Levels
+### Examples
 
----
+| Character Level | Maximum Energy |
+|---:|---:|
+| 1 | 100 |
+| 19 | 100 |
+| 20 | 110 |
+| 30 | 115 |
+| 40 | 120 |
+| 50 | 125 |
+| 100 | 150 |
+| 150 | 175 |
+| 200 | 200 |
+| 201 and above | 200 |
 
-## Examples
+### Design Intent
 
-Level 1
+Energy increases slowly because it controls the pace of active gameplay.
 
-100 Energy
-
----
-
-Level 20
-
-105 Energy
-
----
-
-Level 40
-
-110 Energy
-
----
-
-Level 100
-
-200 Energy
-
----
-
-Maximum intended Energy:
-
-200
-
-at Level 100.
+The exceptional 10-point increase at level 20 establishes the first Energy milestone. Every later milestone grants a regular 5-point increase until the hard maximum of 200 is reached at level 200.
 
 ---
 
-# Level Milestone Rewards
+## Level Milestone Rewards
 
 Certain levels grant one-time rewards.
 
-## Level 8
-
-Rewards:
+### Level 8
 
 - 1,000 Gold
 - 1 Random Rare Item
 
----
-
-## Level 20
-
-Rewards:
+### Level 20
 
 - 10,000 Gold
 - Small Gold Boost
 - Small Experience Boost
 - 2 Random Epic Items
 
----
-
-## Level 30
-
-Rewards:
+### Level 30
 
 - 10,000 Gold
 - Small Gold Boost
 - Small Experience Boost
 - 1 Random Epic Item
 
----
-
-## Level 50
-
-Rewards:
+### Level 50
 
 - 50,000 Gold
 - Medium Gold Boost
 - Medium Experience Boost
 - 2 Random Epic Items
 
----
-
-## Level 75
-
-Rewards:
+### Level 75
 
 - 100,000 Gold
 - Large Gold Boost
 - Large Experience Boost
 - 1 Random Legendary Item
 
----
-
-## Level 100
-
-Rewards:
+### Level 100
 
 - 200,000 Gold
 - 5 Large Gold Boosts
@@ -361,34 +371,24 @@ Rewards:
 
 ---
 
-# Spell Mastery
+## Spell Mastery
 
 Spell Mastery is a separate progression system.
 
-Progression Flow:
+Progression flow:
 
+```text
 Cast Spell
+-> Gain Spell Mastery Experience
+-> Increase Spell Mastery Level
+```
 
-↓
-
-Gain Spell Mastery Experience
-
-↓
-
-Increase Spell Mastery Level
-
----
-
-## Characteristics
+Characteristics:
 
 - Infinite Progression
 - Independent Experience Curve
 - Separate From Character Level
 - Long-Term Progression System
-
----
-
-## Benefits
 
 Spell Mastery increases:
 
@@ -396,19 +396,13 @@ Spell Mastery increases:
 - Spell Scaling
 - Overall Spell Power
 
-Base Spell Power:
-
-100%
-
-Additional Spell Power is gained through Spell Mastery progression.
+Base Spell Power is 100. Additional flat Spell Power is gained through Spell Mastery progression.
 
 ---
 
-# Spell Slots
+## Spell Slots
 
-Characters begin with:
-
-- 1 Spell Slot
+Characters begin with one Spell Slot.
 
 Additional slots may be permanently unlocked.
 
@@ -416,17 +410,11 @@ Maximum:
 
 - 3 Active Spell Slots
 
----
+Rules:
 
-## Rules
-
-- Same spell cannot occupy multiple slots
-- All slots are permanent unlocks
-- Spell loadouts are intended to be situational
-
----
-
-## Unlocks
+- The same spell cannot occupy multiple slots.
+- All slots are permanent unlocks.
+- Spell loadouts are intended to be situational.
 
 ### Slot 2
 
@@ -434,8 +422,6 @@ Requirements:
 
 - Level 20
 - 10,000 Gold
-
----
 
 ### Slot 3
 
@@ -446,7 +432,7 @@ Requirements:
 
 ---
 
-# Equipment Loadouts
+## Equipment Loadouts
 
 Characters may save equipment presets.
 
@@ -464,31 +450,16 @@ Loadouts allow rapid build switching.
 
 ---
 
-# Inventory Expansion
+## Inventory Expansion
 
-Default Inventory:
-
-- 50 Slots
-
----
-
-Maximum Inventory:
-
-- 100 Slots
+- Default Inventory: 50 Slots
+- Maximum Inventory: 100 Slots
+- Expansion: +50 Slots
+- Cost: 1,000,000 Gold
 
 ---
 
-Expansion:
-
-+50 Slots
-
-Cost:
-
-1,000,000 Gold
-
----
-
-# Permanent Upgrades
+## Permanent Upgrades
 
 Permanent upgrades are character specific.
 
@@ -503,62 +474,39 @@ Permanent upgrades never transfer between characters.
 
 ---
 
-# Promotion
+## Promotion
 
 Promotion is a one-time permanent upgrade.
 
-## Requirements
+### Requirements
 
 - Level 20
 - 20,000 Gold
 
----
+### Benefits
 
-## Benefits
+Promotion reduces experience loss on death:
 
-Reduces experience loss on death.
-
-### Default
-
-10% Experience Loss
-
----
-
-### Promoted
-
-8% Experience Loss
+- Default: 10% of Total Experience
+- Promoted: 8% of Total Experience
 
 Promotion is permanent.
 
 ---
 
-# Death Rules
+## Death Rules
 
 Death has meaningful progression consequences.
 
-## On Death
+On death, the character loses experience.
 
-- Lose Experience
+Experience loss:
 
----
+- Default: 10% of Total Experience
+- Promoted: 8% of Total Experience
+- Blessed: further reduced by Blessing effects
 
-## Experience Loss
-
-Default:
-
-10% of Total Experience
-
-Promoted:
-
-8% of Total Experience
-
-Blessed:
-
-Further reduced by Blessing effects.
-
----
-
-## Consequences
+Consequences may include:
 
 - Experience Loss
 - Level Loss
@@ -569,7 +517,7 @@ Death penalties are intended to remain meaningful.
 
 ---
 
-# Character Statistics
+## Character Statistics
 
 Characters permanently track lifetime statistics.
 
@@ -596,7 +544,7 @@ Statistics are permanent.
 
 ---
 
-# Character Profile
+## Character Profile
 
 Every character has a public profile.
 
@@ -614,13 +562,11 @@ Displayed information includes:
 
 ---
 
-# Character Ownership
+## Character Ownership
 
 Characters are fully isolated progression entities.
 
-No sharing exists between characters.
-
-## Not Shared
+The following are not shared between characters:
 
 - Gold
 - Equipment
@@ -634,13 +580,11 @@ Each character must progress independently.
 
 ---
 
-# Relationship With Account Systems
+## Relationship With Account Systems
 
-Most progression is character-specific.
+Most progression is character-specific. Only a limited number of systems are account-wide.
 
-Only a limited number of systems are account-wide.
-
-## Account-Wide Systems
+### Account-Wide Systems
 
 - Achievements
 - Achievement Score
@@ -649,9 +593,7 @@ Only a limited number of systems are account-wide.
 - Addon Collection
 - Friends
 
----
-
-## Character-Specific Systems
+### Character-Specific Systems
 
 - Levels
 - Experience
@@ -666,15 +608,15 @@ Only a limited number of systems are account-wide.
 
 ---
 
-# Seasonal Interaction
+## Seasonal Interaction
 
 Characters participate in seasonal progression.
 
 At season end:
 
-- Character is transferred to Non-Ladder
-- Character remains fully playable
-- Character progression is preserved
+- Character is transferred to Non-Ladder.
+- Character remains fully playable.
+- Character progression is preserved.
 
 Transferred data includes:
 
@@ -692,27 +634,17 @@ Nothing on the character is reset during transfer.
 
 ---
 
-# Design Philosophy
+## Design Philosophy
 
 The Character System exists to provide:
 
+```text
 Character
-
-↓
-
-Combat
-
-↓
-
-Loot
-
-↓
-
-Optimization
-
-↓
-
-Long-Term Progression
+-> Combat
+-> Loot
+-> Optimization
+-> Long-Term Progression
+```
 
 The game is intentionally designed around:
 
@@ -729,4 +661,4 @@ The strongest characters should be determined by:
 - Resource Management
 - Economic Decisions
 
-rather than by time played alone.
+Character strength should not be determined by time played alone.

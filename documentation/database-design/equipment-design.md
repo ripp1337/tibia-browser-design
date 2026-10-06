@@ -59,6 +59,46 @@ Characters have 8 equipment slots:
 
 ---
 
+# 3A. Equipped State and Loadouts
+
+InventoryItems.IsEquipped is the only authoritative source of currently equipped items.
+
+Rules:
+
+- IsEquipped = true means that the item is currently equipped.
+- IsEquipped = false means that the item is not currently equipped.
+- A character may equip no more than one item in each equipment slot.
+- The Effective Character Statistics calculator uses only items where IsEquipped = true.
+- EquipmentLoadouts are saved equipment presets.
+- EquipmentLoadouts do not represent the current equipped state.
+- EquipmentLoadouts.IsDefault identifies the default saved preset.
+- EquipmentLoadouts.IsDefault does not mean that the loadout is currently equipped.
+
+Applying an Equipment Loadout must occur in one transaction.
+
+The operation must:
+
+1. Validate that every referenced item belongs to the character.
+2. Validate that every referenced item matches its assigned equipment slot.
+3. Validate weapon and shield compatibility.
+4. Mark the character's currently equipped items as not equipped.
+5. Mark the items referenced by the selected loadout as equipped.
+6. Recalculate Effective Character Statistics.
+7. Safely clamp current resources if their effective maximum values decrease.
+
+If any validation or update fails, the entire operation must be rolled back.
+
+Equipment Changes
+
+After every equip, unequip, swap, loadout change, set activation,
+or set deactivation:
+
+1. EffectiveCharacterStats must be recalculated.
+2. Resource clamping must be executed.
+3. Updated values must be persisted.
+
+---
+
 # 4. Item Levels
 
 Every equipment piece has:
@@ -174,6 +214,28 @@ Items may contain:
 - Experience %
 
 Not every item uses every stat.
+
+--
+
+## Equipment Statistic Aggregation
+
+Flat statistics granted by equipped items and their affixes are added to the
+corresponding character statistics.
+
+Percentage modifiers affecting the same statistic are combined additively
+across all equipped items, item affixes, and active set bonuses.
+
+Example:
+
+Item Gold Bonus: +20%
+Set Gold Bonus: +5%
+Combined Equipment Gold Bonus: +25%
+
+Equipment percentage modifiers are not multiplied by one another.
+
+The authoritative Effective Character Statistics calculator is responsible
+for combining equipment modifiers with modifiers from achievements,
+permanent bonuses, buffs, and debuffs.
 
 ---
 

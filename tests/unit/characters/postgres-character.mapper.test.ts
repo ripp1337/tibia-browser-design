@@ -66,7 +66,7 @@ function createSnapshotRow(
     crafting_slots_unlocked: 1,
     inventory_slots: 50,
 
-    current_spell_power_percent: "125.5000",
+    current_spell_power: "125.5000",
 
     created_at: createdAt,
     updated_at: updatedAt,
@@ -149,7 +149,7 @@ describe("mapCharacterSnapshotRow", () => {
       baseStatistics: {
         attack: 7,
         defense: 7,
-        spellPowerPercent: 125.5,
+        spellPower: 125.5,
       },
 
       unlocks: {
@@ -196,15 +196,25 @@ describe("mapCharacterSnapshotRow", () => {
     ).toThrow(CharacterResourceStateInvalidError);
   });
 
-  it("rejects Spell Power below 100 percent", () => {
-    expect(() =>
-      mapCharacterSnapshotRow(
-        createSnapshotRow({
-          current_spell_power_percent: "99.9999",
-        })
-      )
-    ).toThrow(CharacterResourceStateInvalidError);
-  });
+it("accepts Spell Power equal to 0", () => {
+  expect(() =>
+    mapCharacterSnapshotRow(
+      createSnapshotRow({
+        current_spell_power: "0",
+      })
+    )
+  ).not.toThrow();
+});
+
+it("rejects negative Spell Power", () => {
+  expect(() =>
+    mapCharacterSnapshotRow(
+      createSnapshotRow({
+        current_spell_power: "-1",
+      })
+    )
+  ).toThrow(CharacterResourceStateInvalidError);
+});
 
   it("rejects an invalid resource checkpoint", () => {
     expect(() =>

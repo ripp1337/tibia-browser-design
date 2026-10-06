@@ -29,7 +29,7 @@ CharacterId
 MasteryLevel
 MasteryExperience
 
-CurrentSpellPowerPercent
+CurrentspellPower
 
 CreatedAt
 UpdatedAt
