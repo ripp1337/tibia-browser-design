@@ -10,7 +10,10 @@
     "db:test": "tsx scripts/test-database.ts",
     "db:seed": "tsx scripts/seed-database.ts",
     "db:materials:check": "tsx scripts/import-materials.ts --dry-run",
-    "db:materials:import": "tsx scripts/import-materials.ts"
+    "db:materials:import": "tsx scripts/import-materials.ts",
+    "game-data:validate": "tsx scripts/import-game-data.ts --validate-only",
+    "game-data:check": "tsx scripts/import-game-data.ts --dry-run",
+    "game-data:import": "tsx scripts/import-game-data.ts"
   },
   "repository": {
     "type": "git",
@@ -27,6 +30,8 @@
   "dependencies": {
     "csv-parse": "^7.0.3",
     "dotenv": "^18.0.5",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
     "pg": "^8.23.1"
   },
   "devDependencies": {
