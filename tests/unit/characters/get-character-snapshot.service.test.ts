@@ -1,8 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+﻿import { describe, expect, it, vi } from "vitest";
 
 import type { Clock } from "../../../src/application/ports/clock.js";
 import { GetCharacterSnapshotService } from "../../../src/modules/characters/application/get-character-snapshot.service.js";
 import type { CharacterRepository } from "../../../src/modules/characters/application/character.repository.js";
+import { CalculateCharacterStatsService } from "../../../src/modules/characters/application/calculate-character-stats.service.js";
+import type { CharacterStatisticsRepository } from "../../../src/modules/characters/application/character-statistics.repository.js";
 import { CharacterNotFoundError } from "../../../src/modules/characters/domain/character.errors.js";
 import type { CharacterSnapshot } from "../../../src/modules/characters/domain/character.types.js";
 
@@ -14,6 +16,41 @@ function createRepositoryMock(): CharacterRepository {
     archive: vi.fn(),
     updateResources: vi.fn(),
   };
+}
+
+function createStatisticsService(
+  overrides: {
+    maximumHealth?: number;
+    maximumMana?: number;
+    maximumEnergy?: number;
+  } = {}
+): CalculateCharacterStatsService {
+  const statisticsRepository:
+    CharacterStatisticsRepository = {
+      findCalculationSources: vi.fn().mockResolvedValue({
+        level: 1,
+        spellMasteryPower: 100,
+        equipment: {
+          attack: 0,
+          defense: 0,
+          spellPower: 0,
+          maximumHealth:
+            (overrides.maximumHealth ?? 180) - 180,
+          maximumMana:
+            (overrides.maximumMana ?? 35) - 35,
+          maximumEnergy:
+            (overrides.maximumEnergy ?? 100) - 100,
+          goldBonusPercent: 0,
+          experienceBonusPercent: 0,
+        },
+        achievements: {},
+        progressionBoosts: {},
+      }),
+    };
+
+  return new CalculateCharacterStatsService(
+    statisticsRepository
+  );
 }
 
 function createClock(now: Date): Clock {
@@ -90,6 +127,7 @@ describe("GetCharacterSnapshotService", () => {
 
     const service = new GetCharacterSnapshotService(
       repository,
+      createStatisticsService(),
       createClock(now),
       {
         healthPerMinute: 2,
@@ -132,6 +170,7 @@ describe("GetCharacterSnapshotService", () => {
 
     const service = new GetCharacterSnapshotService(
       repository,
+      createStatisticsService(),
       createClock(
         new Date("2026-10-06T10:00:30.000Z")
       ),
@@ -147,7 +186,19 @@ describe("GetCharacterSnapshotService", () => {
       characterId: "character-1",
     });
 
-    expect(result).toBe(snapshot);
+    expect(result).toEqual({
+      ...snapshot,
+      effectiveStatistics: {
+        attack: 7,
+        defense: 7,
+        spellPower: 100,
+        maximumHealth: 180,
+        maximumMana: 35,
+        maximumEnergy: 100,
+        goldBonusPercent: 0,
+        experienceBonusPercent: 0,
+      },
+    });
     expect(repository.updateResources).not.toHaveBeenCalled();
   });
 
@@ -168,6 +219,7 @@ describe("GetCharacterSnapshotService", () => {
 
     const service = new GetCharacterSnapshotService(
       repository,
+      createStatisticsService(),
       clock,
       {
         healthPerMinute: 2,
@@ -181,7 +233,19 @@ describe("GetCharacterSnapshotService", () => {
       characterId: "character-1",
     });
 
-    expect(result).toBe(snapshot);
+    expect(result).toEqual({
+      ...snapshot,
+      effectiveStatistics: {
+        attack: 7,
+        defense: 7,
+        spellPower: 100,
+        maximumHealth: 180,
+        maximumMana: 35,
+        maximumEnergy: 100,
+        goldBonusPercent: 0,
+        experienceBonusPercent: 0,
+      },
+    });
     expect(clock.now).not.toHaveBeenCalled();
     expect(repository.updateResources).not.toHaveBeenCalled();
   });
@@ -195,6 +259,7 @@ describe("GetCharacterSnapshotService", () => {
 
     const service = new GetCharacterSnapshotService(
       repository,
+      createStatisticsService(),
       createClock(
         new Date("2026-10-06T12:00:00.000Z")
       )
@@ -223,6 +288,7 @@ describe("GetCharacterSnapshotService", () => {
 
     const service = new GetCharacterSnapshotService(
       repository,
+      createStatisticsService(),
       createClock(
         new Date("2026-10-06T10:05:00.000Z")
       ),
@@ -240,4 +306,67 @@ describe("GetCharacterSnapshotService", () => {
       })
     ).rejects.toBeInstanceOf(CharacterNotFoundError);
   });
-});
+
+  it("clamps current resources when effective maximums decrease", async () => {
+    const repository = createRepositoryMock();
+    const updatedAt = new Date(
+      "2026-10-06T10:00:00.000Z"
+    );
+
+    const snapshot = createSnapshot({
+      resources: {
+        currentHealth: 250,
+        maximumHealth: 300,
+        currentMana: 80,
+        maximumMana: 100,
+        currentEnergy: 140,
+        maximumEnergy: 150,
+        resourcesUpdatedAt: updatedAt,
+      },
+    });
+
+    vi.mocked(
+      repository.findSnapshotById
+    ).mockResolvedValue(snapshot);
+
+    vi.mocked(
+      repository.updateResources
+    ).mockResolvedValue(true);
+
+    const service = new GetCharacterSnapshotService(
+      repository,
+      createStatisticsService({
+        maximumHealth: 180,
+        maximumMana: 35,
+        maximumEnergy: 100,
+      }),
+      createClock(
+        new Date("2026-10-06T10:00:30.000Z")
+      )
+    );
+
+    const result = await service.execute({
+      accountId: "account-1",
+      characterId: "character-1",
+    });
+
+    expect(result.resources).toEqual({
+      currentHealth: 180,
+      maximumHealth: 180,
+      currentMana: 35,
+      maximumMana: 35,
+      currentEnergy: 100,
+      maximumEnergy: 100,
+      resourcesUpdatedAt: updatedAt,
+    });
+
+    expect(repository.updateResources).toHaveBeenCalledOnce();
+
+    expect(repository.updateResources).toHaveBeenCalledWith({
+      accountId: "account-1",
+      characterId: "character-1",
+      resources: result.resources,
+    });
+  });});
+
+
