@@ -1,39 +1,39 @@
-ENTITY: AccountOutfits
+ENTITY: AccountAddons
 
 PRIMARY KEY
 -----------
-AccountOutfitId
+AccountAddonId
 
 FOREIGN KEYS
 ------------
 AccountId
     → Accounts.AccountId
 
-OutfitDefinitionId
-    → OutfitDefinitions.OutfitDefinitionId
+AddonDefinitionId
+    → AddonDefinitions.AddonDefinitionId
 
 CARDINALITY
 -----------
 Accounts
-└── AccountOutfits (1:N)
+└── AccountAddons (1:N)
 
-OutfitDefinitions
-└── AccountOutfits (1:N)
+AddonDefinitions
+└── AccountAddons (1:N)
 
 UNIQUE CONSTRAINTS
 ------------------
-(AccountId, OutfitDefinitionId)
+(AccountId, AddonDefinitionId)
 
 PURPOSE
 -------
-Tracks unlocked outfits.
+Tracks unlocked outfit addons.
 
 CORE COLUMNS
 ------------
-AccountOutfitId
+AccountAddonId
 
 AccountId
-OutfitDefinitionId
+AddonDefinitionId
 
 UnlockedAt
 
@@ -41,16 +41,18 @@ CreatedAt
 
 INDEXES
 -------
-PK_AccountOutfitId
+PK_AccountAddonId
 
-UX_AccountOutfits
+UX_AccountAddons
 
-IX_AccountOutfits_AccountId
-IX_AccountOutfits_OutfitDefinitionId
+IX_AccountAddons_AccountId
+IX_AccountAddons_AddonDefinitionId
 
 BUSINESS RULES
 --------------
 - Account-wide
 - Permanent unlock
+- Requires associated outfit
 - Not affected by seasons
 - Not affected by character deletion
+- Cosmetic only

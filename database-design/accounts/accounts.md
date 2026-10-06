@@ -34,8 +34,6 @@ CARDINALITY
 Accounts
 ├─ Characters (1:N)
 ├─ AchievementProgress (1:N)
-├─ AccountAchievements (1:N)
-├─ AccountHolyGrail (1:N)
 ├─ AccountFriends (1:N)
 ├─ FriendRequests (1:N)
 ├─ AccountOutfits (1:N)
@@ -53,4 +51,9 @@ PasswordHash
 CreatedAt
 LastLoginAt
 Status
-IsBanned
+(
+Active,
+Suspended,
+Banned,
+Deleted
+)

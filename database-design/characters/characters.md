@@ -9,15 +9,16 @@ FOREIGN KEYS
 AccountId         → Accounts.AccountId
 SeasonId          → Seasons.SeasonId
 
-REFERENCED BY
--------------
+### REFERENCED BY
+
 CharacterStatistics.CharacterId
-CharacterMonsterKills.CharacterId
 CharacterUnlocks.CharacterId
 CharacterLoadouts.CharacterId
 CharacterSpellMastery.CharacterId
-
 CharacterSpells.CharacterId
+
+CharacterCooldowns.CharacterId
+
 InventoryItems.CharacterId
 MaterialStorage.CharacterId
 ConsumableStorage.CharacterId
@@ -25,6 +26,7 @@ EquipmentLoadouts.CharacterId
 
 CharacterBuffs.CharacterId
 
+CombatSessions.CharacterId
 CombatLogs.CharacterId
 
 CraftingQueue.CharacterId
@@ -73,7 +75,6 @@ Characters
 ├── DailyChestProgress (1:1)
 ├── LoginStreakProgress (1:1)
 ├── CharacterSpells (1:N)
-├── CharacterMonsterKills (1:N)
 ├── CharacterLoadouts (1:N)
 ├── InventoryItems (1:N)
 ├── MaterialStorage (1:N)

@@ -107,3 +107,12 @@ IX_AuctionListings_ItemId
 IX_AuctionListings_MaterialId
 
 IX_AuctionListings_ConsumableDefinitionId
+
+AuctionListings.Quantity decreases after each purchase.
+
+Listing remains active until:
+Quantity = 0
+OR
+Expires
+OR
+Cancelled.

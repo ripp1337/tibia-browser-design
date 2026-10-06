@@ -1,9 +1,9 @@
 # ACCOUNT DOMAIN
 
 Accounts
-AccountAchievements
-AccountAchievementProgress
-AccountHolyGrail
+AchievementProgress
+HolyGrailEntries
+SetProgress
 AccountFriends
 FriendRequests
 AccountOutfits
@@ -13,11 +13,8 @@ AccountAddons
 
 Characters
 CharacterStatistics
-CharacterMonsterKills
 CharacterUnlocks
 CharacterLoadouts
-CharacterSpellLoadouts
-CharacterCooldowns
 
 # SPELL DOMAIN
 
@@ -88,7 +85,6 @@ RecipeMaterials
 # CRAFTING DOMAIN
 
 CraftingQueue
-CraftingJobs
 CraftingHistory
 
 # GATHERING DOMAIN
@@ -113,10 +109,6 @@ AuctionHistory
 
 MailMessages
 MailAttachments
-
-# NPC DOMAIN
-
-NpcDefinitions
 
 # CHEST DOMAIN
 

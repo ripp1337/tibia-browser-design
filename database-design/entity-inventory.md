@@ -15,7 +15,6 @@ CHARACTER DOMAIN
 
 Characters
 CharacterStatistics
-CharacterMonsterKills
 CharacterUnlocks
 CharacterLoadouts
 CharacterSpellMastery

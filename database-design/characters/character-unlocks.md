@@ -29,7 +29,10 @@ SpellSlotsUnlocked
 
 CraftingSlotsUnlocked
 
-InventoryExpansionUnlocked
+InventorySlots
+
+50 = default
+100 = expanded
 
 CreatedAt
 UpdatedAt

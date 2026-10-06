@@ -38,3 +38,8 @@ PK_ItemAffixId
 
 IX_ItemAffixes_ItemId
 IX_ItemAffixes_AffixTemplateId
+
+BUSINESS RULE:
+Unique items cannot have affixes.
+Set items cannot have affixes.
+Only non-set, non-unique items generate ItemAffix records.

@@ -605,23 +605,32 @@ These bases enter the economy only through designated bosses.
 
 # 28. Unique Items
 
-Unique Items are special predefined equipment.
+UUnique Items
 
 Characteristics:
-
 - Fixed Identity
 - Fixed Stat Categories
 - Random Stat Rolls
 
 Example:
 
-Rat King's Crown
+Crown of Thieves
 
-Attack: 10-20
+Always rolls:
+- Gold %
+- Defense
 
-Defense: 15-30
+But the actual values are rolled individually on each drop.
 
-Rolls vary between drops.
+Example:
+
+Drop #1
+Gold +4%
+Defense +10
+
+Drop #2
+Gold +8%
+Defense +18
 
 ---
 

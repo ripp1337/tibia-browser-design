@@ -9,15 +9,24 @@ FOREIGN KEYS
 MonsterFamilyId
     → MonsterFamilies.MonsterFamilyId
 
-REFERENCED BY
--------------
+### REFERENCED BY
+
+Bosses.MonsterId
+
 MonsterAbilities.MonsterId
+
 LootTables.MonsterId
 OtherLootTables.MonsterId
-CharacterMonsterKills.MonsterId
+
+CombatSessions.MonsterId
+CombatLogs.MonsterId
+
 BestiaryEntries.MonsterId
 BestiaryStatistics.MonsterId
+
 MonsterTasks.MonsterId
+
+CharacterCooldowns.TargetId
 
 CARDINALITY
 -----------
@@ -28,7 +37,6 @@ Monsters
 ├── MonsterAbilities (1:N)
 ├── LootTables (1:N)
 ├── OtherLootTables (1:N)
-├── CharacterMonsterKills (1:N)
 ├── BestiaryEntries (1:N)
 ├── BestiaryStatistics (1:N)
 └── MonsterTasks (1:N)

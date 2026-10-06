@@ -23,7 +23,9 @@ Items
 
 PURPOSE
 -------
-Stores ownership of equipment items.
+
+Stores ownership and inventory placement
+for character-owned equipment items.
 
 CORE COLUMNS
 ------------

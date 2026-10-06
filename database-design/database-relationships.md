@@ -17,7 +17,6 @@ CHARACTERS
 ├── CharacterUnlocks (1:1)
 ├── CharacterSpellMastery (1:1)
 ├── CharacterSpells (1:N)
-├── CharacterMonsterKills (1:N)
 ├── CharacterLoadouts (1:N)
 ├── EquipmentLoadouts (1:N)
 ├── InventoryItems (1:N)

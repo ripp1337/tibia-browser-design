@@ -40,9 +40,6 @@ Rarity
 
 ItemScore
 
-CurrentOwnerCharacterId
-
-IsEquipped
 IsLocked
 
 CreatedAt
@@ -54,4 +51,8 @@ PK_ItemId
 IX_Items_ItemBaseId
 IX_Items_ItemLevel
 IX_Items_Rarity
-IX_Items_CurrentOwnerCharacterId
+
+BUSINESS RULE:
+Unique items cannot have affixes.
+Set items cannot have affixes.
+Only non-set, non-unique items generate ItemAffix records.
