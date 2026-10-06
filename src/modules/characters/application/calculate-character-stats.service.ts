@@ -41,8 +41,10 @@ export class CalculateCharacterStatsService {
       equipment: sources.equipment,
       achievements: sources.achievements,
       progressionBoosts: sources.progressionBoosts,
+      permanentBonuses: sources.permanentBonuses,
     });
   }
 }
+
 
 

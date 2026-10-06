@@ -15,6 +15,7 @@ export type CalculateEffectiveCharacterStatisticsInput = {
   equipment?: Partial<CharacterStatModifiers>;
   achievements?: Partial<CharacterStatModifiers>;
   progressionBoosts?: Partial<CharacterStatModifiers>;
+  permanentBonuses?: Partial<CharacterStatModifiers>;
   combat?: Partial<CharacterStatModifiers>;
 };
 
@@ -90,6 +91,7 @@ export function calculateEffectiveCharacterStatistics(
     BASE_STATISTICS.attack +
     modifierValue(input.equipment, "attack") +
     modifierValue(input.achievements, "attack") +
+    modifierValue(input.permanentBonuses, "attack") +
     modifierValue(input.progressionBoosts, "attack") +
     modifierValue(input.combat, "attack");
 
@@ -97,30 +99,36 @@ export function calculateEffectiveCharacterStatistics(
     BASE_STATISTICS.defense +
     modifierValue(input.equipment, "defense") +
     modifierValue(input.achievements, "defense") +
+    modifierValue(input.permanentBonuses, "defense") +
     modifierValue(input.progressionBoosts, "defense") +
     modifierValue(input.combat, "defense");
 
   const spellPower =
     input.spellMasteryPower +
     modifierValue(input.equipment, "spellPower") +
+    modifierValue(input.permanentBonuses, "spellPower") +
     modifierValue(input.progressionBoosts, "spellPower") +
     modifierValue(input.combat, "spellPower");
 
   const maximumHealth =
     calculateLevelMaximumHealth(input.level) +
-    modifierValue(input.equipment, "maximumHealth");
+    modifierValue(input.equipment, "maximumHealth") +
+    modifierValue(input.permanentBonuses, "maximumHealth");
 
   const maximumMana =
     calculateLevelMaximumMana(input.level) +
-    modifierValue(input.equipment, "maximumMana");
+    modifierValue(input.equipment, "maximumMana") +
+    modifierValue(input.permanentBonuses, "maximumMana");
 
   const maximumEnergy =
     calculateLevelMaximumEnergy(input.level) +
-    modifierValue(input.equipment, "maximumEnergy");
+    modifierValue(input.equipment, "maximumEnergy") +
+    modifierValue(input.permanentBonuses, "maximumEnergy");
 
   const goldBonusPercent =
     modifierValue(input.equipment, "goldBonusPercent") +
     modifierValue(input.achievements, "goldBonusPercent") +
+    modifierValue(input.permanentBonuses, "goldBonusPercent") +
     modifierValue(
       input.progressionBoosts,
       "goldBonusPercent"
@@ -133,6 +141,10 @@ export function calculateEffectiveCharacterStatistics(
     ) +
     modifierValue(
       input.achievements,
+      "experienceBonusPercent"
+    ) +
+    modifierValue(
+      input.permanentBonuses,
       "experienceBonusPercent"
     ) +
     modifierValue(
@@ -166,4 +178,6 @@ export function calculateEffectiveCharacterStatistics(
     ),
   };
 }
+
+
 
