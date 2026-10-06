@@ -15,3 +15,6 @@ documentation/game-design/m1-table-*.csv
 
 # Generated Batch 3 schema reports
 documentation/game-design/batch-3/
+
+# TypeScript build output
+dist/
