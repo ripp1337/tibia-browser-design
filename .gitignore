@@ -1,2 +1,5 @@
 database/migrations/archive/
 database/migrations.zip
+.env
+.env.local
+.env.*.local
