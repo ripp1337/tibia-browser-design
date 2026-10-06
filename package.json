@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "db:test": "tsx scripts/test-database.ts",
@@ -13,7 +13,10 @@
     "db:materials:import": "tsx scripts/import-materials.ts",
     "game-data:validate": "tsx scripts/import-game-data.ts --validate-only",
     "game-data:check": "tsx scripts/import-game-data.ts --dry-run",
-    "game-data:import": "tsx scripts/import-game-data.ts"
+    "game-data:import": "tsx scripts/import-game-data.ts",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration"
   },
   "repository": {
     "type": "git",
@@ -38,6 +41,7 @@
     "@types/node": "^26.6.4",
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
   }
 }

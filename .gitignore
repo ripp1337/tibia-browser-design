@@ -4,3 +4,11 @@ database/migrations.zip
 .env.local
 .env.*.local
 node_modules/
+
+# Generated project-planning snapshots
+documentation/game-design/M1_REPOSITORY_REVIEW.txt
+documentation/game-design/repository-files.txt
+documentation/game-design/repository-directories.txt
+documentation/game-design/package-json-snapshot.txt
+documentation/game-design/tsconfig-snapshot.txt
+documentation/game-design/m1-table-*.csv
