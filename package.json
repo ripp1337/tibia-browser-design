@@ -1,0 +1,34 @@
+{
+  "name": "ostatnia-szansa-game",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "db:test": "tsx scripts/test-database.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ripp1337/tibia-browser-design.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/ripp1337/tibia-browser-design/issues"
+  },
+  "homepage": "https://github.com/ripp1337/tibia-browser-design#readme",
+  "dependencies": {
+    "dotenv": "^18.0.5",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
