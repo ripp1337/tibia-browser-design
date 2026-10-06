@@ -1,4 +1,4 @@
-# Current Milestone
+﻿# Current Milestone
 
 ## Milestone
 
@@ -6,7 +6,7 @@ M2: Effective Character Statistics
 
 ## Status
 
-In Progress.
+Completed.
 
 ## Objective
 
@@ -79,11 +79,11 @@ Controllers and PostgreSQL repositories do not contain final-statistic formulas.
 - [x] Implement resource hard clamp in snapshot flow
 - [x] Add deterministic and non-mutation tests
 - [x] Add unit and integration coverage for implemented sources
-- [ ] Implement transactional equip operation
-- [ ] Implement transactional unequip operation
-- [ ] Recalculate maxima and clamp resources inside equipment transactions
-- [ ] Add equip and unequip integration tests
-- [ ] Complete final M2 verification and documentation closure
+- [x] Implement transactional equip operation
+- [x] Implement transactional unequip operation
+- [x] Recalculate maxima and clamp resources inside equipment transactions
+- [x] Add equip and unequip integration tests
+- [x] Complete final M2 verification and documentation closure
 
 ## Test coverage
 
@@ -115,10 +115,10 @@ Automated coverage currently includes:
 - [x] Current resources are safely clamped
 - [x] Progression boosts and combat modifiers are separated
 - [x] No separate permanent-character-bonus system exists
-- [ ] Equipment mutations use the central calculator transactionally
-- [ ] Equip and unequip behavior is covered by integration tests
-- [ ] Full type-check, test suite, build, and database verification pass
-- [ ] Documentation closure is committed
+- [x] Equipment mutations use the central calculator transactionally
+- [x] Equip and unequip behavior is covered by integration tests
+- [x] Full type-check, test suite, build, and database verification pass
+- [x] Documentation closure is committed
 
 ## Remaining work
 
@@ -138,3 +138,4 @@ npm run db:test
 npm run typecheck
 npm test
 npm run build
+
