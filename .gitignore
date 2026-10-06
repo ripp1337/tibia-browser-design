@@ -12,3 +12,6 @@ documentation/game-design/repository-directories.txt
 documentation/game-design/package-json-snapshot.txt
 documentation/game-design/tsconfig-snapshot.txt
 documentation/game-design/m1-table-*.csv
+
+# Generated Batch 3 schema reports
+documentation/game-design/batch-3/
