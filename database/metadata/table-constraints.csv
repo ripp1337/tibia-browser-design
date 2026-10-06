@@ -1,0 +1,1156 @@
+table_name,constraint_name,constraint_type,check_clause
+account_addons,account_addons_account_addon_id_not_null,CHECK,account_addon_id IS NOT NULL
+account_addons,account_addons_account_id_not_null,CHECK,account_id IS NOT NULL
+account_addons,account_addons_addon_definition_id_not_null,CHECK,addon_definition_id IS NOT NULL
+account_addons,account_addons_created_at_not_null,CHECK,created_at IS NOT NULL
+account_addons,account_addons_unlocked_at_not_null,CHECK,unlocked_at IS NOT NULL
+account_addons,fk_account_addons_account,FOREIGN KEY,
+account_addons,fk_account_addons_addon,FOREIGN KEY,
+account_addons,account_addons_pkey,PRIMARY KEY,
+account_addons,ux_account_addons_account_addon,UNIQUE,
+account_friends,account_friends_account_friend_id_not_null,CHECK,account_friend_id IS NOT NULL
+account_friends,account_friends_account_id_not_null,CHECK,account_id IS NOT NULL
+account_friends,account_friends_created_at_not_null,CHECK,created_at IS NOT NULL
+account_friends,account_friends_friend_account_id_not_null,CHECK,friend_account_id IS NOT NULL
+account_friends,chk_account_friends_not_self,CHECK,(account_id <> friend_account_id)
+account_friends,fk_account_friends_account,FOREIGN KEY,
+account_friends,fk_account_friends_friend,FOREIGN KEY,
+account_friends,account_friends_pkey,PRIMARY KEY,
+account_friends,ux_account_friends_pair,UNIQUE,
+account_outfits,account_outfits_account_id_not_null,CHECK,account_id IS NOT NULL
+account_outfits,account_outfits_account_outfit_id_not_null,CHECK,account_outfit_id IS NOT NULL
+account_outfits,account_outfits_created_at_not_null,CHECK,created_at IS NOT NULL
+account_outfits,account_outfits_outfit_definition_id_not_null,CHECK,outfit_definition_id IS NOT NULL
+account_outfits,account_outfits_unlocked_at_not_null,CHECK,unlocked_at IS NOT NULL
+account_outfits,fk_account_outfits_account,FOREIGN KEY,
+account_outfits,fk_account_outfits_outfit,FOREIGN KEY,
+account_outfits,account_outfits_pkey,PRIMARY KEY,
+account_outfits,ux_account_outfits_account_outfit,UNIQUE,
+account_sessions,account_sessions_account_id_not_null,CHECK,account_id IS NOT NULL
+account_sessions,account_sessions_account_session_id_not_null,CHECK,account_session_id IS NOT NULL
+account_sessions,account_sessions_created_at_not_null,CHECK,created_at IS NOT NULL
+account_sessions,account_sessions_expires_at_not_null,CHECK,expires_at IS NOT NULL
+account_sessions,account_sessions_is_revoked_not_null,CHECK,is_revoked IS NOT NULL
+account_sessions,account_sessions_last_activity_at_not_null,CHECK,last_activity_at IS NOT NULL
+account_sessions,account_sessions_session_token_hash_not_null,CHECK,session_token_hash IS NOT NULL
+account_sessions,chk_account_sessions_activity,CHECK,(last_activity_at >= created_at)
+account_sessions,chk_account_sessions_expiration,CHECK,(expires_at > created_at)
+account_sessions,chk_account_sessions_revocation,CHECK,(((is_revoked = false) AND (revoked_at IS NULL)) OR ((is_revoked = true) AND (revoked_at IS NOT NULL) AND (revoked_at >= created_at)))
+account_sessions,fk_account_sessions_account,FOREIGN KEY,
+account_sessions,account_sessions_pkey,PRIMARY KEY,
+account_sessions,ux_account_sessions_refresh_token_hash,UNIQUE,
+account_sessions,ux_account_sessions_session_token_hash,UNIQUE,
+accounts,accounts_account_id_not_null,CHECK,account_id IS NOT NULL
+accounts,accounts_created_at_not_null,CHECK,created_at IS NOT NULL
+accounts,accounts_password_hash_not_null,CHECK,password_hash IS NOT NULL
+accounts,accounts_status_not_null,CHECK,status IS NOT NULL
+accounts,accounts_updated_at_not_null,CHECK,updated_at IS NOT NULL
+accounts,accounts_username_not_null,CHECK,username IS NOT NULL
+accounts,chk_accounts_status,CHECK,"((status)::text = ANY ((ARRAY['Active'::character varying, 'Suspended'::character varying, 'Banned'::character varying, 'Deleted'::character varying])::text[]))"
+accounts,accounts_pkey,PRIMARY KEY,
+accounts,ux_accounts_email,UNIQUE,
+accounts,ux_accounts_username,UNIQUE,
+achievement_progress,achievement_progress_account_id_not_null,CHECK,account_id IS NOT NULL
+achievement_progress,achievement_progress_achievement_id_not_null,CHECK,achievement_id IS NOT NULL
+achievement_progress,achievement_progress_achievement_progress_id_not_null,CHECK,achievement_progress_id IS NOT NULL
+achievement_progress,achievement_progress_created_at_not_null,CHECK,created_at IS NOT NULL
+achievement_progress,achievement_progress_current_value_not_null,CHECK,current_value IS NOT NULL
+achievement_progress,achievement_progress_is_completed_not_null,CHECK,is_completed IS NOT NULL
+achievement_progress,achievement_progress_updated_at_not_null,CHECK,updated_at IS NOT NULL
+achievement_progress,chk_achievement_progress_completion,CHECK,(((is_completed = false) AND (completed_at IS NULL)) OR ((is_completed = true) AND (completed_at IS NOT NULL)))
+achievement_progress,chk_achievement_progress_current_value,CHECK,(current_value >= 0)
+achievement_progress,fk_achievement_progress_account,FOREIGN KEY,
+achievement_progress,fk_achievement_progress_achievement,FOREIGN KEY,
+achievement_progress,achievement_progress_pkey,PRIMARY KEY,
+achievement_progress,ux_achievement_progress_account_achievement,UNIQUE,
+achievements,achievements_achievement_id_not_null,CHECK,achievement_id IS NOT NULL
+achievements,achievements_category_not_null,CHECK,category IS NOT NULL
+achievements,achievements_code_not_null,CHECK,code IS NOT NULL
+achievements,achievements_created_at_not_null,CHECK,created_at IS NOT NULL
+achievements,achievements_description_not_null,CHECK,description IS NOT NULL
+achievements,achievements_is_hidden_not_null,CHECK,is_hidden IS NOT NULL
+achievements,achievements_name_not_null,CHECK,name IS NOT NULL
+achievements,achievements_objective_type_not_null,CHECK,objective_type IS NOT NULL
+achievements,achievements_points_not_null,CHECK,points IS NOT NULL
+achievements,achievements_required_value_not_null,CHECK,required_value IS NOT NULL
+achievements,achievements_reward_attack_not_null,CHECK,reward_attack IS NOT NULL
+achievements,achievements_reward_defense_not_null,CHECK,reward_defense IS NOT NULL
+achievements,achievements_reward_experience_percent_not_null,CHECK,reward_experience_percent IS NOT NULL
+achievements,achievements_reward_gold_percent_not_null,CHECK,reward_gold_percent IS NOT NULL
+achievements,achievements_updated_at_not_null,CHECK,updated_at IS NOT NULL
+achievements,chk_achievements_category,CHECK,"((category)::text = ANY ((ARRAY['Combat'::character varying, 'Boss'::character varying, 'DailyBoss'::character varying, 'Level'::character varying, 'Gold'::character varying, 'Crafting'::character varying, 'Gathering'::character varying, 'Death'::character varying, 'Hardcore'::character varying, 'Unique'::character varying, 'Set'::character varying, 'HolyGrail'::character varying])::text[]))"
+achievements,chk_achievements_points,CHECK,(points >= 0)
+achievements,chk_achievements_required_value,CHECK,(required_value > 0)
+achievements,chk_achievements_reward_attack,CHECK,(reward_attack >= 0)
+achievements,chk_achievements_reward_defense,CHECK,(reward_defense >= 0)
+achievements,chk_achievements_reward_experience_percent,CHECK,(reward_experience_percent >= (0)::numeric)
+achievements,chk_achievements_reward_gold_percent,CHECK,(reward_gold_percent >= (0)::numeric)
+achievements,achievements_pkey,PRIMARY KEY,
+achievements,ux_achievements_code,UNIQUE,
+achievements,ux_achievements_name,UNIQUE,
+addon_definitions,addon_definitions_addon_definition_id_not_null,CHECK,addon_definition_id IS NOT NULL
+addon_definitions,addon_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+addon_definitions,addon_definitions_description_not_null,CHECK,description IS NOT NULL
+addon_definitions,addon_definitions_display_order_not_null,CHECK,display_order IS NOT NULL
+addon_definitions,addon_definitions_name_not_null,CHECK,name IS NOT NULL
+addon_definitions,addon_definitions_outfit_definition_id_not_null,CHECK,outfit_definition_id IS NOT NULL
+addon_definitions,addon_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+addon_definitions,chk_addon_definitions_display_order,CHECK,(display_order >= 0)
+addon_definitions,fk_addon_definitions_outfit,FOREIGN KEY,
+addon_definitions,addon_definitions_pkey,PRIMARY KEY,
+addon_definitions,ux_addon_definitions_outfit_name,UNIQUE,
+admin_actions,admin_actions_action_type_not_null,CHECK,action_type IS NOT NULL
+admin_actions,admin_actions_admin_action_id_not_null,CHECK,admin_action_id IS NOT NULL
+admin_actions,admin_actions_admin_user_not_null,CHECK,admin_user IS NOT NULL
+admin_actions,admin_actions_created_at_not_null,CHECK,created_at IS NOT NULL
+admin_actions,chk_admin_actions_target,CHECK,(((target_entity_type IS NULL) AND (target_entity_id IS NULL)) OR ((target_entity_type IS NOT NULL) AND (target_entity_id IS NOT NULL)))
+admin_actions,fk_admin_actions_account,FOREIGN KEY,
+admin_actions,admin_actions_pkey,PRIMARY KEY,
+affix_templates,affix_templates_affix_template_id_not_null,CHECK,affix_template_id IS NOT NULL
+affix_templates,affix_templates_affix_type_not_null,CHECK,affix_type IS NOT NULL
+affix_templates,affix_templates_created_at_not_null,CHECK,created_at IS NOT NULL
+affix_templates,affix_templates_max_value_not_null,CHECK,max_value IS NOT NULL
+affix_templates,affix_templates_min_value_not_null,CHECK,min_value IS NOT NULL
+affix_templates,affix_templates_required_item_level_not_null,CHECK,required_item_level IS NOT NULL
+affix_templates,affix_templates_tier_not_null,CHECK,tier IS NOT NULL
+affix_templates,affix_templates_updated_at_not_null,CHECK,updated_at IS NOT NULL
+affix_templates,chk_affix_templates_required_level,CHECK,(required_item_level >= 1)
+affix_templates,chk_affix_templates_tier,CHECK,(tier >= 1)
+affix_templates,chk_affix_templates_type,CHECK,"((affix_type)::text = ANY ((ARRAY['Attack'::character varying, 'Defense'::character varying, 'SpellPower'::character varying, 'Health'::character varying, 'Mana'::character varying, 'Energy'::character varying, 'GoldPercent'::character varying, 'ExperiencePercent'::character varying])::text[]))"
+affix_templates,chk_affix_templates_values,CHECK,((min_value >= (0)::numeric) AND (max_value >= min_value))
+affix_templates,affix_templates_pkey,PRIMARY KEY,
+affix_templates,ux_affix_templates_type_tier,UNIQUE,
+announcements,announcements_announcement_id_not_null,CHECK,announcement_id IS NOT NULL
+announcements,announcements_content_not_null,CHECK,content IS NOT NULL
+announcements,announcements_created_at_not_null,CHECK,created_at IS NOT NULL
+announcements,announcements_is_active_not_null,CHECK,is_active IS NOT NULL
+announcements,announcements_priority_not_null,CHECK,priority IS NOT NULL
+announcements,announcements_title_not_null,CHECK,title IS NOT NULL
+announcements,announcements_updated_at_not_null,CHECK,updated_at IS NOT NULL
+announcements,chk_announcements_expiration,CHECK,((expires_at IS NULL) OR (published_at IS NULL) OR (expires_at > published_at))
+announcements,chk_announcements_priority,CHECK,"((priority)::text = ANY ((ARRAY['Low'::character varying, 'Normal'::character varying, 'High'::character varying, 'Critical'::character varying])::text[]))"
+announcements,announcements_pkey,PRIMARY KEY,
+auction_history,auction_history_auction_history_id_not_null,CHECK,auction_history_id IS NOT NULL
+auction_history,auction_history_auction_listing_id_not_null,CHECK,auction_listing_id IS NOT NULL
+auction_history,auction_history_buyer_character_id_not_null,CHECK,buyer_character_id IS NOT NULL
+auction_history,auction_history_created_at_not_null,CHECK,created_at IS NOT NULL
+auction_history,auction_history_quantity_not_null,CHECK,quantity IS NOT NULL
+auction_history,auction_history_seller_character_id_not_null,CHECK,seller_character_id IS NOT NULL
+auction_history,auction_history_sold_at_not_null,CHECK,sold_at IS NOT NULL
+auction_history,auction_history_total_price_not_null,CHECK,total_price IS NOT NULL
+auction_history,auction_history_unit_price_not_null,CHECK,unit_price IS NOT NULL
+auction_history,chk_auction_history_asset,CHECK,(((((item_id IS NOT NULL))::integer + ((material_id IS NOT NULL))::integer) + ((consumable_definition_id IS NOT NULL))::integer) = 1)
+auction_history,chk_auction_history_characters,CHECK,(seller_character_id <> buyer_character_id)
+auction_history,chk_auction_history_prices,CHECK,((unit_price > 0) AND (total_price > 0) AND (total_price = (quantity * unit_price)))
+auction_history,chk_auction_history_quantity,CHECK,(quantity > 0)
+auction_history,fk_auction_history_buyer,FOREIGN KEY,
+auction_history,fk_auction_history_consumable,FOREIGN KEY,
+auction_history,fk_auction_history_item,FOREIGN KEY,
+auction_history,fk_auction_history_listing,FOREIGN KEY,
+auction_history,fk_auction_history_material,FOREIGN KEY,
+auction_history,fk_auction_history_seller,FOREIGN KEY,
+auction_history,auction_history_pkey,PRIMARY KEY,
+auction_listings,auction_listings_auction_listing_id_not_null,CHECK,auction_listing_id IS NOT NULL
+auction_listings,auction_listings_character_id_not_null,CHECK,character_id IS NOT NULL
+auction_listings,auction_listings_created_at_not_null,CHECK,created_at IS NOT NULL
+auction_listings,auction_listings_expires_at_not_null,CHECK,expires_at IS NOT NULL
+auction_listings,auction_listings_listing_fee_paid_not_null,CHECK,listing_fee_paid IS NOT NULL
+auction_listings,auction_listings_quantity_not_null,CHECK,quantity IS NOT NULL
+auction_listings,auction_listings_status_not_null,CHECK,status IS NOT NULL
+auction_listings,auction_listings_unit_price_not_null,CHECK,unit_price IS NOT NULL
+auction_listings,auction_listings_updated_at_not_null,CHECK,updated_at IS NOT NULL
+auction_listings,chk_auction_listings_asset,CHECK,(((((item_id IS NOT NULL))::integer + ((material_id IS NOT NULL))::integer) + ((consumable_definition_id IS NOT NULL))::integer) = 1)
+auction_listings,chk_auction_listings_expiration,CHECK,((expires_at > created_at) AND (expires_at <= (created_at + '24:00:00'::interval)))
+auction_listings,chk_auction_listings_fee,CHECK,(listing_fee_paid >= 0)
+auction_listings,chk_auction_listings_quantity,CHECK,(quantity > 0)
+auction_listings,chk_auction_listings_status,CHECK,"((status)::text = ANY ((ARRAY['Active'::character varying, 'Sold'::character varying, 'Expired'::character varying, 'Cancelled'::character varying])::text[]))"
+auction_listings,chk_auction_listings_unit_price,CHECK,(unit_price > 0)
+auction_listings,fk_auction_listings_character,FOREIGN KEY,
+auction_listings,fk_auction_listings_consumable,FOREIGN KEY,
+auction_listings,fk_auction_listings_item,FOREIGN KEY,
+auction_listings,fk_auction_listings_material,FOREIGN KEY,
+auction_listings,auction_listings_pkey,PRIMARY KEY,
+bestiary_entries,bestiary_entries_bestiary_entry_id_not_null,CHECK,bestiary_entry_id IS NOT NULL
+bestiary_entries,bestiary_entries_character_id_not_null,CHECK,character_id IS NOT NULL
+bestiary_entries,bestiary_entries_created_at_not_null,CHECK,created_at IS NOT NULL
+bestiary_entries,bestiary_entries_monster_id_not_null,CHECK,monster_id IS NOT NULL
+bestiary_entries,bestiary_entries_unlocked_at_not_null,CHECK,unlocked_at IS NOT NULL
+bestiary_entries,fk_bestiary_entries_character,FOREIGN KEY,
+bestiary_entries,fk_bestiary_entries_monster,FOREIGN KEY,
+bestiary_entries,bestiary_entries_pkey,PRIMARY KEY,
+bestiary_entries,ux_bestiary_entries_character_monster,UNIQUE,
+bestiary_statistics,bestiary_statistics_bestiary_statistics_id_not_null,CHECK,bestiary_statistics_id IS NOT NULL
+bestiary_statistics,bestiary_statistics_character_id_not_null,CHECK,character_id IS NOT NULL
+bestiary_statistics,bestiary_statistics_created_at_not_null,CHECK,created_at IS NOT NULL
+bestiary_statistics,bestiary_statistics_first_kill_at_not_null,CHECK,first_kill_at IS NOT NULL
+bestiary_statistics,bestiary_statistics_kill_count_not_null,CHECK,kill_count IS NOT NULL
+bestiary_statistics,bestiary_statistics_last_kill_at_not_null,CHECK,last_kill_at IS NOT NULL
+bestiary_statistics,bestiary_statistics_monster_id_not_null,CHECK,monster_id IS NOT NULL
+bestiary_statistics,bestiary_statistics_task_progress_not_null,CHECK,task_progress IS NOT NULL
+bestiary_statistics,bestiary_statistics_task_unlocked_not_null,CHECK,task_unlocked IS NOT NULL
+bestiary_statistics,bestiary_statistics_updated_at_not_null,CHECK,updated_at IS NOT NULL
+bestiary_statistics,chk_bestiary_statistics_dates,CHECK,(last_kill_at >= first_kill_at)
+bestiary_statistics,chk_bestiary_statistics_kill_count,CHECK,(kill_count >= 1)
+bestiary_statistics,chk_bestiary_statistics_task_progress,CHECK,(task_progress >= 0)
+bestiary_statistics,fk_bestiary_statistics_character,FOREIGN KEY,
+bestiary_statistics,fk_bestiary_statistics_monster,FOREIGN KEY,
+bestiary_statistics,bestiary_statistics_pkey,PRIMARY KEY,
+bestiary_statistics,ux_bestiary_statistics_character_monster,UNIQUE,
+bosses,bosses_additional_cooldown_seconds_not_null,CHECK,additional_cooldown_seconds IS NOT NULL
+bosses,bosses_boss_id_not_null,CHECK,boss_id IS NOT NULL
+bosses,bosses_boss_type_not_null,CHECK,boss_type IS NOT NULL
+bosses,bosses_created_at_not_null,CHECK,created_at IS NOT NULL
+bosses,bosses_loot_level_bonus_not_null,CHECK,loot_level_bonus IS NOT NULL
+bosses,bosses_monster_id_not_null,CHECK,monster_id IS NOT NULL
+bosses,bosses_unique_modifier_not_null,CHECK,unique_modifier IS NOT NULL
+bosses,bosses_updated_at_not_null,CHECK,updated_at IS NOT NULL
+bosses,chk_bosses_additional_cooldown,CHECK,(additional_cooldown_seconds >= 0)
+bosses,chk_bosses_loot_level_bonus,CHECK,(loot_level_bonus >= 0)
+bosses,chk_bosses_type,CHECK,"((boss_type)::text = ANY ((ARRAY['MiniBoss'::character varying, 'TaskBoss'::character varying, 'DailyBoss'::character varying])::text[]))"
+bosses,chk_bosses_unique_modifier,CHECK,(unique_modifier >= (0)::numeric)
+bosses,fk_bosses_monster,FOREIGN KEY,
+bosses,bosses_pkey,PRIMARY KEY,
+bosses,ux_bosses_monster_id,UNIQUE,
+character_buffs,character_buffs_applied_at_not_null,CHECK,applied_at IS NOT NULL
+character_buffs,character_buffs_buff_source_type_not_null,CHECK,buff_source_type IS NOT NULL
+character_buffs,character_buffs_buff_type_not_null,CHECK,buff_type IS NOT NULL
+character_buffs,character_buffs_character_buff_id_not_null,CHECK,character_buff_id IS NOT NULL
+character_buffs,character_buffs_character_id_not_null,CHECK,character_id IS NOT NULL
+character_buffs,character_buffs_created_at_not_null,CHECK,created_at IS NOT NULL
+character_buffs,character_buffs_duration_type_not_null,CHECK,duration_type IS NOT NULL
+character_buffs,character_buffs_is_positive_not_null,CHECK,is_positive IS NOT NULL
+character_buffs,character_buffs_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_buffs,character_buffs_value_not_null,CHECK,value IS NOT NULL
+character_buffs,chk_character_buffs_duration,CHECK,"((((duration_type)::text = ANY ((ARRAY['Turns'::character varying, 'Fights'::character varying])::text[])) AND (duration_remaining IS NOT NULL) AND (duration_remaining >= 0)) OR (((duration_type)::text = 'Permanent'::text) AND (duration_remaining IS NULL) AND (expires_at IS NULL)))"
+character_buffs,chk_character_buffs_duration_type,CHECK,"((duration_type)::text = ANY ((ARRAY['Turns'::character varying, 'Fights'::character varying, 'Permanent'::character varying])::text[]))"
+character_buffs,chk_character_buffs_expiration,CHECK,((expires_at IS NULL) OR (expires_at > applied_at))
+character_buffs,chk_character_buffs_source,CHECK,((((buff_source_type)::text = 'Consumable'::text) AND (consumable_definition_id IS NOT NULL) AND (spell_id IS NULL)) OR (((buff_source_type)::text = 'Spell'::text) AND (spell_id IS NOT NULL) AND (consumable_definition_id IS NULL)) OR (((buff_source_type)::text = 'System'::text) AND (consumable_definition_id IS NULL) AND (spell_id IS NULL)))
+character_buffs,chk_character_buffs_source_type,CHECK,"((buff_source_type)::text = ANY ((ARRAY['Consumable'::character varying, 'Spell'::character varying, 'System'::character varying])::text[]))"
+character_buffs,chk_character_buffs_type,CHECK,"((buff_type)::text = ANY ((ARRAY['GoldBoost'::character varying, 'ExperienceBoost'::character varying, 'AttackBuff'::character varying, 'DefenseBuff'::character varying, 'SpellPowerBuff'::character varying, 'DamageOverTime'::character varying, 'HealOverTime'::character varying, 'ManaDrain'::character varying, 'HealthDrain'::character varying, 'PotionDisable'::character varying])::text[]))"
+character_buffs,fk_character_buffs_character,FOREIGN KEY,
+character_buffs,fk_character_buffs_consumable,FOREIGN KEY,
+character_buffs,fk_character_buffs_spell,FOREIGN KEY,
+character_buffs,character_buffs_pkey,PRIMARY KEY,
+character_buffs,ux_character_buffs_character_type,UNIQUE,
+character_cooldowns,character_cooldowns_available_at_not_null,CHECK,available_at IS NOT NULL
+character_cooldowns,character_cooldowns_character_cooldown_id_not_null,CHECK,character_cooldown_id IS NOT NULL
+character_cooldowns,character_cooldowns_character_id_not_null,CHECK,character_id IS NOT NULL
+character_cooldowns,character_cooldowns_cooldown_type_not_null,CHECK,cooldown_type IS NOT NULL
+character_cooldowns,character_cooldowns_created_at_not_null,CHECK,created_at IS NOT NULL
+character_cooldowns,character_cooldowns_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_cooldowns,chk_character_cooldowns_target,CHECK,((((cooldown_type)::text = 'Monster'::text) AND (target_id IS NOT NULL)) OR (((cooldown_type)::text = 'NpcHealer'::text) AND (target_id IS NULL)))
+character_cooldowns,chk_character_cooldowns_type,CHECK,"((cooldown_type)::text = ANY ((ARRAY['Monster'::character varying, 'NpcHealer'::character varying])::text[]))"
+character_cooldowns,fk_character_cooldowns_character,FOREIGN KEY,
+character_cooldowns,fk_character_cooldowns_target,FOREIGN KEY,
+character_cooldowns,character_cooldowns_pkey,PRIMARY KEY,
+character_daily_boss_progress,character_daily_boss_progre_character_daily_boss_progr_not_null,CHECK,character_daily_boss_progress_id IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_attempts_date_not_null,CHECK,attempts_date IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_attempts_used_today_not_null,CHECK,attempts_used_today IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_character_id_not_null,CHECK,character_id IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_created_at_not_null,CHECK,created_at IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_daily_boss_definition_id_not_null,CHECK,daily_boss_definition_id IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_total_attempts_not_null,CHECK,total_attempts IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_total_victories_not_null,CHECK,total_victories IS NOT NULL
+character_daily_boss_progress,character_daily_boss_progress_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_daily_boss_progress,chk_character_daily_boss_attempts_today,CHECK,(attempts_used_today >= 0)
+character_daily_boss_progress,chk_character_daily_boss_highest_tier,CHECK,((highest_tier_defeated IS NULL) OR ((highest_tier_defeated >= 1) AND (highest_tier_defeated <= 3)))
+character_daily_boss_progress,chk_character_daily_boss_last_victory,CHECK,((last_victory_at IS NULL) OR ((last_attempt_at IS NOT NULL) AND (last_victory_at <= last_attempt_at)))
+character_daily_boss_progress,chk_character_daily_boss_totals,CHECK,((total_attempts >= 0) AND (total_victories >= 0) AND (total_victories <= total_attempts))
+character_daily_boss_progress,fk_character_daily_boss_progress_character,FOREIGN KEY,
+character_daily_boss_progress,fk_character_daily_boss_progress_definition,FOREIGN KEY,
+character_daily_boss_progress,character_daily_boss_progress_pkey,PRIMARY KEY,
+character_daily_boss_progress,ux_character_daily_boss_progress,UNIQUE,
+character_loadouts,character_loadouts_character_id_not_null,CHECK,character_id IS NOT NULL
+character_loadouts,character_loadouts_character_loadout_id_not_null,CHECK,character_loadout_id IS NOT NULL
+character_loadouts,character_loadouts_created_at_not_null,CHECK,created_at IS NOT NULL
+character_loadouts,character_loadouts_is_default_not_null,CHECK,is_default IS NOT NULL
+character_loadouts,character_loadouts_name_not_null,CHECK,name IS NOT NULL
+character_loadouts,character_loadouts_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_loadouts,chk_character_loadouts_distinct_spells,CHECK,(((spell_1_id IS NULL) OR (spell_2_id IS NULL) OR (spell_1_id <> spell_2_id)) AND ((spell_1_id IS NULL) OR (spell_3_id IS NULL) OR (spell_1_id <> spell_3_id)) AND ((spell_2_id IS NULL) OR (spell_3_id IS NULL) OR (spell_2_id <> spell_3_id)))
+character_loadouts,chk_character_loadouts_spell_order,CHECK,(((spell_2_id IS NULL) OR (spell_1_id IS NOT NULL)) AND ((spell_3_id IS NULL) OR (spell_2_id IS NOT NULL)))
+character_loadouts,fk_character_loadouts_character,FOREIGN KEY,
+character_loadouts,fk_character_loadouts_spell_1,FOREIGN KEY,
+character_loadouts,fk_character_loadouts_spell_2,FOREIGN KEY,
+character_loadouts,fk_character_loadouts_spell_3,FOREIGN KEY,
+character_loadouts,character_loadouts_pkey,PRIMARY KEY,
+character_loadouts,ux_character_loadouts_character_name,UNIQUE,
+character_spell_mastery,character_spell_mastery_character_id_not_null,CHECK,character_id IS NOT NULL
+character_spell_mastery,character_spell_mastery_character_spell_mastery_id_not_null,CHECK,character_spell_mastery_id IS NOT NULL
+character_spell_mastery,character_spell_mastery_created_at_not_null,CHECK,created_at IS NOT NULL
+character_spell_mastery,character_spell_mastery_current_spell_power_percent_not_null,CHECK,current_spell_power_percent IS NOT NULL
+character_spell_mastery,character_spell_mastery_mastery_experience_not_null,CHECK,mastery_experience IS NOT NULL
+character_spell_mastery,character_spell_mastery_mastery_level_not_null,CHECK,mastery_level IS NOT NULL
+character_spell_mastery,character_spell_mastery_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_spell_mastery,chk_character_spell_mastery_experience,CHECK,(mastery_experience >= 0)
+character_spell_mastery,chk_character_spell_mastery_level,CHECK,(mastery_level >= 1)
+character_spell_mastery,chk_character_spell_mastery_power,CHECK,(current_spell_power_percent >= (100)::numeric)
+character_spell_mastery,fk_character_spell_mastery_character,FOREIGN KEY,
+character_spell_mastery,character_spell_mastery_pkey,PRIMARY KEY,
+character_spell_mastery,ux_character_spell_mastery_character_id,UNIQUE,
+character_spells,character_spells_character_id_not_null,CHECK,character_id IS NOT NULL
+character_spells,character_spells_character_spell_id_not_null,CHECK,character_spell_id IS NOT NULL
+character_spells,character_spells_spell_id_not_null,CHECK,spell_id IS NOT NULL
+character_spells,character_spells_unlocked_at_not_null,CHECK,unlocked_at IS NOT NULL
+character_spells,fk_character_spells_character,FOREIGN KEY,
+character_spells,fk_character_spells_spell,FOREIGN KEY,
+character_spells,character_spells_pkey,PRIMARY KEY,
+character_spells,ux_character_spells_character_spell,UNIQUE,
+character_statistics,character_statistics_character_id_not_null,CHECK,character_id IS NOT NULL
+character_statistics,character_statistics_character_statistics_id_not_null,CHECK,character_statistics_id IS NOT NULL
+character_statistics,character_statistics_created_at_not_null,CHECK,created_at IS NOT NULL
+character_statistics,character_statistics_highest_gold_owned_not_null,CHECK,highest_gold_owned IS NOT NULL
+character_statistics,character_statistics_highest_physical_hit_not_null,CHECK,highest_physical_hit IS NOT NULL
+character_statistics,character_statistics_highest_spell_hit_not_null,CHECK,highest_spell_hit IS NOT NULL
+character_statistics,character_statistics_longest_no_death_streak_not_null,CHECK,longest_no_death_streak IS NOT NULL
+character_statistics,character_statistics_total_bosses_killed_not_null,CHECK,total_bosses_killed IS NOT NULL
+character_statistics,character_statistics_total_daily_bosses_killed_not_null,CHECK,total_daily_bosses_killed IS NOT NULL
+character_statistics,character_statistics_total_damage_dealt_not_null,CHECK,total_damage_dealt IS NOT NULL
+character_statistics,character_statistics_total_damage_taken_not_null,CHECK,total_damage_taken IS NOT NULL
+character_statistics,character_statistics_total_deaths_not_null,CHECK,total_deaths IS NOT NULL
+character_statistics,character_statistics_total_gold_earned_not_null,CHECK,total_gold_earned IS NOT NULL
+character_statistics,character_statistics_total_gold_spent_not_null,CHECK,total_gold_spent IS NOT NULL
+character_statistics,character_statistics_total_healing_done_not_null,CHECK,total_healing_done IS NOT NULL
+character_statistics,character_statistics_total_mana_spent_not_null,CHECK,total_mana_spent IS NOT NULL
+character_statistics,character_statistics_total_monsters_killed_not_null,CHECK,total_monsters_killed IS NOT NULL
+character_statistics,character_statistics_total_playtime_seconds_not_null,CHECK,total_playtime_seconds IS NOT NULL
+character_statistics,character_statistics_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_statistics,chk_character_statistics_kill_totals,CHECK,((total_bosses_killed <= total_monsters_killed) AND (total_daily_bosses_killed <= total_bosses_killed))
+character_statistics,chk_character_statistics_nonnegative,CHECK,((total_playtime_seconds >= 0) AND (total_gold_earned >= 0) AND (total_gold_spent >= 0) AND (highest_gold_owned >= 0) AND (total_monsters_killed >= 0) AND (total_bosses_killed >= 0) AND (total_daily_bosses_killed >= 0) AND (total_deaths >= 0) AND (total_damage_dealt >= 0) AND (total_damage_taken >= 0) AND (total_healing_done >= 0) AND (total_mana_spent >= 0) AND (highest_physical_hit >= 0) AND (highest_spell_hit >= 0) AND (longest_no_death_streak >= 0))
+character_statistics,fk_character_statistics_character,FOREIGN KEY,
+character_statistics,fk_character_statistics_strongest_boss,FOREIGN KEY,
+character_statistics,fk_character_statistics_strongest_monster,FOREIGN KEY,
+character_statistics,character_statistics_pkey,PRIMARY KEY,
+character_statistics,ux_character_statistics_character_id,UNIQUE,
+character_unlocks,character_unlocks_character_id_not_null,CHECK,character_id IS NOT NULL
+character_unlocks,character_unlocks_character_unlocks_id_not_null,CHECK,character_unlocks_id IS NOT NULL
+character_unlocks,character_unlocks_crafting_slots_unlocked_not_null,CHECK,crafting_slots_unlocked IS NOT NULL
+character_unlocks,character_unlocks_created_at_not_null,CHECK,created_at IS NOT NULL
+character_unlocks,character_unlocks_inventory_slots_not_null,CHECK,inventory_slots IS NOT NULL
+character_unlocks,character_unlocks_is_promoted_not_null,CHECK,is_promoted IS NOT NULL
+character_unlocks,character_unlocks_spell_slots_unlocked_not_null,CHECK,spell_slots_unlocked IS NOT NULL
+character_unlocks,character_unlocks_updated_at_not_null,CHECK,updated_at IS NOT NULL
+character_unlocks,chk_character_unlocks_crafting_slots,CHECK,((crafting_slots_unlocked >= 1) AND (crafting_slots_unlocked <= 3))
+character_unlocks,chk_character_unlocks_inventory_slots,CHECK,"(inventory_slots = ANY (ARRAY[50, 100]))"
+character_unlocks,chk_character_unlocks_spell_slots,CHECK,((spell_slots_unlocked >= 1) AND (spell_slots_unlocked <= 3))
+character_unlocks,fk_character_unlocks_character,FOREIGN KEY,
+character_unlocks,character_unlocks_pkey,PRIMARY KEY,
+character_unlocks,ux_character_unlocks_character_id,UNIQUE,
+characters,characters_account_id_not_null,CHECK,account_id IS NOT NULL
+characters,characters_character_id_not_null,CHECK,character_id IS NOT NULL
+characters,characters_crafting_level_not_null,CHECK,crafting_level IS NOT NULL
+characters,characters_crafting_xp_not_null,CHECK,crafting_xp IS NOT NULL
+characters,characters_created_at_not_null,CHECK,created_at IS NOT NULL
+characters,characters_current_energy_not_null,CHECK,current_energy IS NOT NULL
+characters,characters_current_health_not_null,CHECK,current_health IS NOT NULL
+characters,characters_current_mana_not_null,CHECK,current_mana IS NOT NULL
+characters,characters_experience_not_null,CHECK,experience IS NOT NULL
+characters,characters_gathering_level_not_null,CHECK,gathering_level IS NOT NULL
+characters,characters_gathering_xp_not_null,CHECK,gathering_xp IS NOT NULL
+characters,characters_gold_not_null,CHECK,gold IS NOT NULL
+characters,characters_level_not_null,CHECK,level IS NOT NULL
+characters,characters_max_energy_not_null,CHECK,max_energy IS NOT NULL
+characters,characters_max_health_not_null,CHECK,max_health IS NOT NULL
+characters,characters_max_mana_not_null,CHECK,max_mana IS NOT NULL
+characters,characters_name_not_null,CHECK,name IS NOT NULL
+characters,characters_status_not_null,CHECK,status IS NOT NULL
+characters,characters_updated_at_not_null,CHECK,updated_at IS NOT NULL
+characters,chk_characters_crafting,CHECK,(((crafting_level >= 1) AND (crafting_level <= 10)) AND (crafting_xp >= 0))
+characters,chk_characters_experience,CHECK,(experience >= 0)
+characters,chk_characters_gathering,CHECK,(((gathering_level >= 1) AND (gathering_level <= 10)) AND (gathering_xp >= 0))
+characters,chk_characters_gold,CHECK,(gold >= 0)
+characters,chk_characters_level,CHECK,(level >= 1)
+characters,chk_characters_max_resources,CHECK,((max_health > 0) AND (max_mana >= 0) AND (max_energy > 0))
+characters,chk_characters_resources,CHECK,((current_health >= 0) AND (current_health <= max_health) AND (current_mana >= 0) AND (current_mana <= max_mana) AND (current_energy >= 0) AND (current_energy <= max_energy))
+characters,chk_characters_status,CHECK,"((status)::text = ANY ((ARRAY['IsActive'::character varying, 'Archived'::character varying])::text[]))"
+characters,fk_characters_account,FOREIGN KEY,
+characters,fk_characters_season,FOREIGN KEY,
+characters,characters_pkey,PRIMARY KEY,
+characters,ux_characters_name,UNIQUE,
+chest_definitions,chest_definitions_chest_definition_id_not_null,CHECK,chest_definition_id IS NOT NULL
+chest_definitions,chest_definitions_cooldown_seconds_not_null,CHECK,cooldown_seconds IS NOT NULL
+chest_definitions,chest_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+chest_definitions,chest_definitions_is_enabled_not_null,CHECK,is_enabled IS NOT NULL
+chest_definitions,chest_definitions_name_not_null,CHECK,name IS NOT NULL
+chest_definitions,chest_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+chest_definitions,chk_chest_definitions_cooldown,CHECK,(cooldown_seconds > 0)
+chest_definitions,chk_chest_definitions_name,CHECK,"((name)::text = ANY ((ARRAY['HourlyChest'::character varying, 'DailyChest'::character varying])::text[]))"
+chest_definitions,chest_definitions_pkey,PRIMARY KEY,
+chest_definitions,chest_definitions_name_key,UNIQUE,
+chest_reward_definitions,chest_reward_definitions_chance_percent_not_null,CHECK,chance_percent IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_chest_definition_id_not_null,CHECK,chest_definition_id IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_chest_reward_definition_id_not_null,CHECK,chest_reward_definition_id IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_max_quantity_not_null,CHECK,max_quantity IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_min_quantity_not_null,CHECK,min_quantity IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_minimum_character_level_not_null,CHECK,minimum_character_level IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_reward_type_not_null,CHECK,reward_type IS NOT NULL
+chest_reward_definitions,chest_reward_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+chest_reward_definitions,chk_chest_reward_definitions_chance,CHECK,((chance_percent > (0)::numeric) AND (chance_percent <= (100)::numeric))
+chest_reward_definitions,chk_chest_reward_definitions_levels,CHECK,((minimum_character_level >= 1) AND ((maximum_character_level IS NULL) OR (maximum_character_level >= minimum_character_level)))
+chest_reward_definitions,chk_chest_reward_definitions_quantity,CHECK,((min_quantity >= 1) AND (max_quantity >= min_quantity))
+chest_reward_definitions,chk_chest_reward_definitions_type,CHECK,"((reward_type)::text = ANY ((ARRAY['Gold'::character varying, 'Item'::character varying, 'Material'::character varying, 'Consumable'::character varying, 'Blessing'::character varying, 'ProtectionStone'::character varying, 'UniqueRoll'::character varying, 'SetRoll'::character varying])::text[]))"
+chest_reward_definitions,fk_chest_reward_definitions_chest,FOREIGN KEY,
+chest_reward_definitions,chest_reward_definitions_pkey,PRIMARY KEY,
+combat_effects,chk_combat_effects_source,CHECK,((((source_type)::text = 'Spell'::text) AND (spell_id IS NOT NULL) AND (consumable_definition_id IS NULL)) OR (((source_type)::text = 'Consumable'::text) AND (consumable_definition_id IS NOT NULL) AND (spell_id IS NULL)) OR (((source_type)::text = 'System'::text) AND (spell_id IS NULL) AND (consumable_definition_id IS NULL)))
+combat_effects,chk_combat_effects_source_type,CHECK,"((source_type)::text = ANY ((ARRAY['Spell'::character varying, 'Consumable'::character varying, 'System'::character varying])::text[]))"
+combat_effects,chk_combat_effects_target,CHECK,"((target_type)::text = ANY ((ARRAY['Character'::character varying, 'Monster'::character varying])::text[]))"
+combat_effects,chk_combat_effects_turns,CHECK,(remaining_turns >= 0)
+combat_effects,chk_combat_effects_type,CHECK,"((effect_type)::text = ANY ((ARRAY['DamageOverTime'::character varying, 'HealOverTime'::character varying, 'AttackBuff'::character varying, 'DefenseBuff'::character varying, 'SpellPowerBuff'::character varying, 'AttackDebuff'::character varying, 'DefenseDebuff'::character varying, 'SpellPowerDebuff'::character varying, 'ManaDrain'::character varying, 'HealthDrain'::character varying, 'PotionDisable'::character varying])::text[]))"
+combat_effects,combat_effects_applied_at_not_null,CHECK,applied_at IS NOT NULL
+combat_effects,combat_effects_combat_effect_id_not_null,CHECK,combat_effect_id IS NOT NULL
+combat_effects,combat_effects_combat_session_id_not_null,CHECK,combat_session_id IS NOT NULL
+combat_effects,combat_effects_created_at_not_null,CHECK,created_at IS NOT NULL
+combat_effects,combat_effects_effect_type_not_null,CHECK,effect_type IS NOT NULL
+combat_effects,combat_effects_remaining_turns_not_null,CHECK,remaining_turns IS NOT NULL
+combat_effects,combat_effects_source_type_not_null,CHECK,source_type IS NOT NULL
+combat_effects,combat_effects_target_type_not_null,CHECK,target_type IS NOT NULL
+combat_effects,combat_effects_value_not_null,CHECK,value IS NOT NULL
+combat_effects,fk_combat_effects_consumable,FOREIGN KEY,
+combat_effects,fk_combat_effects_session,FOREIGN KEY,
+combat_effects,fk_combat_effects_spell,FOREIGN KEY,
+combat_effects,combat_effects_pkey,PRIMARY KEY,
+combat_effects,ux_combat_effects_session_type_target,UNIQUE,
+combat_logs,chk_combat_logs_dates,CHECK,(ended_at >= started_at)
+combat_logs,chk_combat_logs_result,CHECK,"((combat_result)::text = ANY ((ARRAY['Victory'::character varying, 'Defeat'::character varying])::text[]))"
+combat_logs,chk_combat_logs_turn_count,CHECK,(turn_count >= 1)
+combat_logs,combat_logs_character_id_not_null,CHECK,character_id IS NOT NULL
+combat_logs,combat_logs_combat_data_json_not_null,CHECK,combat_data_json IS NOT NULL
+combat_logs,combat_logs_combat_log_id_not_null,CHECK,combat_log_id IS NOT NULL
+combat_logs,combat_logs_combat_result_not_null,CHECK,combat_result IS NOT NULL
+combat_logs,combat_logs_combat_session_id_not_null,CHECK,combat_session_id IS NOT NULL
+combat_logs,combat_logs_created_at_not_null,CHECK,created_at IS NOT NULL
+combat_logs,combat_logs_ended_at_not_null,CHECK,ended_at IS NOT NULL
+combat_logs,combat_logs_monster_id_not_null,CHECK,monster_id IS NOT NULL
+combat_logs,combat_logs_started_at_not_null,CHECK,started_at IS NOT NULL
+combat_logs,combat_logs_turn_count_not_null,CHECK,turn_count IS NOT NULL
+combat_logs,fk_combat_logs_character,FOREIGN KEY,
+combat_logs,fk_combat_logs_monster,FOREIGN KEY,
+combat_logs,fk_combat_logs_session,FOREIGN KEY,
+combat_logs,combat_logs_pkey,PRIMARY KEY,
+combat_logs,combat_logs_combat_session_id_key,UNIQUE,
+combat_sessions,chk_combat_sessions_end_state,CHECK,((((status)::text = 'Active'::text) AND (ended_at IS NULL)) OR (((status)::text <> 'Active'::text) AND (ended_at IS NOT NULL) AND (ended_at >= started_at)))
+combat_sessions,chk_combat_sessions_resources,CHECK,((character_health >= 0) AND (character_mana >= 0) AND (monster_health >= 0))
+combat_sessions,chk_combat_sessions_status,CHECK,"((status)::text = ANY ((ARRAY['Active'::character varying, 'Victory'::character varying, 'Defeat'::character varying, 'Abandoned'::character varying])::text[]))"
+combat_sessions,chk_combat_sessions_turn,CHECK,(current_turn >= 1)
+combat_sessions,combat_sessions_character_health_not_null,CHECK,character_health IS NOT NULL
+combat_sessions,combat_sessions_character_id_not_null,CHECK,character_id IS NOT NULL
+combat_sessions,combat_sessions_character_mana_not_null,CHECK,character_mana IS NOT NULL
+combat_sessions,combat_sessions_combat_session_id_not_null,CHECK,combat_session_id IS NOT NULL
+combat_sessions,combat_sessions_created_at_not_null,CHECK,created_at IS NOT NULL
+combat_sessions,combat_sessions_current_turn_not_null,CHECK,current_turn IS NOT NULL
+combat_sessions,combat_sessions_monster_health_not_null,CHECK,monster_health IS NOT NULL
+combat_sessions,combat_sessions_monster_id_not_null,CHECK,monster_id IS NOT NULL
+combat_sessions,combat_sessions_started_at_not_null,CHECK,started_at IS NOT NULL
+combat_sessions,combat_sessions_status_not_null,CHECK,status IS NOT NULL
+combat_sessions,combat_sessions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+combat_sessions,fk_combat_sessions_character,FOREIGN KEY,
+combat_sessions,fk_combat_sessions_monster,FOREIGN KEY,
+combat_sessions,combat_sessions_pkey,PRIMARY KEY,
+combat_spell_cooldowns,chk_combat_spell_cooldowns_turns,CHECK,(remaining_turns >= 0)
+combat_spell_cooldowns,combat_spell_cooldowns_combat_session_id_not_null,CHECK,combat_session_id IS NOT NULL
+combat_spell_cooldowns,combat_spell_cooldowns_combat_spell_cooldown_id_not_null,CHECK,combat_spell_cooldown_id IS NOT NULL
+combat_spell_cooldowns,combat_spell_cooldowns_created_at_not_null,CHECK,created_at IS NOT NULL
+combat_spell_cooldowns,combat_spell_cooldowns_remaining_turns_not_null,CHECK,remaining_turns IS NOT NULL
+combat_spell_cooldowns,combat_spell_cooldowns_spell_id_not_null,CHECK,spell_id IS NOT NULL
+combat_spell_cooldowns,fk_combat_spell_cooldowns_session,FOREIGN KEY,
+combat_spell_cooldowns,fk_combat_spell_cooldowns_spell,FOREIGN KEY,
+combat_spell_cooldowns,combat_spell_cooldowns_pkey,PRIMARY KEY,
+combat_spell_cooldowns,ux_combat_spell_cooldowns_session_spell,UNIQUE,
+consumable_definitions,chk_consumable_definitions_category,CHECK,"((category)::text = ANY ((ARRAY['HealthPotion'::character varying, 'ManaPotion'::character varying, 'EnergyPotion'::character varying, 'GoldBoost'::character varying, 'ExperienceBoost'::character varying, 'Blessing'::character varying, 'ProtectionStone'::character varying])::text[]))"
+consumable_definitions,chk_consumable_definitions_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+consumable_definitions,chk_consumable_definitions_duration_type,CHECK,"((duration_type)::text = ANY ((ARRAY['Instant'::character varying, 'Fights'::character varying, 'Passive'::character varying])::text[]))"
+consumable_definitions,chk_consumable_definitions_duration_value,CHECK,"((((duration_type)::text = 'Instant'::text) AND (duration_value IS NULL)) OR (((duration_type)::text = ANY ((ARRAY['Fights'::character varying, 'Passive'::character varying])::text[])) AND (duration_value IS NOT NULL) AND (duration_value > 0)))"
+consumable_definitions,chk_consumable_definitions_effect_type,CHECK,"((effect_type)::text = ANY ((ARRAY['RestoreHealth'::character varying, 'RestoreMana'::character varying, 'RestoreEnergy'::character varying, 'GoldBonus'::character varying, 'ExperienceBonus'::character varying, 'Blessing'::character varying, 'UpgradeProtection'::character varying])::text[]))"
+consumable_definitions,chk_consumable_definitions_effect_value,CHECK,(effect_value >= (0)::numeric)
+consumable_definitions,chk_consumable_definitions_potion_cooldown,CHECK,(potion_cooldown_turns >= 0)
+consumable_definitions,chk_consumable_definitions_stack_size,CHECK,((max_stack_size >= 1) AND (max_stack_size <= 999))
+consumable_definitions,chk_consumable_definitions_tier,CHECK,"((tier)::text = ANY ((ARRAY['Small'::character varying, 'Medium'::character varying, 'Large'::character varying, 'Grand'::character varying, 'Ultimate'::character varying, 'None'::character varying])::text[]))"
+consumable_definitions,consumable_definitions_category_not_null,CHECK,category IS NOT NULL
+consumable_definitions,consumable_definitions_code_not_null,CHECK,code IS NOT NULL
+consumable_definitions,consumable_definitions_consumable_definition_id_not_null,CHECK,consumable_definition_id IS NOT NULL
+consumable_definitions,consumable_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+consumable_definitions,consumable_definitions_description_not_null,CHECK,description IS NOT NULL
+consumable_definitions,consumable_definitions_duration_type_not_null,CHECK,duration_type IS NOT NULL
+consumable_definitions,consumable_definitions_effect_type_not_null,CHECK,effect_type IS NOT NULL
+consumable_definitions,consumable_definitions_effect_value_not_null,CHECK,effect_value IS NOT NULL
+consumable_definitions,consumable_definitions_is_tradable_not_null,CHECK,is_tradable IS NOT NULL
+consumable_definitions,consumable_definitions_max_stack_size_not_null,CHECK,max_stack_size IS NOT NULL
+consumable_definitions,consumable_definitions_name_not_null,CHECK,name IS NOT NULL
+consumable_definitions,consumable_definitions_potion_cooldown_turns_not_null,CHECK,potion_cooldown_turns IS NOT NULL
+consumable_definitions,consumable_definitions_tier_not_null,CHECK,tier IS NOT NULL
+consumable_definitions,consumable_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+consumable_definitions,consumable_definitions_pkey,PRIMARY KEY,
+consumable_definitions,ux_consumable_definitions_code,UNIQUE,
+consumable_definitions,ux_consumable_definitions_name,UNIQUE,
+consumable_storage,chk_consumable_storage_quantity,CHECK,(quantity >= 0)
+consumable_storage,consumable_storage_character_id_not_null,CHECK,character_id IS NOT NULL
+consumable_storage,consumable_storage_consumable_definition_id_not_null,CHECK,consumable_definition_id IS NOT NULL
+consumable_storage,consumable_storage_consumable_storage_id_not_null,CHECK,consumable_storage_id IS NOT NULL
+consumable_storage,consumable_storage_quantity_not_null,CHECK,quantity IS NOT NULL
+consumable_storage,consumable_storage_updated_at_not_null,CHECK,updated_at IS NOT NULL
+consumable_storage,fk_consumable_storage_character,FOREIGN KEY,
+consumable_storage,fk_consumable_storage_definition,FOREIGN KEY,
+consumable_storage,consumable_storage_pkey,PRIMARY KEY,
+consumable_storage,ux_consumable_storage_character_definition,UNIQUE,
+crafting_history,chk_crafting_history_quantity,CHECK,(quantity_crafted > 0)
+crafting_history,chk_crafting_history_xp,CHECK,(crafting_xp_earned >= 0)
+crafting_history,crafting_history_character_id_not_null,CHECK,character_id IS NOT NULL
+crafting_history,crafting_history_completed_at_not_null,CHECK,completed_at IS NOT NULL
+crafting_history,crafting_history_crafting_history_id_not_null,CHECK,crafting_history_id IS NOT NULL
+crafting_history,crafting_history_crafting_xp_earned_not_null,CHECK,crafting_xp_earned IS NOT NULL
+crafting_history,crafting_history_created_at_not_null,CHECK,created_at IS NOT NULL
+crafting_history,crafting_history_quantity_crafted_not_null,CHECK,quantity_crafted IS NOT NULL
+crafting_history,crafting_history_recipe_id_not_null,CHECK,recipe_id IS NOT NULL
+crafting_history,fk_crafting_history_character,FOREIGN KEY,
+crafting_history,fk_crafting_history_recipe,FOREIGN KEY,
+crafting_history,crafting_history_pkey,PRIMARY KEY,
+crafting_queue,chk_crafting_queue_dates,CHECK,"(((started_at IS NULL) AND ((status)::text = ANY ((ARRAY['Pending'::character varying, 'Cancelled'::character varying])::text[]))) OR ((started_at IS NOT NULL) AND (completes_at > started_at)))"
+crafting_queue,chk_crafting_queue_quantity,CHECK,(quantity > 0)
+crafting_queue,chk_crafting_queue_slot,CHECK,((crafting_slot >= 1) AND (crafting_slot <= 3))
+crafting_queue,chk_crafting_queue_status,CHECK,"((status)::text = ANY ((ARRAY['Pending'::character varying, 'Active'::character varying, 'Completed'::character varying, 'Cancelled'::character varying])::text[]))"
+crafting_queue,crafting_queue_character_id_not_null,CHECK,character_id IS NOT NULL
+crafting_queue,crafting_queue_completes_at_not_null,CHECK,completes_at IS NOT NULL
+crafting_queue,crafting_queue_crafting_queue_id_not_null,CHECK,crafting_queue_id IS NOT NULL
+crafting_queue,crafting_queue_crafting_slot_not_null,CHECK,crafting_slot IS NOT NULL
+crafting_queue,crafting_queue_created_at_not_null,CHECK,created_at IS NOT NULL
+crafting_queue,crafting_queue_quantity_not_null,CHECK,quantity IS NOT NULL
+crafting_queue,crafting_queue_recipe_id_not_null,CHECK,recipe_id IS NOT NULL
+crafting_queue,crafting_queue_status_not_null,CHECK,status IS NOT NULL
+crafting_queue,fk_crafting_queue_character,FOREIGN KEY,
+crafting_queue,fk_crafting_queue_recipe,FOREIGN KEY,
+crafting_queue,crafting_queue_pkey,PRIMARY KEY,
+daily_boss_definitions,chk_daily_boss_definitions_attempts,CHECK,(attempts_per_day >= 1)
+daily_boss_definitions,chk_daily_boss_definitions_recommended_level,CHECK,(recommended_level >= 1)
+daily_boss_definitions,chk_daily_boss_definitions_tier,CHECK,((tier >= 1) AND (tier <= 3))
+daily_boss_definitions,daily_boss_definitions_attempts_per_day_not_null,CHECK,attempts_per_day IS NOT NULL
+daily_boss_definitions,daily_boss_definitions_boss_id_not_null,CHECK,boss_id IS NOT NULL
+daily_boss_definitions,daily_boss_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+daily_boss_definitions,daily_boss_definitions_daily_boss_definition_id_not_null,CHECK,daily_boss_definition_id IS NOT NULL
+daily_boss_definitions,daily_boss_definitions_recommended_level_not_null,CHECK,recommended_level IS NOT NULL
+daily_boss_definitions,daily_boss_definitions_tier_not_null,CHECK,tier IS NOT NULL
+daily_boss_definitions,daily_boss_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+daily_boss_definitions,fk_daily_boss_definitions_boss,FOREIGN KEY,
+daily_boss_definitions,daily_boss_definitions_pkey,PRIMARY KEY,
+daily_boss_definitions,ux_daily_boss_definitions_boss_id,UNIQUE,
+daily_boss_pools,chk_daily_boss_pools_tier,CHECK,((tier >= 1) AND (tier <= 3))
+daily_boss_pools,daily_boss_pools_created_at_not_null,CHECK,created_at IS NOT NULL
+daily_boss_pools,daily_boss_pools_daily_boss_definition_id_not_null,CHECK,daily_boss_definition_id IS NOT NULL
+daily_boss_pools,daily_boss_pools_daily_boss_pool_id_not_null,CHECK,daily_boss_pool_id IS NOT NULL
+daily_boss_pools,daily_boss_pools_is_active_not_null,CHECK,is_active IS NOT NULL
+daily_boss_pools,daily_boss_pools_tier_not_null,CHECK,tier IS NOT NULL
+daily_boss_pools,fk_daily_boss_pools_definition,FOREIGN KEY,
+daily_boss_pools,daily_boss_pools_pkey,PRIMARY KEY,
+daily_boss_pools,ux_daily_boss_pools_tier_definition,UNIQUE,
+daily_boss_rotation,chk_daily_boss_rotation_distinct,CHECK,((tier_1_boss_id <> tier_2_boss_id) AND (tier_1_boss_id <> tier_3_boss_id) AND (tier_2_boss_id <> tier_3_boss_id))
+daily_boss_rotation,daily_boss_rotation_created_at_not_null,CHECK,created_at IS NOT NULL
+daily_boss_rotation,daily_boss_rotation_daily_boss_rotation_id_not_null,CHECK,daily_boss_rotation_id IS NOT NULL
+daily_boss_rotation,daily_boss_rotation_reset_timestamp_not_null,CHECK,reset_timestamp IS NOT NULL
+daily_boss_rotation,daily_boss_rotation_tier_1_boss_id_not_null,CHECK,tier_1_boss_id IS NOT NULL
+daily_boss_rotation,daily_boss_rotation_tier_2_boss_id_not_null,CHECK,tier_2_boss_id IS NOT NULL
+daily_boss_rotation,daily_boss_rotation_tier_3_boss_id_not_null,CHECK,tier_3_boss_id IS NOT NULL
+daily_boss_rotation,fk_daily_boss_rotation_tier_1,FOREIGN KEY,
+daily_boss_rotation,fk_daily_boss_rotation_tier_2,FOREIGN KEY,
+daily_boss_rotation,fk_daily_boss_rotation_tier_3,FOREIGN KEY,
+daily_boss_rotation,daily_boss_rotation_pkey,PRIMARY KEY,
+daily_chest_progress,chk_daily_chest_progress_claim_state,CHECK,(((total_claims = 0) AND (last_claimed_at IS NULL)) OR ((total_claims > 0) AND (last_claimed_at IS NOT NULL)))
+daily_chest_progress,chk_daily_chest_progress_claims,CHECK,(total_claims >= 0)
+daily_chest_progress,daily_chest_progress_character_id_not_null,CHECK,character_id IS NOT NULL
+daily_chest_progress,daily_chest_progress_created_at_not_null,CHECK,created_at IS NOT NULL
+daily_chest_progress,daily_chest_progress_daily_chest_progress_id_not_null,CHECK,daily_chest_progress_id IS NOT NULL
+daily_chest_progress,daily_chest_progress_is_available_not_null,CHECK,is_available IS NOT NULL
+daily_chest_progress,daily_chest_progress_next_available_at_not_null,CHECK,next_available_at IS NOT NULL
+daily_chest_progress,daily_chest_progress_total_claims_not_null,CHECK,total_claims IS NOT NULL
+daily_chest_progress,daily_chest_progress_updated_at_not_null,CHECK,updated_at IS NOT NULL
+daily_chest_progress,fk_daily_chest_progress_character,FOREIGN KEY,
+daily_chest_progress,daily_chest_progress_pkey,PRIMARY KEY,
+daily_chest_progress,daily_chest_progress_character_id_key,UNIQUE,
+equipment_loadouts,equipment_loadouts_character_id_not_null,CHECK,character_id IS NOT NULL
+equipment_loadouts,equipment_loadouts_created_at_not_null,CHECK,created_at IS NOT NULL
+equipment_loadouts,equipment_loadouts_equipment_loadout_id_not_null,CHECK,equipment_loadout_id IS NOT NULL
+equipment_loadouts,equipment_loadouts_is_default_not_null,CHECK,is_default IS NOT NULL
+equipment_loadouts,equipment_loadouts_name_not_null,CHECK,name IS NOT NULL
+equipment_loadouts,equipment_loadouts_updated_at_not_null,CHECK,updated_at IS NOT NULL
+equipment_loadouts,fk_equipment_loadouts_amulet,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_armor,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_boots,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_character,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_helmet,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_legs,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_ring,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_shield,FOREIGN KEY,
+equipment_loadouts,fk_equipment_loadouts_weapon,FOREIGN KEY,
+equipment_loadouts,equipment_loadouts_pkey,PRIMARY KEY,
+equipment_loadouts,ux_equipment_loadouts_character_name,UNIQUE,
+friend_requests,chk_friend_requests_not_self,CHECK,(sender_account_id <> recipient_account_id)
+friend_requests,chk_friend_requests_response,CHECK,((((status)::text = 'Pending'::text) AND (responded_at IS NULL)) OR (((status)::text <> 'Pending'::text) AND (responded_at IS NOT NULL) AND (responded_at >= sent_at)))
+friend_requests,chk_friend_requests_status,CHECK,"((status)::text = ANY ((ARRAY['Pending'::character varying, 'Accepted'::character varying, 'Rejected'::character varying, 'Cancelled'::character varying])::text[]))"
+friend_requests,friend_requests_created_at_not_null,CHECK,created_at IS NOT NULL
+friend_requests,friend_requests_friend_request_id_not_null,CHECK,friend_request_id IS NOT NULL
+friend_requests,friend_requests_recipient_account_id_not_null,CHECK,recipient_account_id IS NOT NULL
+friend_requests,friend_requests_sender_account_id_not_null,CHECK,sender_account_id IS NOT NULL
+friend_requests,friend_requests_sent_at_not_null,CHECK,sent_at IS NOT NULL
+friend_requests,friend_requests_status_not_null,CHECK,status IS NOT NULL
+friend_requests,fk_friend_requests_recipient,FOREIGN KEY,
+friend_requests,fk_friend_requests_sender,FOREIGN KEY,
+friend_requests,friend_requests_pkey,PRIMARY KEY,
+gathering_results,chk_gathering_results_quantity,CHECK,(quantity > 0)
+gathering_results,chk_gathering_results_rolls,CHECK,(successful_rolls > 0)
+gathering_results,gathering_results_created_at_not_null,CHECK,created_at IS NOT NULL
+gathering_results,gathering_results_gathering_result_id_not_null,CHECK,gathering_result_id IS NOT NULL
+gathering_results,gathering_results_gathering_session_id_not_null,CHECK,gathering_session_id IS NOT NULL
+gathering_results,gathering_results_material_id_not_null,CHECK,material_id IS NOT NULL
+gathering_results,gathering_results_quantity_not_null,CHECK,quantity IS NOT NULL
+gathering_results,gathering_results_successful_rolls_not_null,CHECK,successful_rolls IS NOT NULL
+gathering_results,fk_gathering_results_material,FOREIGN KEY,
+gathering_results,fk_gathering_results_session,FOREIGN KEY,
+gathering_results,gathering_results_pkey,PRIMARY KEY,
+gathering_results,ux_gathering_results_session_material,UNIQUE,
+gathering_sessions,chk_gathering_sessions_end_state,CHECK,((((status)::text = 'Active'::text) AND (ended_at IS NULL)) OR (((status)::text <> 'Active'::text) AND (ended_at IS NOT NULL) AND (ended_at >= started_at)))
+gathering_sessions,chk_gathering_sessions_level,CHECK,(gathering_level_at_start >= 1)
+gathering_sessions,chk_gathering_sessions_minutes,CHECK,((total_minutes_gathered >= 0) AND (total_minutes_gathered <= 1440))
+gathering_sessions,chk_gathering_sessions_status,CHECK,"((status)::text = ANY ((ARRAY['Active'::character varying, 'Completed'::character varying, 'Cancelled'::character varying])::text[]))"
+gathering_sessions,chk_gathering_sessions_xp,CHECK,(experience_earned >= 0)
+gathering_sessions,gathering_sessions_character_id_not_null,CHECK,character_id IS NOT NULL
+gathering_sessions,gathering_sessions_created_at_not_null,CHECK,created_at IS NOT NULL
+gathering_sessions,gathering_sessions_experience_earned_not_null,CHECK,experience_earned IS NOT NULL
+gathering_sessions,gathering_sessions_gathering_level_at_start_not_null,CHECK,gathering_level_at_start IS NOT NULL
+gathering_sessions,gathering_sessions_gathering_session_id_not_null,CHECK,gathering_session_id IS NOT NULL
+gathering_sessions,gathering_sessions_results_collected_not_null,CHECK,results_collected IS NOT NULL
+gathering_sessions,gathering_sessions_started_at_not_null,CHECK,started_at IS NOT NULL
+gathering_sessions,gathering_sessions_status_not_null,CHECK,status IS NOT NULL
+gathering_sessions,gathering_sessions_total_minutes_gathered_not_null,CHECK,total_minutes_gathered IS NOT NULL
+gathering_sessions,gathering_sessions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+gathering_sessions,fk_gathering_sessions_character,FOREIGN KEY,
+gathering_sessions,gathering_sessions_pkey,PRIMARY KEY,
+hall_of_fame,chk_hall_of_fame_deaths,CHECK,(total_deaths >= 0)
+hall_of_fame,chk_hall_of_fame_experience,CHECK,(final_experience >= 0)
+hall_of_fame,chk_hall_of_fame_grail,CHECK,((holy_grail_percent >= (0)::numeric) AND (holy_grail_percent <= (100)::numeric))
+hall_of_fame,chk_hall_of_fame_level,CHECK,(final_level >= 1)
+hall_of_fame,chk_hall_of_fame_playtime,CHECK,(total_playtime_seconds >= 0)
+hall_of_fame,chk_hall_of_fame_rank,CHECK,(rank_position >= 1)
+hall_of_fame,chk_hall_of_fame_score,CHECK,(achievement_score >= 0)
+hall_of_fame,hall_of_fame_achievement_score_not_null,CHECK,achievement_score IS NOT NULL
+hall_of_fame,hall_of_fame_character_name_not_null,CHECK,character_name IS NOT NULL
+hall_of_fame,hall_of_fame_created_at_not_null,CHECK,created_at IS NOT NULL
+hall_of_fame,hall_of_fame_final_experience_not_null,CHECK,final_experience IS NOT NULL
+hall_of_fame,hall_of_fame_final_level_not_null,CHECK,final_level IS NOT NULL
+hall_of_fame,hall_of_fame_hall_of_fame_id_not_null,CHECK,hall_of_fame_id IS NOT NULL
+hall_of_fame,hall_of_fame_holy_grail_percent_not_null,CHECK,holy_grail_percent IS NOT NULL
+hall_of_fame,hall_of_fame_rank_position_not_null,CHECK,rank_position IS NOT NULL
+hall_of_fame,hall_of_fame_recorded_at_not_null,CHECK,recorded_at IS NOT NULL
+hall_of_fame,hall_of_fame_season_id_not_null,CHECK,season_id IS NOT NULL
+hall_of_fame,hall_of_fame_total_deaths_not_null,CHECK,total_deaths IS NOT NULL
+hall_of_fame,hall_of_fame_total_playtime_seconds_not_null,CHECK,total_playtime_seconds IS NOT NULL
+hall_of_fame,fk_hall_of_fame_character,FOREIGN KEY,
+hall_of_fame,fk_hall_of_fame_season,FOREIGN KEY,
+hall_of_fame,hall_of_fame_pkey,PRIMARY KEY,
+hall_of_fame,ux_hall_of_fame_season_rank,UNIQUE,
+holy_grail_entries,chk_holy_grail_entries_target,CHECK,((((unique_template_id IS NOT NULL))::integer + ((set_template_id IS NOT NULL))::integer) = 1)
+holy_grail_entries,holy_grail_entries_account_id_not_null,CHECK,account_id IS NOT NULL
+holy_grail_entries,holy_grail_entries_created_at_not_null,CHECK,created_at IS NOT NULL
+holy_grail_entries,holy_grail_entries_first_found_at_not_null,CHECK,first_found_at IS NOT NULL
+holy_grail_entries,holy_grail_entries_holy_grail_entry_id_not_null,CHECK,holy_grail_entry_id IS NOT NULL
+holy_grail_entries,fk_holy_grail_entries_account,FOREIGN KEY,
+holy_grail_entries,fk_holy_grail_entries_character,FOREIGN KEY,
+holy_grail_entries,fk_holy_grail_entries_season,FOREIGN KEY,
+holy_grail_entries,fk_holy_grail_entries_set,FOREIGN KEY,
+holy_grail_entries,fk_holy_grail_entries_unique,FOREIGN KEY,
+holy_grail_entries,holy_grail_entries_pkey,PRIMARY KEY,
+hourly_chest_progress,chk_hourly_chest_progress_claim_state,CHECK,(((total_claims = 0) AND (last_claimed_at IS NULL)) OR ((total_claims > 0) AND (last_claimed_at IS NOT NULL)))
+hourly_chest_progress,chk_hourly_chest_progress_claims,CHECK,(total_claims >= 0)
+hourly_chest_progress,hourly_chest_progress_character_id_not_null,CHECK,character_id IS NOT NULL
+hourly_chest_progress,hourly_chest_progress_created_at_not_null,CHECK,created_at IS NOT NULL
+hourly_chest_progress,hourly_chest_progress_hourly_chest_progress_id_not_null,CHECK,hourly_chest_progress_id IS NOT NULL
+hourly_chest_progress,hourly_chest_progress_is_available_not_null,CHECK,is_available IS NOT NULL
+hourly_chest_progress,hourly_chest_progress_next_available_at_not_null,CHECK,next_available_at IS NOT NULL
+hourly_chest_progress,hourly_chest_progress_total_claims_not_null,CHECK,total_claims IS NOT NULL
+hourly_chest_progress,hourly_chest_progress_updated_at_not_null,CHECK,updated_at IS NOT NULL
+hourly_chest_progress,fk_hourly_chest_progress_character,FOREIGN KEY,
+hourly_chest_progress,hourly_chest_progress_pkey,PRIMARY KEY,
+hourly_chest_progress,hourly_chest_progress_character_id_key,UNIQUE,
+inventory_items,chk_inventory_items_position,CHECK,"(""position"" >= 1)"
+inventory_items,inventory_items_acquired_at_not_null,CHECK,acquired_at IS NOT NULL
+inventory_items,inventory_items_character_id_not_null,CHECK,character_id IS NOT NULL
+inventory_items,inventory_items_inventory_item_id_not_null,CHECK,inventory_item_id IS NOT NULL
+inventory_items,inventory_items_is_equipped_not_null,CHECK,is_equipped IS NOT NULL
+inventory_items,inventory_items_item_id_not_null,CHECK,item_id IS NOT NULL
+inventory_items,inventory_items_position_not_null,CHECK,position IS NOT NULL
+inventory_items,fk_inventory_items_character,FOREIGN KEY,
+inventory_items,fk_inventory_items_item,FOREIGN KEY,
+inventory_items,inventory_items_pkey,PRIMARY KEY,
+inventory_items,ux_inventory_items_character_position,UNIQUE,
+inventory_items,ux_inventory_items_item_id,UNIQUE,
+item_affixes,chk_item_affixes_roll_value,CHECK,(roll_value >= (0)::numeric)
+item_affixes,item_affixes_affix_template_id_not_null,CHECK,affix_template_id IS NOT NULL
+item_affixes,item_affixes_created_at_not_null,CHECK,created_at IS NOT NULL
+item_affixes,item_affixes_item_affix_id_not_null,CHECK,item_affix_id IS NOT NULL
+item_affixes,item_affixes_item_id_not_null,CHECK,item_id IS NOT NULL
+item_affixes,item_affixes_roll_value_not_null,CHECK,roll_value IS NOT NULL
+item_affixes,fk_item_affixes_item,FOREIGN KEY,
+item_affixes,fk_item_affixes_template,FOREIGN KEY,
+item_affixes,item_affixes_pkey,PRIMARY KEY,
+item_affixes,ux_item_affixes_item_template,UNIQUE,
+item_bases,chk_item_bases_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+item_bases,chk_item_bases_levels,CHECK,((item_level >= 1) AND (required_level >= 1))
+item_bases,chk_item_bases_slot,CHECK,"((slot)::text = ANY ((ARRAY['Weapon'::character varying, 'Helmet'::character varying, 'Armor'::character varying, 'Shield'::character varying, 'Legs'::character varying, 'Boots'::character varying, 'Ring'::character varying, 'Amulet'::character varying])::text[]))"
+item_bases,chk_item_bases_stats,CHECK,((attack >= (0)::numeric) AND (defense >= (0)::numeric) AND (spell_power >= (0)::numeric) AND (health >= (0)::numeric) AND (mana >= (0)::numeric) AND (energy >= (0)::numeric) AND (gold_percent >= (0)::numeric) AND (experience_percent >= (0)::numeric) AND (base_item_score >= 0))
+item_bases,chk_item_bases_template_type,CHECK,(((is_unique = true) AND (unique_template_id IS NOT NULL) AND (is_set = false) AND (set_template_id IS NULL)) OR ((is_set = true) AND (set_template_id IS NOT NULL) AND (is_unique = false) AND (unique_template_id IS NULL)) OR ((is_unique = false) AND (unique_template_id IS NULL) AND (is_set = false) AND (set_template_id IS NULL)))
+item_bases,chk_item_bases_weapon_type,CHECK,((((slot)::text = 'Weapon'::text) AND (weapon_type IS NOT NULL)) OR (((slot)::text <> 'Weapon'::text) AND (weapon_type IS NULL)))
+item_bases,item_bases_attack_not_null,CHECK,attack IS NOT NULL
+item_bases,item_bases_base_item_score_not_null,CHECK,base_item_score IS NOT NULL
+item_bases,item_bases_code_not_null,CHECK,code IS NOT NULL
+item_bases,item_bases_created_at_not_null,CHECK,created_at IS NOT NULL
+item_bases,item_bases_defense_not_null,CHECK,defense IS NOT NULL
+item_bases,item_bases_description_not_null,CHECK,description IS NOT NULL
+item_bases,item_bases_energy_not_null,CHECK,energy IS NOT NULL
+item_bases,item_bases_experience_percent_not_null,CHECK,experience_percent IS NOT NULL
+item_bases,item_bases_gold_percent_not_null,CHECK,gold_percent IS NOT NULL
+item_bases,item_bases_health_not_null,CHECK,health IS NOT NULL
+item_bases,item_bases_is_boss_exclusive_not_null,CHECK,is_boss_exclusive IS NOT NULL
+item_bases,item_bases_is_set_not_null,CHECK,is_set IS NOT NULL
+item_bases,item_bases_is_unique_not_null,CHECK,is_unique IS NOT NULL
+item_bases,item_bases_item_base_id_not_null,CHECK,item_base_id IS NOT NULL
+item_bases,item_bases_item_level_not_null,CHECK,item_level IS NOT NULL
+item_bases,item_bases_mana_not_null,CHECK,mana IS NOT NULL
+item_bases,item_bases_name_not_null,CHECK,name IS NOT NULL
+item_bases,item_bases_required_level_not_null,CHECK,required_level IS NOT NULL
+item_bases,item_bases_slot_not_null,CHECK,slot IS NOT NULL
+item_bases,item_bases_spell_power_not_null,CHECK,spell_power IS NOT NULL
+item_bases,item_bases_updated_at_not_null,CHECK,updated_at IS NOT NULL
+item_bases,fk_item_bases_set_template,FOREIGN KEY,
+item_bases,fk_item_bases_unique_template,FOREIGN KEY,
+item_bases,item_bases_pkey,PRIMARY KEY,
+item_bases,ux_item_bases_code,UNIQUE,
+item_bases,ux_item_bases_name,UNIQUE,
+items,chk_items_item_level,CHECK,(item_level >= 1)
+items,chk_items_item_score,CHECK,(item_score >= 0)
+items,chk_items_rarity,CHECK,"((rarity)::text = ANY ((ARRAY['Common'::character varying, 'Magic'::character varying, 'Rare'::character varying, 'Epic'::character varying, 'Legendary'::character varying])::text[]))"
+items,items_created_at_not_null,CHECK,created_at IS NOT NULL
+items,items_is_locked_not_null,CHECK,is_locked IS NOT NULL
+items,items_item_base_id_not_null,CHECK,item_base_id IS NOT NULL
+items,items_item_id_not_null,CHECK,item_id IS NOT NULL
+items,items_item_level_not_null,CHECK,item_level IS NOT NULL
+items,items_item_score_not_null,CHECK,item_score IS NOT NULL
+items,items_rarity_not_null,CHECK,rarity IS NOT NULL
+items,fk_items_item_base,FOREIGN KEY,
+items,items_pkey,PRIMARY KEY,
+login_streak_progress,chk_login_streak_progress_current,CHECK,((current_streak >= 0) AND (current_streak <= 7))
+login_streak_progress,chk_login_streak_progress_cycles,CHECK,(completed_cycles >= 0)
+login_streak_progress,chk_login_streak_progress_highest,CHECK,(((highest_streak >= 0) AND (highest_streak <= 7)) AND (highest_streak >= current_streak))
+login_streak_progress,chk_login_streak_progress_reward_day,CHECK,((last_reward_day >= 0) AND (last_reward_day <= 7))
+login_streak_progress,login_streak_progress_character_id_not_null,CHECK,character_id IS NOT NULL
+login_streak_progress,login_streak_progress_completed_cycles_not_null,CHECK,completed_cycles IS NOT NULL
+login_streak_progress,login_streak_progress_created_at_not_null,CHECK,created_at IS NOT NULL
+login_streak_progress,login_streak_progress_current_streak_not_null,CHECK,current_streak IS NOT NULL
+login_streak_progress,login_streak_progress_highest_streak_not_null,CHECK,highest_streak IS NOT NULL
+login_streak_progress,login_streak_progress_last_reward_day_not_null,CHECK,last_reward_day IS NOT NULL
+login_streak_progress,login_streak_progress_login_streak_progress_id_not_null,CHECK,login_streak_progress_id IS NOT NULL
+login_streak_progress,login_streak_progress_updated_at_not_null,CHECK,updated_at IS NOT NULL
+login_streak_progress,fk_login_streak_progress_character,FOREIGN KEY,
+login_streak_progress,login_streak_progress_pkey,PRIMARY KEY,
+login_streak_progress,login_streak_progress_character_id_key,UNIQUE,
+loot_tables,chk_loot_tables_chance,CHECK,((drop_chance_percent > (0)::numeric) AND (drop_chance_percent <= (100)::numeric))
+loot_tables,chk_loot_tables_levels,CHECK,((min_item_level >= 1) AND (max_item_level >= min_item_level))
+loot_tables,loot_tables_created_at_not_null,CHECK,created_at IS NOT NULL
+loot_tables,loot_tables_drop_chance_percent_not_null,CHECK,drop_chance_percent IS NOT NULL
+loot_tables,loot_tables_is_enabled_not_null,CHECK,is_enabled IS NOT NULL
+loot_tables,loot_tables_item_base_id_not_null,CHECK,item_base_id IS NOT NULL
+loot_tables,loot_tables_loot_level_modifier_not_null,CHECK,loot_level_modifier IS NOT NULL
+loot_tables,loot_tables_loot_table_id_not_null,CHECK,loot_table_id IS NOT NULL
+loot_tables,loot_tables_max_item_level_not_null,CHECK,max_item_level IS NOT NULL
+loot_tables,loot_tables_min_item_level_not_null,CHECK,min_item_level IS NOT NULL
+loot_tables,loot_tables_monster_id_not_null,CHECK,monster_id IS NOT NULL
+loot_tables,loot_tables_updated_at_not_null,CHECK,updated_at IS NOT NULL
+loot_tables,fk_loot_tables_item_base,FOREIGN KEY,
+loot_tables,fk_loot_tables_monster,FOREIGN KEY,
+loot_tables,loot_tables_pkey,PRIMARY KEY,
+loot_tables,ux_loot_tables_monster_item,UNIQUE,
+mail_attachments,chk_mail_attachments_collection,CHECK,(((is_collected = false) AND (collected_at IS NULL)) OR ((is_collected = true) AND (collected_at IS NOT NULL) AND (collected_at >= created_at)))
+mail_attachments,chk_mail_attachments_payload,CHECK,((((attachment_type)::text = 'Gold'::text) AND (gold_amount > 0) AND (item_id IS NULL) AND (material_id IS NULL) AND (material_quantity IS NULL) AND (consumable_definition_id IS NULL) AND (consumable_quantity IS NULL)) OR (((attachment_type)::text = 'Item'::text) AND (item_id IS NOT NULL) AND (gold_amount IS NULL) AND (material_id IS NULL) AND (material_quantity IS NULL) AND (consumable_definition_id IS NULL) AND (consumable_quantity IS NULL)) OR (((attachment_type)::text = 'Material'::text) AND (material_id IS NOT NULL) AND (material_quantity > 0) AND (gold_amount IS NULL) AND (item_id IS NULL) AND (consumable_definition_id IS NULL) AND (consumable_quantity IS NULL)) OR (((attachment_type)::text = 'Consumable'::text) AND (consumable_definition_id IS NOT NULL) AND (consumable_quantity > 0) AND (gold_amount IS NULL) AND (item_id IS NULL) AND (material_id IS NULL) AND (material_quantity IS NULL)))
+mail_attachments,chk_mail_attachments_type,CHECK,"((attachment_type)::text = ANY ((ARRAY['Gold'::character varying, 'Item'::character varying, 'Material'::character varying, 'Consumable'::character varying])::text[]))"
+mail_attachments,mail_attachments_attachment_type_not_null,CHECK,attachment_type IS NOT NULL
+mail_attachments,mail_attachments_created_at_not_null,CHECK,created_at IS NOT NULL
+mail_attachments,mail_attachments_is_collected_not_null,CHECK,is_collected IS NOT NULL
+mail_attachments,mail_attachments_mail_attachment_id_not_null,CHECK,mail_attachment_id IS NOT NULL
+mail_attachments,mail_attachments_mail_message_id_not_null,CHECK,mail_message_id IS NOT NULL
+mail_attachments,fk_mail_attachments_consumable,FOREIGN KEY,
+mail_attachments,fk_mail_attachments_item,FOREIGN KEY,
+mail_attachments,fk_mail_attachments_material,FOREIGN KEY,
+mail_attachments,fk_mail_attachments_message,FOREIGN KEY,
+mail_attachments,mail_attachments_pkey,PRIMARY KEY,
+mail_messages,chk_mail_messages_expiration,CHECK,((expires_at IS NULL) OR (expires_at > created_at))
+mail_messages,chk_mail_messages_read_state,CHECK,(((is_read = false) AND (read_at IS NULL)) OR ((is_read = true) AND (read_at IS NOT NULL) AND (read_at >= created_at)))
+mail_messages,chk_mail_messages_type,CHECK,"((message_type)::text = ANY ((ARRAY['MarketplaceSale'::character varying, 'MarketplacePurchase'::character varying, 'AchievementReward'::character varying, 'DailyBossReward'::character varying, 'SeasonReward'::character varying, 'CraftingReward'::character varying, 'AdminMessage'::character varying, 'SystemMessage'::character varying])::text[]))"
+mail_messages,mail_messages_body_not_null,CHECK,body IS NOT NULL
+mail_messages,mail_messages_character_id_not_null,CHECK,character_id IS NOT NULL
+mail_messages,mail_messages_created_at_not_null,CHECK,created_at IS NOT NULL
+mail_messages,mail_messages_is_read_not_null,CHECK,is_read IS NOT NULL
+mail_messages,mail_messages_mail_message_id_not_null,CHECK,mail_message_id IS NOT NULL
+mail_messages,mail_messages_message_type_not_null,CHECK,message_type IS NOT NULL
+mail_messages,mail_messages_subject_not_null,CHECK,subject IS NOT NULL
+mail_messages,fk_mail_messages_character,FOREIGN KEY,
+mail_messages,mail_messages_pkey,PRIMARY KEY,
+mail_templates,mail_templates_body_template_not_null,CHECK,body_template IS NOT NULL
+mail_templates,mail_templates_code_not_null,CHECK,code IS NOT NULL
+mail_templates,mail_templates_created_at_not_null,CHECK,created_at IS NOT NULL
+mail_templates,mail_templates_mail_template_id_not_null,CHECK,mail_template_id IS NOT NULL
+mail_templates,mail_templates_subject_template_not_null,CHECK,subject_template IS NOT NULL
+mail_templates,mail_templates_updated_at_not_null,CHECK,updated_at IS NOT NULL
+mail_templates,mail_templates_pkey,PRIMARY KEY,
+mail_templates,mail_templates_code_key,UNIQUE,
+material_storage,chk_material_storage_quantity,CHECK,(quantity >= 0)
+material_storage,material_storage_character_id_not_null,CHECK,character_id IS NOT NULL
+material_storage,material_storage_material_id_not_null,CHECK,material_id IS NOT NULL
+material_storage,material_storage_material_storage_id_not_null,CHECK,material_storage_id IS NOT NULL
+material_storage,material_storage_quantity_not_null,CHECK,quantity IS NOT NULL
+material_storage,material_storage_updated_at_not_null,CHECK,updated_at IS NOT NULL
+material_storage,fk_material_storage_character,FOREIGN KEY,
+material_storage,fk_material_storage_material,FOREIGN KEY,
+material_storage,material_storage_pkey,PRIMARY KEY,
+material_storage,ux_material_storage_character_material,UNIQUE,
+materials,chk_materials_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+materials,chk_materials_material_level,CHECK,(material_level >= 1)
+materials,chk_materials_minimum_monster_level,CHECK,((minimum_monster_level IS NULL) OR (minimum_monster_level >= 1))
+materials,chk_materials_required_gathering_level,CHECK,(required_gathering_level >= 1)
+materials,chk_materials_source,CHECK,((is_gatherable = true) OR (is_lootable = true) OR (vendor_available = true))
+materials,chk_materials_stack_size,CHECK,((max_stack_size >= 1) AND (max_stack_size <= 999))
+materials,chk_materials_vendor_price,CHECK,(((vendor_available = false) AND (vendor_price IS NULL)) OR ((vendor_available = true) AND (vendor_price IS NOT NULL) AND (vendor_price >= 0)))
+materials,materials_code_not_null,CHECK,code IS NOT NULL
+materials,materials_created_at_not_null,CHECK,created_at IS NOT NULL
+materials,materials_description_not_null,CHECK,description IS NOT NULL
+materials,materials_is_crafting_ingredient_not_null,CHECK,is_crafting_ingredient IS NOT NULL
+materials,materials_is_gatherable_not_null,CHECK,is_gatherable IS NOT NULL
+materials,materials_is_lootable_not_null,CHECK,is_lootable IS NOT NULL
+materials,materials_material_id_not_null,CHECK,material_id IS NOT NULL
+materials,materials_material_level_not_null,CHECK,material_level IS NOT NULL
+materials,materials_max_stack_size_not_null,CHECK,max_stack_size IS NOT NULL
+materials,materials_name_not_null,CHECK,name IS NOT NULL
+materials,materials_required_gathering_level_not_null,CHECK,required_gathering_level IS NOT NULL
+materials,materials_updated_at_not_null,CHECK,updated_at IS NOT NULL
+materials,materials_vendor_available_not_null,CHECK,vendor_available IS NOT NULL
+materials,materials_pkey,PRIMARY KEY,
+materials,ux_materials_code,UNIQUE,
+materials,ux_materials_name,UNIQUE,
+monster_abilities,monster_abilities_created_at_not_null,CHECK,created_at IS NOT NULL
+monster_abilities,monster_abilities_is_enabled_not_null,CHECK,is_enabled IS NOT NULL
+monster_abilities,monster_abilities_monster_ability_id_not_null,CHECK,monster_ability_id IS NOT NULL
+monster_abilities,monster_abilities_monster_id_not_null,CHECK,monster_id IS NOT NULL
+monster_abilities,monster_abilities_spell_id_not_null,CHECK,spell_id IS NOT NULL
+monster_abilities,fk_monster_abilities_monster,FOREIGN KEY,
+monster_abilities,fk_monster_abilities_spell,FOREIGN KEY,
+monster_abilities,monster_abilities_pkey,PRIMARY KEY,
+monster_abilities,ux_monster_abilities_monster_spell,UNIQUE,
+monster_ability_weights,chk_monster_ability_weights_weight,CHECK,(weight > (0)::numeric)
+monster_ability_weights,monster_ability_weights_created_at_not_null,CHECK,created_at IS NOT NULL
+monster_ability_weights,monster_ability_weights_monster_ability_id_not_null,CHECK,monster_ability_id IS NOT NULL
+monster_ability_weights,monster_ability_weights_monster_ability_weight_id_not_null,CHECK,monster_ability_weight_id IS NOT NULL
+monster_ability_weights,monster_ability_weights_weight_not_null,CHECK,weight IS NOT NULL
+monster_ability_weights,fk_monster_ability_weights_ability,FOREIGN KEY,
+monster_ability_weights,monster_ability_weights_pkey,PRIMARY KEY,
+monster_families,chk_monster_families_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+monster_families,monster_families_code_not_null,CHECK,code IS NOT NULL
+monster_families,monster_families_created_at_not_null,CHECK,created_at IS NOT NULL
+monster_families,monster_families_description_not_null,CHECK,description IS NOT NULL
+monster_families,monster_families_monster_family_id_not_null,CHECK,monster_family_id IS NOT NULL
+monster_families,monster_families_name_not_null,CHECK,name IS NOT NULL
+monster_families,monster_families_updated_at_not_null,CHECK,updated_at IS NOT NULL
+monster_families,monster_families_pkey,PRIMARY KEY,
+monster_families,ux_monster_families_code,UNIQUE,
+monster_families,ux_monster_families_name,UNIQUE,
+monster_tasks,chk_monster_tasks_required_kills,CHECK,(required_kills > 0)
+monster_tasks,chk_monster_tasks_reunlock_gold_cost,CHECK,(reunlock_gold_cost >= 0)
+monster_tasks,monster_tasks_boss_id_not_null,CHECK,boss_id IS NOT NULL
+monster_tasks,monster_tasks_created_at_not_null,CHECK,created_at IS NOT NULL
+monster_tasks,monster_tasks_monster_id_not_null,CHECK,monster_id IS NOT NULL
+monster_tasks,monster_tasks_monster_task_id_not_null,CHECK,monster_task_id IS NOT NULL
+monster_tasks,monster_tasks_required_kills_not_null,CHECK,required_kills IS NOT NULL
+monster_tasks,monster_tasks_reunlock_gold_cost_not_null,CHECK,reunlock_gold_cost IS NOT NULL
+monster_tasks,monster_tasks_updated_at_not_null,CHECK,updated_at IS NOT NULL
+monster_tasks,fk_monster_tasks_boss,FOREIGN KEY,
+monster_tasks,fk_monster_tasks_monster,FOREIGN KEY,
+monster_tasks,monster_tasks_pkey,PRIMARY KEY,
+monster_tasks,ux_monster_tasks_monster_id,UNIQUE,
+monsters,chk_monsters_ability_chance,CHECK,((ability_chance_percent >= (0)::numeric) AND (ability_chance_percent <= (100)::numeric))
+monsters,chk_monsters_attack,CHECK,(attack >= (0)::numeric)
+monsters,chk_monsters_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+monsters,chk_monsters_cooldown,CHECK,(cooldown_seconds >= 0)
+monsters,chk_monsters_defense,CHECK,(defense >= (0)::numeric)
+monsters,chk_monsters_gold,CHECK,((gold_min >= 0) AND (gold_max >= gold_min))
+monsters,chk_monsters_health,CHECK,(health > 0)
+monsters,chk_monsters_level,CHECK,(level >= 1)
+monsters,chk_monsters_power_score,CHECK,(power_score >= 0)
+monsters,chk_monsters_spell_power,CHECK,(spell_power_percent >= (0)::numeric)
+monsters,chk_monsters_type,CHECK,"((monster_type)::text = ANY ((ARRAY['Normal'::character varying, 'MiniBoss'::character varying, 'TaskBoss'::character varying, 'DailyBoss'::character varying])::text[]))"
+monsters,monsters_ability_chance_percent_not_null,CHECK,ability_chance_percent IS NOT NULL
+monsters,monsters_attack_not_null,CHECK,attack IS NOT NULL
+monsters,monsters_code_not_null,CHECK,code IS NOT NULL
+monsters,monsters_cooldown_seconds_not_null,CHECK,cooldown_seconds IS NOT NULL
+monsters,monsters_created_at_not_null,CHECK,created_at IS NOT NULL
+monsters,monsters_defense_not_null,CHECK,defense IS NOT NULL
+monsters,monsters_description_not_null,CHECK,description IS NOT NULL
+monsters,monsters_gold_max_not_null,CHECK,gold_max IS NOT NULL
+monsters,monsters_gold_min_not_null,CHECK,gold_min IS NOT NULL
+monsters,monsters_health_not_null,CHECK,health IS NOT NULL
+monsters,monsters_level_not_null,CHECK,level IS NOT NULL
+monsters,monsters_loot_level_modifier_not_null,CHECK,loot_level_modifier IS NOT NULL
+monsters,monsters_monster_family_id_not_null,CHECK,monster_family_id IS NOT NULL
+monsters,monsters_monster_id_not_null,CHECK,monster_id IS NOT NULL
+monsters,monsters_monster_type_not_null,CHECK,monster_type IS NOT NULL
+monsters,monsters_name_not_null,CHECK,name IS NOT NULL
+monsters,monsters_power_score_not_null,CHECK,power_score IS NOT NULL
+monsters,monsters_spell_power_percent_not_null,CHECK,spell_power_percent IS NOT NULL
+monsters,monsters_updated_at_not_null,CHECK,updated_at IS NOT NULL
+monsters,fk_monsters_family,FOREIGN KEY,
+monsters,monsters_pkey,PRIMARY KEY,
+monsters,ux_monsters_code,UNIQUE,
+monsters,ux_monsters_name,UNIQUE,
+npc_definitions,chk_npc_definitions_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+npc_definitions,chk_npc_definitions_levels,CHECK,(((level_min IS NULL) AND (level_max IS NULL)) OR ((level_min IS NOT NULL) AND (level_min >= 1) AND ((level_max IS NULL) OR (level_max >= level_min))))
+npc_definitions,chk_npc_definitions_type,CHECK,"((npc_type)::text = ANY ((ARRAY['Vendor'::character varying, 'Healer'::character varying, 'BlessingMerchant'::character varying, 'PromotionTrainer'::character varying])::text[]))"
+npc_definitions,npc_definitions_code_not_null,CHECK,code IS NOT NULL
+npc_definitions,npc_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+npc_definitions,npc_definitions_description_not_null,CHECK,description IS NOT NULL
+npc_definitions,npc_definitions_is_active_not_null,CHECK,is_active IS NOT NULL
+npc_definitions,npc_definitions_name_not_null,CHECK,name IS NOT NULL
+npc_definitions,npc_definitions_npc_definition_id_not_null,CHECK,npc_definition_id IS NOT NULL
+npc_definitions,npc_definitions_npc_type_not_null,CHECK,npc_type IS NOT NULL
+npc_definitions,npc_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+npc_definitions,npc_definitions_pkey,PRIMARY KEY,
+npc_definitions,npc_definitions_name_key,UNIQUE,
+npc_definitions,ux_npc_definitions_code,UNIQUE,
+other_loot_tables,chk_other_loot_tables_chance,CHECK,((drop_chance_percent > (0)::numeric) AND (drop_chance_percent <= (100)::numeric))
+other_loot_tables,chk_other_loot_tables_quantity,CHECK,((min_quantity >= 1) AND (max_quantity >= min_quantity))
+other_loot_tables,chk_other_loot_tables_target,CHECK,((((material_id IS NOT NULL))::integer + ((consumable_definition_id IS NOT NULL))::integer) = 1)
+other_loot_tables,other_loot_tables_created_at_not_null,CHECK,created_at IS NOT NULL
+other_loot_tables,other_loot_tables_drop_chance_percent_not_null,CHECK,drop_chance_percent IS NOT NULL
+other_loot_tables,other_loot_tables_is_enabled_not_null,CHECK,is_enabled IS NOT NULL
+other_loot_tables,other_loot_tables_max_quantity_not_null,CHECK,max_quantity IS NOT NULL
+other_loot_tables,other_loot_tables_min_quantity_not_null,CHECK,min_quantity IS NOT NULL
+other_loot_tables,other_loot_tables_monster_id_not_null,CHECK,monster_id IS NOT NULL
+other_loot_tables,other_loot_tables_other_loot_table_id_not_null,CHECK,other_loot_table_id IS NOT NULL
+other_loot_tables,other_loot_tables_updated_at_not_null,CHECK,updated_at IS NOT NULL
+other_loot_tables,fk_other_loot_tables_consumable,FOREIGN KEY,
+other_loot_tables,fk_other_loot_tables_material,FOREIGN KEY,
+other_loot_tables,fk_other_loot_tables_monster,FOREIGN KEY,
+other_loot_tables,other_loot_tables_pkey,PRIMARY KEY,
+outfit_definitions,chk_outfit_definitions_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+outfit_definitions,chk_outfit_definitions_display_order,CHECK,(display_order >= 0)
+outfit_definitions,outfit_definitions_category_not_null,CHECK,category IS NOT NULL
+outfit_definitions,outfit_definitions_code_not_null,CHECK,code IS NOT NULL
+outfit_definitions,outfit_definitions_created_at_not_null,CHECK,created_at IS NOT NULL
+outfit_definitions,outfit_definitions_description_not_null,CHECK,description IS NOT NULL
+outfit_definitions,outfit_definitions_display_order_not_null,CHECK,display_order IS NOT NULL
+outfit_definitions,outfit_definitions_name_not_null,CHECK,name IS NOT NULL
+outfit_definitions,outfit_definitions_outfit_definition_id_not_null,CHECK,outfit_definition_id IS NOT NULL
+outfit_definitions,outfit_definitions_updated_at_not_null,CHECK,updated_at IS NOT NULL
+outfit_definitions,outfit_definitions_pkey,PRIMARY KEY,
+outfit_definitions,outfit_definitions_name_key,UNIQUE,
+outfit_definitions,ux_outfit_definitions_code,UNIQUE,
+private_messages,chk_private_messages_not_self,CHECK,(sender_account_id <> recipient_account_id)
+private_messages,chk_private_messages_read_state,CHECK,(((is_read = false) AND (read_at IS NULL)) OR ((is_read = true) AND (read_at IS NOT NULL) AND (read_at >= sent_at)))
+private_messages,private_messages_created_at_not_null,CHECK,created_at IS NOT NULL
+private_messages,private_messages_is_read_not_null,CHECK,is_read IS NOT NULL
+private_messages,private_messages_message_body_not_null,CHECK,message_body IS NOT NULL
+private_messages,private_messages_private_message_id_not_null,CHECK,private_message_id IS NOT NULL
+private_messages,private_messages_recipient_account_id_not_null,CHECK,recipient_account_id IS NOT NULL
+private_messages,private_messages_sender_account_id_not_null,CHECK,sender_account_id IS NOT NULL
+private_messages,private_messages_sent_at_not_null,CHECK,sent_at IS NOT NULL
+private_messages,private_messages_subject_not_null,CHECK,subject IS NOT NULL
+private_messages,fk_private_messages_recipient,FOREIGN KEY,
+private_messages,fk_private_messages_sender,FOREIGN KEY,
+private_messages,private_messages_pkey,PRIMARY KEY,
+punishments,chk_punishments_active_state,CHECK,((is_active = true) OR (removed_at IS NOT NULL) OR ((expires_at IS NOT NULL) AND (expires_at <= now())))
+punishments,chk_punishments_expiration_order,CHECK,((expires_at IS NULL) OR (expires_at > issued_at))
+punishments,chk_punishments_expiration_type,CHECK,"((((punishment_type)::text = 'TemporaryBan'::text) AND (expires_at IS NOT NULL)) OR (((punishment_type)::text = 'PermanentBan'::text) AND (expires_at IS NULL)) OR ((punishment_type)::text = ANY ((ARRAY['Warning'::character varying, 'Mute'::character varying])::text[])))"
+punishments,chk_punishments_removed_at,CHECK,((removed_at IS NULL) OR (removed_at >= issued_at))
+punishments,chk_punishments_type,CHECK,"((punishment_type)::text = ANY ((ARRAY['Warning'::character varying, 'Mute'::character varying, 'TemporaryBan'::character varying, 'PermanentBan'::character varying])::text[]))"
+punishments,punishments_account_id_not_null,CHECK,account_id IS NOT NULL
+punishments,punishments_created_at_not_null,CHECK,created_at IS NOT NULL
+punishments,punishments_is_active_not_null,CHECK,is_active IS NOT NULL
+punishments,punishments_issued_at_not_null,CHECK,issued_at IS NOT NULL
+punishments,punishments_issued_by_not_null,CHECK,issued_by IS NOT NULL
+punishments,punishments_punishment_id_not_null,CHECK,punishment_id IS NOT NULL
+punishments,punishments_punishment_type_not_null,CHECK,punishment_type IS NOT NULL
+punishments,punishments_reason_not_null,CHECK,reason IS NOT NULL
+punishments,fk_punishments_account,FOREIGN KEY,
+punishments,punishments_pkey,PRIMARY KEY,
+recipe_materials,chk_recipe_materials_quantity,CHECK,(required_quantity > 0)
+recipe_materials,recipe_materials_created_at_not_null,CHECK,created_at IS NOT NULL
+recipe_materials,recipe_materials_material_id_not_null,CHECK,material_id IS NOT NULL
+recipe_materials,recipe_materials_recipe_id_not_null,CHECK,recipe_id IS NOT NULL
+recipe_materials,recipe_materials_recipe_material_id_not_null,CHECK,recipe_material_id IS NOT NULL
+recipe_materials,recipe_materials_required_quantity_not_null,CHECK,required_quantity IS NOT NULL
+recipe_materials,fk_recipe_materials_material,FOREIGN KEY,
+recipe_materials,fk_recipe_materials_recipe,FOREIGN KEY,
+recipe_materials,recipe_materials_pkey,PRIMARY KEY,
+recipe_materials,ux_recipe_materials_recipe_material,UNIQUE,
+recipes,chk_recipes_category,CHECK,"((category)::text = ANY ((ARRAY['Potion'::character varying, 'Blessing'::character varying, 'Upgrade'::character varying, 'Boost'::character varying])::text[]))"
+recipes,chk_recipes_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+recipes,chk_recipes_gold_cost,CHECK,(gold_cost >= 0)
+recipes,chk_recipes_levels,CHECK,((required_crafting_level >= 1) AND (required_character_level >= 1))
+recipes,chk_recipes_output,CHECK,(output_quantity >= 1)
+recipes,chk_recipes_time,CHECK,(crafting_time_seconds > 0)
+recipes,chk_recipes_xp,CHECK,(crafting_xp_reward >= 0)
+recipes,recipes_category_not_null,CHECK,category IS NOT NULL
+recipes,recipes_code_not_null,CHECK,code IS NOT NULL
+recipes,recipes_consumable_definition_id_not_null,CHECK,consumable_definition_id IS NOT NULL
+recipes,recipes_crafting_time_seconds_not_null,CHECK,crafting_time_seconds IS NOT NULL
+recipes,recipes_crafting_xp_reward_not_null,CHECK,crafting_xp_reward IS NOT NULL
+recipes,recipes_created_at_not_null,CHECK,created_at IS NOT NULL
+recipes,recipes_description_not_null,CHECK,description IS NOT NULL
+recipes,recipes_gold_cost_not_null,CHECK,gold_cost IS NOT NULL
+recipes,recipes_is_enabled_not_null,CHECK,is_enabled IS NOT NULL
+recipes,recipes_name_not_null,CHECK,name IS NOT NULL
+recipes,recipes_output_quantity_not_null,CHECK,output_quantity IS NOT NULL
+recipes,recipes_recipe_id_not_null,CHECK,recipe_id IS NOT NULL
+recipes,recipes_required_character_level_not_null,CHECK,required_character_level IS NOT NULL
+recipes,recipes_required_crafting_level_not_null,CHECK,required_crafting_level IS NOT NULL
+recipes,recipes_updated_at_not_null,CHECK,updated_at IS NOT NULL
+recipes,fk_recipes_consumable,FOREIGN KEY,
+recipes,recipes_pkey,PRIMARY KEY,
+recipes,recipes_name_key,UNIQUE,
+recipes,ux_recipes_code,UNIQUE,
+season_rankings,chk_season_rankings_deaths,CHECK,(total_deaths >= 0)
+season_rankings,chk_season_rankings_experience,CHECK,(character_experience >= 0)
+season_rankings,chk_season_rankings_level,CHECK,(character_level >= 1)
+season_rankings,chk_season_rankings_rank,CHECK,(rank_position >= 1)
+season_rankings,chk_season_rankings_type,CHECK,"((ranking_type)::text = ANY ((ARRAY['Experience'::character varying, 'Hardcore'::character varying])::text[]))"
+season_rankings,season_rankings_captured_at_not_null,CHECK,captured_at IS NOT NULL
+season_rankings,season_rankings_character_experience_not_null,CHECK,character_experience IS NOT NULL
+season_rankings,season_rankings_character_id_not_null,CHECK,character_id IS NOT NULL
+season_rankings,season_rankings_character_level_not_null,CHECK,character_level IS NOT NULL
+season_rankings,season_rankings_created_at_not_null,CHECK,created_at IS NOT NULL
+season_rankings,season_rankings_rank_position_not_null,CHECK,rank_position IS NOT NULL
+season_rankings,season_rankings_ranking_type_not_null,CHECK,ranking_type IS NOT NULL
+season_rankings,season_rankings_season_id_not_null,CHECK,season_id IS NOT NULL
+season_rankings,season_rankings_season_ranking_id_not_null,CHECK,season_ranking_id IS NOT NULL
+season_rankings,season_rankings_total_deaths_not_null,CHECK,total_deaths IS NOT NULL
+season_rankings,fk_season_rankings_character,FOREIGN KEY,
+season_rankings,fk_season_rankings_season,FOREIGN KEY,
+season_rankings,season_rankings_pkey,PRIMARY KEY,
+season_rankings,ux_season_rankings_season_character_type,UNIQUE,
+season_rankings,ux_season_rankings_season_type_rank,UNIQUE,
+seasons,chk_seasons_current_status,CHECK,((is_current = false) OR ((status)::text = 'Active'::text))
+seasons,chk_seasons_dates,CHECK,(end_date > start_date)
+seasons,chk_seasons_number,CHECK,(season_number >= 1)
+seasons,chk_seasons_status,CHECK,"((status)::text = ANY ((ARRAY['Upcoming'::character varying, 'Active'::character varying, 'Ended'::character varying])::text[]))"
+seasons,seasons_created_at_not_null,CHECK,created_at IS NOT NULL
+seasons,seasons_end_date_not_null,CHECK,end_date IS NOT NULL
+seasons,seasons_is_current_not_null,CHECK,is_current IS NOT NULL
+seasons,seasons_name_not_null,CHECK,name IS NOT NULL
+seasons,seasons_season_id_not_null,CHECK,season_id IS NOT NULL
+seasons,seasons_season_number_not_null,CHECK,season_number IS NOT NULL
+seasons,seasons_start_date_not_null,CHECK,start_date IS NOT NULL
+seasons,seasons_status_not_null,CHECK,status IS NOT NULL
+seasons,seasons_updated_at_not_null,CHECK,updated_at IS NOT NULL
+seasons,seasons_pkey,PRIMARY KEY,
+seasons,ux_seasons_season_number,UNIQUE,
+seed_history,chk_seed_history_checksum,CHECK,((checksum_sha256)::text ~ '^[a-f0-9]{64}$'::text)
+seed_history,seed_history_applied_at_not_null,CHECK,applied_at IS NOT NULL
+seed_history,seed_history_checksum_sha256_not_null,CHECK,checksum_sha256 IS NOT NULL
+seed_history,seed_history_seed_history_id_not_null,CHECK,seed_history_id IS NOT NULL
+seed_history,seed_history_seed_name_not_null,CHECK,seed_name IS NOT NULL
+seed_history,seed_history_pkey,PRIMARY KEY,
+seed_history,ux_seed_history_seed_name,UNIQUE,
+set_bonuses,chk_set_bonuses_required_pieces,CHECK,(required_pieces >= 2)
+set_bonuses,chk_set_bonuses_type,CHECK,"((bonus_type)::text = ANY ((ARRAY['Attack'::character varying, 'Defense'::character varying, 'SpellPower'::character varying, 'GoldPercent'::character varying, 'ExperiencePercent'::character varying, 'Health'::character varying, 'Mana'::character varying])::text[]))"
+set_bonuses,chk_set_bonuses_value,CHECK,(bonus_value >= (0)::numeric)
+set_bonuses,set_bonuses_bonus_type_not_null,CHECK,bonus_type IS NOT NULL
+set_bonuses,set_bonuses_bonus_value_not_null,CHECK,bonus_value IS NOT NULL
+set_bonuses,set_bonuses_created_at_not_null,CHECK,created_at IS NOT NULL
+set_bonuses,set_bonuses_required_pieces_not_null,CHECK,required_pieces IS NOT NULL
+set_bonuses,set_bonuses_set_bonus_id_not_null,CHECK,set_bonus_id IS NOT NULL
+set_bonuses,set_bonuses_set_template_id_not_null,CHECK,set_template_id IS NOT NULL
+set_bonuses,fk_set_bonuses_template,FOREIGN KEY,
+set_bonuses,set_bonuses_pkey,PRIMARY KEY,
+set_bonuses,ux_set_bonuses_template_pieces_type,UNIQUE,
+set_progress,chk_set_progress_completion,CHECK,(((is_completed = false) AND (completed_at IS NULL)) OR ((is_completed = true) AND (completed_at IS NOT NULL) AND (pieces_discovered = total_pieces_required)))
+set_progress,chk_set_progress_pieces,CHECK,((pieces_discovered >= 0) AND (total_pieces_required >= 1) AND (pieces_discovered <= total_pieces_required))
+set_progress,set_progress_account_id_not_null,CHECK,account_id IS NOT NULL
+set_progress,set_progress_created_at_not_null,CHECK,created_at IS NOT NULL
+set_progress,set_progress_is_completed_not_null,CHECK,is_completed IS NOT NULL
+set_progress,set_progress_pieces_discovered_not_null,CHECK,pieces_discovered IS NOT NULL
+set_progress,set_progress_set_progress_id_not_null,CHECK,set_progress_id IS NOT NULL
+set_progress,set_progress_set_template_id_not_null,CHECK,set_template_id IS NOT NULL
+set_progress,set_progress_total_pieces_required_not_null,CHECK,total_pieces_required IS NOT NULL
+set_progress,set_progress_updated_at_not_null,CHECK,updated_at IS NOT NULL
+set_progress,fk_set_progress_account,FOREIGN KEY,
+set_progress,fk_set_progress_template,FOREIGN KEY,
+set_progress,set_progress_pkey,PRIMARY KEY,
+set_progress,ux_set_progress_account_set,UNIQUE,
+set_templates,chk_set_templates_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+set_templates,chk_set_templates_required_pieces,CHECK,(required_pieces >= 2)
+set_templates,set_templates_code_not_null,CHECK,code IS NOT NULL
+set_templates,set_templates_created_at_not_null,CHECK,created_at IS NOT NULL
+set_templates,set_templates_description_not_null,CHECK,description IS NOT NULL
+set_templates,set_templates_name_not_null,CHECK,name IS NOT NULL
+set_templates,set_templates_required_pieces_not_null,CHECK,required_pieces IS NOT NULL
+set_templates,set_templates_set_template_id_not_null,CHECK,set_template_id IS NOT NULL
+set_templates,set_templates_updated_at_not_null,CHECK,updated_at IS NOT NULL
+set_templates,set_templates_pkey,PRIMARY KEY,
+set_templates,ux_set_templates_code,UNIQUE,
+set_templates,ux_set_templates_name,UNIQUE,
+spells,chk_spells_category,CHECK,"((category)::text = ANY ((ARRAY['Damage'::character varying, 'DamageOverTime'::character varying, 'Healing'::character varying, 'HealOverTime'::character varying, 'ManaDrain'::character varying, 'HealthDrain'::character varying, 'PotionDisable'::character varying, 'StatBuff'::character varying, 'StatDebuff'::character varying])::text[]))"
+spells,chk_spells_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+spells,chk_spells_cooldown_turns,CHECK,(cooldown_turns >= 0)
+spells,chk_spells_duration_turns,CHECK,(duration_turns >= 0)
+spells,chk_spells_gold_cost,CHECK,(gold_cost >= 0)
+spells,chk_spells_mana_cost,CHECK,(mana_cost >= 0)
+spells,chk_spells_required_level,CHECK,(required_level >= 1)
+spells,chk_spells_target_type,CHECK,"((target_type)::text = ANY ((ARRAY['Self'::character varying, 'Enemy'::character varying])::text[]))"
+spells,spells_base_value_not_null,CHECK,base_value IS NOT NULL
+spells,spells_category_not_null,CHECK,category IS NOT NULL
+spells,spells_code_not_null,CHECK,code IS NOT NULL
+spells,spells_cooldown_turns_not_null,CHECK,cooldown_turns IS NOT NULL
+spells,spells_created_at_not_null,CHECK,created_at IS NOT NULL
+spells,spells_description_not_null,CHECK,description IS NOT NULL
+spells,spells_duration_turns_not_null,CHECK,duration_turns IS NOT NULL
+spells,spells_gold_cost_not_null,CHECK,gold_cost IS NOT NULL
+spells,spells_mana_cost_not_null,CHECK,mana_cost IS NOT NULL
+spells,spells_name_not_null,CHECK,name IS NOT NULL
+spells,spells_required_level_not_null,CHECK,required_level IS NOT NULL
+spells,spells_spell_id_not_null,CHECK,spell_id IS NOT NULL
+spells,spells_target_type_not_null,CHECK,target_type IS NOT NULL
+spells,spells_updated_at_not_null,CHECK,updated_at IS NOT NULL
+spells,spells_pkey,PRIMARY KEY,
+spells,ux_spells_code,UNIQUE,
+spells,ux_spells_name,UNIQUE,
+unique_pity_tracking,chk_unique_pity_tracking_chance,CHECK,((current_chance_percent >= (0)::numeric) AND (current_chance_percent <= (100)::numeric))
+unique_pity_tracking,chk_unique_pity_tracking_kills,CHECK,(eligible_kill_count >= 0)
+unique_pity_tracking,unique_pity_tracking_character_id_not_null,CHECK,character_id IS NOT NULL
+unique_pity_tracking,unique_pity_tracking_created_at_not_null,CHECK,created_at IS NOT NULL
+unique_pity_tracking,unique_pity_tracking_current_chance_percent_not_null,CHECK,current_chance_percent IS NOT NULL
+unique_pity_tracking,unique_pity_tracking_eligible_kill_count_not_null,CHECK,eligible_kill_count IS NOT NULL
+unique_pity_tracking,unique_pity_tracking_unique_pity_tracking_id_not_null,CHECK,unique_pity_tracking_id IS NOT NULL
+unique_pity_tracking,unique_pity_tracking_updated_at_not_null,CHECK,updated_at IS NOT NULL
+unique_pity_tracking,fk_unique_pity_tracking_character,FOREIGN KEY,
+unique_pity_tracking,unique_pity_tracking_pkey,PRIMARY KEY,
+unique_pity_tracking,unique_pity_tracking_character_id_key,UNIQUE,
+unique_templates,chk_unique_templates_attack,CHECK,((min_attack >= (0)::numeric) AND (max_attack >= min_attack))
+unique_templates,chk_unique_templates_code,CHECK,"((code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)"
+unique_templates,chk_unique_templates_defense,CHECK,((min_defense >= (0)::numeric) AND (max_defense >= min_defense))
+unique_templates,chk_unique_templates_energy,CHECK,((min_energy >= (0)::numeric) AND (max_energy >= min_energy))
+unique_templates,chk_unique_templates_health,CHECK,((min_health >= (0)::numeric) AND (max_health >= min_health))
+unique_templates,chk_unique_templates_mana,CHECK,((min_mana >= (0)::numeric) AND (max_mana >= min_mana))
+unique_templates,chk_unique_templates_spell_power,CHECK,((min_spell_power >= (0)::numeric) AND (max_spell_power >= min_spell_power))
+unique_templates,unique_templates_code_not_null,CHECK,code IS NOT NULL
+unique_templates,unique_templates_created_at_not_null,CHECK,created_at IS NOT NULL
+unique_templates,unique_templates_description_not_null,CHECK,description IS NOT NULL
+unique_templates,unique_templates_max_attack_not_null,CHECK,max_attack IS NOT NULL
+unique_templates,unique_templates_max_defense_not_null,CHECK,max_defense IS NOT NULL
+unique_templates,unique_templates_max_energy_not_null,CHECK,max_energy IS NOT NULL
+unique_templates,unique_templates_max_health_not_null,CHECK,max_health IS NOT NULL
+unique_templates,unique_templates_max_mana_not_null,CHECK,max_mana IS NOT NULL
+unique_templates,unique_templates_max_spell_power_not_null,CHECK,max_spell_power IS NOT NULL
+unique_templates,unique_templates_min_attack_not_null,CHECK,min_attack IS NOT NULL
+unique_templates,unique_templates_min_defense_not_null,CHECK,min_defense IS NOT NULL
+unique_templates,unique_templates_min_energy_not_null,CHECK,min_energy IS NOT NULL
+unique_templates,unique_templates_min_health_not_null,CHECK,min_health IS NOT NULL
+unique_templates,unique_templates_min_mana_not_null,CHECK,min_mana IS NOT NULL
+unique_templates,unique_templates_min_spell_power_not_null,CHECK,min_spell_power IS NOT NULL
+unique_templates,unique_templates_name_not_null,CHECK,name IS NOT NULL
+unique_templates,unique_templates_unique_template_id_not_null,CHECK,unique_template_id IS NOT NULL
+unique_templates,unique_templates_updated_at_not_null,CHECK,updated_at IS NOT NULL
+unique_templates,unique_templates_pkey,PRIMARY KEY,
+unique_templates,ux_unique_templates_code,UNIQUE,
+unique_templates,ux_unique_templates_name,UNIQUE,

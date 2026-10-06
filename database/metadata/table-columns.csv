@@ -1,0 +1,732 @@
+table_name,ordinal_position,column_name,data_type,udt_name,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale
+account_addons,1,account_addon_id,uuid,uuid,NO,gen_random_uuid(),,,
+account_addons,2,account_id,uuid,uuid,NO,,,,
+account_addons,3,addon_definition_id,uuid,uuid,NO,,,,
+account_addons,4,unlocked_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_addons,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_friends,1,account_friend_id,uuid,uuid,NO,gen_random_uuid(),,,
+account_friends,2,account_id,uuid,uuid,NO,,,,
+account_friends,3,friend_account_id,uuid,uuid,NO,,,,
+account_friends,4,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_outfits,1,account_outfit_id,uuid,uuid,NO,gen_random_uuid(),,,
+account_outfits,2,account_id,uuid,uuid,NO,,,,
+account_outfits,3,outfit_definition_id,uuid,uuid,NO,,,,
+account_outfits,4,unlocked_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_outfits,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_sessions,1,account_session_id,uuid,uuid,NO,gen_random_uuid(),,,
+account_sessions,2,account_id,uuid,uuid,NO,,,,
+account_sessions,3,session_token_hash,text,text,NO,,,,
+account_sessions,4,refresh_token_hash,text,text,YES,,,,
+account_sessions,5,ip_address,inet,inet,YES,,,,
+account_sessions,6,user_agent,text,text,YES,,,,
+account_sessions,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_sessions,8,last_activity_at,timestamp with time zone,timestamptz,NO,now(),,,
+account_sessions,9,expires_at,timestamp with time zone,timestamptz,NO,,,,
+account_sessions,10,is_revoked,boolean,bool,NO,false,,,
+account_sessions,11,revoked_at,timestamp with time zone,timestamptz,YES,,,,
+accounts,1,account_id,uuid,uuid,NO,gen_random_uuid(),,,
+accounts,2,username,character varying,varchar,NO,,32,,
+accounts,3,email,character varying,varchar,YES,,255,,
+accounts,4,password_hash,text,text,NO,,,,
+accounts,5,status,character varying,varchar,NO,'Active'::character varying,20,,
+accounts,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+accounts,7,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+accounts,8,last_login_at,timestamp with time zone,timestamptz,YES,,,,
+achievement_progress,1,achievement_progress_id,uuid,uuid,NO,gen_random_uuid(),,,
+achievement_progress,2,account_id,uuid,uuid,NO,,,,
+achievement_progress,3,achievement_id,uuid,uuid,NO,,,,
+achievement_progress,4,current_value,bigint,int8,NO,0,,64,0
+achievement_progress,5,is_completed,boolean,bool,NO,false,,,
+achievement_progress,6,completed_at,timestamp with time zone,timestamptz,YES,,,,
+achievement_progress,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+achievement_progress,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+achievements,1,achievement_id,uuid,uuid,NO,gen_random_uuid(),,,
+achievements,2,code,character varying,varchar,NO,,64,,
+achievements,3,name,character varying,varchar,NO,,100,,
+achievements,4,description,text,text,NO,,,,
+achievements,5,category,character varying,varchar,NO,,32,,
+achievements,6,points,integer,int4,NO,0,,32,0
+achievements,7,objective_type,character varying,varchar,NO,,64,,
+achievements,8,required_value,bigint,int8,NO,,,64,0
+achievements,9,is_hidden,boolean,bool,NO,false,,,
+achievements,10,reward_attack,integer,int4,NO,0,,32,0
+achievements,11,reward_defense,integer,int4,NO,0,,32,0
+achievements,12,reward_gold_percent,numeric,numeric,NO,0,,8,4
+achievements,13,reward_experience_percent,numeric,numeric,NO,0,,8,4
+achievements,14,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+achievements,15,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+addon_definitions,1,addon_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+addon_definitions,2,outfit_definition_id,uuid,uuid,NO,,,,
+addon_definitions,3,name,character varying,varchar,NO,,100,,
+addon_definitions,4,description,text,text,NO,,,,
+addon_definitions,5,artwork,text,text,YES,,,,
+addon_definitions,6,display_order,integer,int4,NO,0,,32,0
+addon_definitions,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+addon_definitions,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+admin_actions,1,admin_action_id,uuid,uuid,NO,gen_random_uuid(),,,
+admin_actions,2,admin_user,character varying,varchar,NO,,100,,
+admin_actions,3,action_type,character varying,varchar,NO,,64,,
+admin_actions,4,account_id,uuid,uuid,YES,,,,
+admin_actions,5,target_entity_type,character varying,varchar,YES,,64,,
+admin_actions,6,target_entity_id,uuid,uuid,YES,,,,
+admin_actions,7,reason,text,text,YES,,,,
+admin_actions,8,action_data,jsonb,jsonb,YES,,,,
+admin_actions,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+affix_templates,1,affix_template_id,uuid,uuid,NO,gen_random_uuid(),,,
+affix_templates,2,affix_type,character varying,varchar,NO,,32,,
+affix_templates,3,tier,integer,int4,NO,,,32,0
+affix_templates,4,required_item_level,integer,int4,NO,1,,32,0
+affix_templates,5,min_value,numeric,numeric,NO,,,12,4
+affix_templates,6,max_value,numeric,numeric,NO,,,12,4
+affix_templates,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+affix_templates,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+announcements,1,announcement_id,uuid,uuid,NO,gen_random_uuid(),,,
+announcements,2,title,character varying,varchar,NO,,200,,
+announcements,3,content,text,text,NO,,,,
+announcements,4,priority,character varying,varchar,NO,'Normal'::character varying,20,,
+announcements,5,is_active,boolean,bool,NO,true,,,
+announcements,6,published_at,timestamp with time zone,timestamptz,YES,,,,
+announcements,7,expires_at,timestamp with time zone,timestamptz,YES,,,,
+announcements,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+announcements,9,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+auction_history,1,auction_history_id,uuid,uuid,NO,gen_random_uuid(),,,
+auction_history,2,auction_listing_id,uuid,uuid,NO,,,,
+auction_history,3,seller_character_id,uuid,uuid,NO,,,,
+auction_history,4,buyer_character_id,uuid,uuid,NO,,,,
+auction_history,5,item_id,uuid,uuid,YES,,,,
+auction_history,6,material_id,uuid,uuid,YES,,,,
+auction_history,7,consumable_definition_id,uuid,uuid,YES,,,,
+auction_history,8,quantity,bigint,int8,NO,,,64,0
+auction_history,9,unit_price,bigint,int8,NO,,,64,0
+auction_history,10,total_price,bigint,int8,NO,,,64,0
+auction_history,11,sold_at,timestamp with time zone,timestamptz,NO,now(),,,
+auction_history,12,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+auction_listings,1,auction_listing_id,uuid,uuid,NO,gen_random_uuid(),,,
+auction_listings,2,character_id,uuid,uuid,NO,,,,
+auction_listings,3,item_id,uuid,uuid,YES,,,,
+auction_listings,4,material_id,uuid,uuid,YES,,,,
+auction_listings,5,consumable_definition_id,uuid,uuid,YES,,,,
+auction_listings,6,quantity,bigint,int8,NO,,,64,0
+auction_listings,7,unit_price,bigint,int8,NO,,,64,0
+auction_listings,8,listing_fee_paid,bigint,int8,NO,0,,64,0
+auction_listings,9,status,character varying,varchar,NO,'Active'::character varying,20,,
+auction_listings,10,expires_at,timestamp with time zone,timestamptz,NO,,,,
+auction_listings,11,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+auction_listings,12,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+bestiary_entries,1,bestiary_entry_id,uuid,uuid,NO,gen_random_uuid(),,,
+bestiary_entries,2,character_id,uuid,uuid,NO,,,,
+bestiary_entries,3,monster_id,uuid,uuid,NO,,,,
+bestiary_entries,4,unlocked_at,timestamp with time zone,timestamptz,NO,now(),,,
+bestiary_entries,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+bestiary_statistics,1,bestiary_statistics_id,uuid,uuid,NO,gen_random_uuid(),,,
+bestiary_statistics,2,character_id,uuid,uuid,NO,,,,
+bestiary_statistics,3,monster_id,uuid,uuid,NO,,,,
+bestiary_statistics,4,kill_count,bigint,int8,NO,1,,64,0
+bestiary_statistics,5,first_kill_at,timestamp with time zone,timestamptz,NO,now(),,,
+bestiary_statistics,6,last_kill_at,timestamp with time zone,timestamptz,NO,now(),,,
+bestiary_statistics,7,task_progress,bigint,int8,NO,0,,64,0
+bestiary_statistics,8,task_unlocked,boolean,bool,NO,false,,,
+bestiary_statistics,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+bestiary_statistics,10,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+bosses,1,boss_id,uuid,uuid,NO,gen_random_uuid(),,,
+bosses,2,monster_id,uuid,uuid,NO,,,,
+bosses,3,boss_type,character varying,varchar,NO,,20,,
+bosses,4,loot_level_bonus,integer,int4,NO,0,,32,0
+bosses,5,unique_modifier,numeric,numeric,NO,1.0000,,8,4
+bosses,6,additional_cooldown_seconds,integer,int4,NO,0,,32,0
+bosses,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+bosses,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_buffs,1,character_buff_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_buffs,2,character_id,uuid,uuid,NO,,,,
+character_buffs,3,buff_type,character varying,varchar,NO,,32,,
+character_buffs,4,buff_source_type,character varying,varchar,NO,,20,,
+character_buffs,5,consumable_definition_id,uuid,uuid,YES,,,,
+character_buffs,6,spell_id,uuid,uuid,YES,,,,
+character_buffs,7,value,numeric,numeric,NO,,,12,4
+character_buffs,8,duration_type,character varying,varchar,NO,,20,,
+character_buffs,9,duration_remaining,integer,int4,YES,,,32,0
+character_buffs,10,is_positive,boolean,bool,NO,,,,
+character_buffs,11,applied_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_buffs,12,expires_at,timestamp with time zone,timestamptz,YES,,,,
+character_buffs,13,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_buffs,14,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_cooldowns,1,character_cooldown_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_cooldowns,2,character_id,uuid,uuid,NO,,,,
+character_cooldowns,3,cooldown_type,character varying,varchar,NO,,32,,
+character_cooldowns,4,target_id,uuid,uuid,YES,,,,
+character_cooldowns,5,available_at,timestamp with time zone,timestamptz,NO,,,,
+character_cooldowns,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_cooldowns,7,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_daily_boss_progress,1,character_daily_boss_progress_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_daily_boss_progress,2,character_id,uuid,uuid,NO,,,,
+character_daily_boss_progress,3,daily_boss_definition_id,uuid,uuid,NO,,,,
+character_daily_boss_progress,4,attempts_date,date,date,NO,CURRENT_DATE,,,
+character_daily_boss_progress,5,attempts_used_today,integer,int4,NO,0,,32,0
+character_daily_boss_progress,6,total_attempts,bigint,int8,NO,0,,64,0
+character_daily_boss_progress,7,total_victories,bigint,int8,NO,0,,64,0
+character_daily_boss_progress,8,last_attempt_at,timestamp with time zone,timestamptz,YES,,,,
+character_daily_boss_progress,9,last_victory_at,timestamp with time zone,timestamptz,YES,,,,
+character_daily_boss_progress,10,highest_tier_defeated,integer,int4,YES,,,32,0
+character_daily_boss_progress,11,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_daily_boss_progress,12,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_loadouts,1,character_loadout_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_loadouts,2,character_id,uuid,uuid,NO,,,,
+character_loadouts,3,name,character varying,varchar,NO,,50,,
+character_loadouts,4,spell_1_id,uuid,uuid,YES,,,,
+character_loadouts,5,spell_2_id,uuid,uuid,YES,,,,
+character_loadouts,6,spell_3_id,uuid,uuid,YES,,,,
+character_loadouts,7,is_default,boolean,bool,NO,false,,,
+character_loadouts,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_loadouts,9,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_spell_mastery,1,character_spell_mastery_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_spell_mastery,2,character_id,uuid,uuid,NO,,,,
+character_spell_mastery,3,mastery_level,integer,int4,NO,1,,32,0
+character_spell_mastery,4,mastery_experience,bigint,int8,NO,0,,64,0
+character_spell_mastery,5,current_spell_power_percent,numeric,numeric,NO,100.0000,,8,4
+character_spell_mastery,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_spell_mastery,7,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_spells,1,character_spell_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_spells,2,character_id,uuid,uuid,NO,,,,
+character_spells,3,spell_id,uuid,uuid,NO,,,,
+character_spells,4,unlocked_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_statistics,1,character_statistics_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_statistics,2,character_id,uuid,uuid,NO,,,,
+character_statistics,3,total_playtime_seconds,bigint,int8,NO,0,,64,0
+character_statistics,4,total_gold_earned,bigint,int8,NO,0,,64,0
+character_statistics,5,total_gold_spent,bigint,int8,NO,0,,64,0
+character_statistics,6,highest_gold_owned,bigint,int8,NO,0,,64,0
+character_statistics,7,total_monsters_killed,bigint,int8,NO,0,,64,0
+character_statistics,8,total_bosses_killed,bigint,int8,NO,0,,64,0
+character_statistics,9,total_daily_bosses_killed,bigint,int8,NO,0,,64,0
+character_statistics,10,total_deaths,bigint,int8,NO,0,,64,0
+character_statistics,11,total_damage_dealt,bigint,int8,NO,0,,64,0
+character_statistics,12,total_damage_taken,bigint,int8,NO,0,,64,0
+character_statistics,13,total_healing_done,bigint,int8,NO,0,,64,0
+character_statistics,14,total_mana_spent,bigint,int8,NO,0,,64,0
+character_statistics,15,highest_physical_hit,bigint,int8,NO,0,,64,0
+character_statistics,16,highest_spell_hit,bigint,int8,NO,0,,64,0
+character_statistics,17,strongest_monster_killed_id,uuid,uuid,YES,,,,
+character_statistics,18,strongest_boss_killed_id,uuid,uuid,YES,,,,
+character_statistics,19,longest_no_death_streak,bigint,int8,NO,0,,64,0
+character_statistics,20,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_statistics,21,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_unlocks,1,character_unlocks_id,uuid,uuid,NO,gen_random_uuid(),,,
+character_unlocks,2,character_id,uuid,uuid,NO,,,,
+character_unlocks,3,is_promoted,boolean,bool,NO,false,,,
+character_unlocks,4,spell_slots_unlocked,integer,int4,NO,1,,32,0
+character_unlocks,5,crafting_slots_unlocked,integer,int4,NO,1,,32,0
+character_unlocks,6,inventory_slots,integer,int4,NO,50,,32,0
+character_unlocks,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+character_unlocks,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+characters,1,character_id,uuid,uuid,NO,gen_random_uuid(),,,
+characters,2,account_id,uuid,uuid,NO,,,,
+characters,3,season_id,uuid,uuid,YES,,,,
+characters,4,name,character varying,varchar,NO,,32,,
+characters,5,level,integer,int4,NO,1,,32,0
+characters,6,experience,bigint,int8,NO,0,,64,0
+characters,7,gold,bigint,int8,NO,0,,64,0
+characters,8,current_health,bigint,int8,NO,180,,64,0
+characters,9,current_mana,bigint,int8,NO,35,,64,0
+characters,10,current_energy,bigint,int8,NO,100,,64,0
+characters,11,max_health,bigint,int8,NO,180,,64,0
+characters,12,max_mana,bigint,int8,NO,35,,64,0
+characters,13,max_energy,bigint,int8,NO,100,,64,0
+characters,14,crafting_level,integer,int4,NO,1,,32,0
+characters,15,crafting_xp,bigint,int8,NO,0,,64,0
+characters,16,gathering_level,integer,int4,NO,1,,32,0
+characters,17,gathering_xp,bigint,int8,NO,0,,64,0
+characters,18,status,character varying,varchar,NO,'IsActive'::character varying,20,,
+characters,19,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+characters,20,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+characters,21,last_active_at,timestamp with time zone,timestamptz,YES,,,,
+chest_definitions,1,chest_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+chest_definitions,2,name,character varying,varchar,NO,,32,,
+chest_definitions,3,cooldown_seconds,integer,int4,NO,,,32,0
+chest_definitions,4,is_enabled,boolean,bool,NO,true,,,
+chest_definitions,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+chest_definitions,6,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+chest_reward_definitions,1,chest_reward_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+chest_reward_definitions,2,chest_definition_id,uuid,uuid,NO,,,,
+chest_reward_definitions,3,reward_type,character varying,varchar,NO,,32,,
+chest_reward_definitions,4,min_quantity,integer,int4,NO,1,,32,0
+chest_reward_definitions,5,max_quantity,integer,int4,NO,1,,32,0
+chest_reward_definitions,6,chance_percent,numeric,numeric,NO,,,7,4
+chest_reward_definitions,7,minimum_character_level,integer,int4,NO,1,,32,0
+chest_reward_definitions,8,maximum_character_level,integer,int4,YES,,,32,0
+chest_reward_definitions,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+chest_reward_definitions,10,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_effects,1,combat_effect_id,uuid,uuid,NO,gen_random_uuid(),,,
+combat_effects,2,combat_session_id,uuid,uuid,NO,,,,
+combat_effects,3,effect_type,character varying,varchar,NO,,32,,
+combat_effects,4,target_type,character varying,varchar,NO,,20,,
+combat_effects,5,source_type,character varying,varchar,NO,,20,,
+combat_effects,6,spell_id,uuid,uuid,YES,,,,
+combat_effects,7,consumable_definition_id,uuid,uuid,YES,,,,
+combat_effects,8,value,numeric,numeric,NO,,,12,4
+combat_effects,9,remaining_turns,integer,int4,NO,,,32,0
+combat_effects,10,applied_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_effects,11,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_logs,1,combat_log_id,uuid,uuid,NO,gen_random_uuid(),,,
+combat_logs,2,combat_session_id,uuid,uuid,NO,,,,
+combat_logs,3,character_id,uuid,uuid,NO,,,,
+combat_logs,4,monster_id,uuid,uuid,NO,,,,
+combat_logs,5,combat_result,character varying,varchar,NO,,20,,
+combat_logs,6,turn_count,integer,int4,NO,,,32,0
+combat_logs,7,started_at,timestamp with time zone,timestamptz,NO,,,,
+combat_logs,8,ended_at,timestamp with time zone,timestamptz,NO,,,,
+combat_logs,9,combat_data_json,jsonb,jsonb,NO,,,,
+combat_logs,10,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_sessions,1,combat_session_id,uuid,uuid,NO,gen_random_uuid(),,,
+combat_sessions,2,character_id,uuid,uuid,NO,,,,
+combat_sessions,3,monster_id,uuid,uuid,NO,,,,
+combat_sessions,4,status,character varying,varchar,NO,'Active'::character varying,20,,
+combat_sessions,5,current_turn,integer,int4,NO,1,,32,0
+combat_sessions,6,character_health,bigint,int8,NO,,,64,0
+combat_sessions,7,character_mana,bigint,int8,NO,,,64,0
+combat_sessions,8,monster_health,bigint,int8,NO,,,64,0
+combat_sessions,9,started_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_sessions,10,ended_at,timestamp with time zone,timestamptz,YES,,,,
+combat_sessions,11,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_sessions,12,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+combat_spell_cooldowns,1,combat_spell_cooldown_id,uuid,uuid,NO,gen_random_uuid(),,,
+combat_spell_cooldowns,2,combat_session_id,uuid,uuid,NO,,,,
+combat_spell_cooldowns,3,spell_id,uuid,uuid,NO,,,,
+combat_spell_cooldowns,4,remaining_turns,integer,int4,NO,,,32,0
+combat_spell_cooldowns,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+consumable_definitions,1,consumable_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+consumable_definitions,2,name,character varying,varchar,NO,,100,,
+consumable_definitions,3,description,text,text,NO,,,,
+consumable_definitions,4,artwork,text,text,YES,,,,
+consumable_definitions,5,category,character varying,varchar,NO,,32,,
+consumable_definitions,6,tier,character varying,varchar,NO,'None'::character varying,20,,
+consumable_definitions,7,effect_type,character varying,varchar,NO,,32,,
+consumable_definitions,8,effect_value,numeric,numeric,NO,0,,12,4
+consumable_definitions,9,duration_type,character varying,varchar,NO,,20,,
+consumable_definitions,10,duration_value,integer,int4,YES,,,32,0
+consumable_definitions,11,potion_cooldown_turns,integer,int4,NO,0,,32,0
+consumable_definitions,12,max_stack_size,integer,int4,NO,999,,32,0
+consumable_definitions,13,is_tradable,boolean,bool,NO,true,,,
+consumable_definitions,14,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+consumable_definitions,15,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+consumable_definitions,16,code,character varying,varchar,NO,,64,,
+consumable_storage,1,consumable_storage_id,uuid,uuid,NO,gen_random_uuid(),,,
+consumable_storage,2,character_id,uuid,uuid,NO,,,,
+consumable_storage,3,consumable_definition_id,uuid,uuid,NO,,,,
+consumable_storage,4,quantity,bigint,int8,NO,0,,64,0
+consumable_storage,5,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+crafting_history,1,crafting_history_id,uuid,uuid,NO,gen_random_uuid(),,,
+crafting_history,2,character_id,uuid,uuid,NO,,,,
+crafting_history,3,recipe_id,uuid,uuid,NO,,,,
+crafting_history,4,quantity_crafted,integer,int4,NO,,,32,0
+crafting_history,5,crafting_xp_earned,bigint,int8,NO,0,,64,0
+crafting_history,6,completed_at,timestamp with time zone,timestamptz,NO,,,,
+crafting_history,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+crafting_queue,1,crafting_queue_id,uuid,uuid,NO,gen_random_uuid(),,,
+crafting_queue,2,character_id,uuid,uuid,NO,,,,
+crafting_queue,3,recipe_id,uuid,uuid,NO,,,,
+crafting_queue,4,quantity,integer,int4,NO,,,32,0
+crafting_queue,5,status,character varying,varchar,NO,'Pending'::character varying,20,,
+crafting_queue,6,started_at,timestamp with time zone,timestamptz,YES,,,,
+crafting_queue,7,completes_at,timestamp with time zone,timestamptz,NO,,,,
+crafting_queue,8,crafting_slot,integer,int4,NO,,,32,0
+crafting_queue,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+daily_boss_definitions,1,daily_boss_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+daily_boss_definitions,2,boss_id,uuid,uuid,NO,,,,
+daily_boss_definitions,3,tier,integer,int4,NO,,,32,0
+daily_boss_definitions,4,recommended_level,integer,int4,NO,,,32,0
+daily_boss_definitions,5,attempts_per_day,integer,int4,NO,1,,32,0
+daily_boss_definitions,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+daily_boss_definitions,7,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+daily_boss_pools,1,daily_boss_pool_id,uuid,uuid,NO,gen_random_uuid(),,,
+daily_boss_pools,2,daily_boss_definition_id,uuid,uuid,NO,,,,
+daily_boss_pools,3,tier,integer,int4,NO,,,32,0
+daily_boss_pools,4,is_active,boolean,bool,NO,true,,,
+daily_boss_pools,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+daily_boss_rotation,1,daily_boss_rotation_id,uuid,uuid,NO,gen_random_uuid(),,,
+daily_boss_rotation,2,tier_1_boss_id,uuid,uuid,NO,,,,
+daily_boss_rotation,3,tier_2_boss_id,uuid,uuid,NO,,,,
+daily_boss_rotation,4,tier_3_boss_id,uuid,uuid,NO,,,,
+daily_boss_rotation,5,reset_timestamp,timestamp with time zone,timestamptz,NO,,,,
+daily_boss_rotation,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+daily_chest_progress,1,daily_chest_progress_id,uuid,uuid,NO,gen_random_uuid(),,,
+daily_chest_progress,2,character_id,uuid,uuid,NO,,,,
+daily_chest_progress,3,next_available_at,timestamp with time zone,timestamptz,NO,,,,
+daily_chest_progress,4,is_available,boolean,bool,NO,false,,,
+daily_chest_progress,5,last_claimed_at,timestamp with time zone,timestamptz,YES,,,,
+daily_chest_progress,6,total_claims,bigint,int8,NO,0,,64,0
+daily_chest_progress,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+daily_chest_progress,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+equipment_loadouts,1,equipment_loadout_id,uuid,uuid,NO,gen_random_uuid(),,,
+equipment_loadouts,2,character_id,uuid,uuid,NO,,,,
+equipment_loadouts,3,name,character varying,varchar,NO,,50,,
+equipment_loadouts,4,weapon_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,5,helmet_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,6,armor_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,7,shield_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,8,legs_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,9,boots_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,10,ring_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,11,amulet_item_id,uuid,uuid,YES,,,,
+equipment_loadouts,12,is_default,boolean,bool,NO,false,,,
+equipment_loadouts,13,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+equipment_loadouts,14,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+friend_requests,1,friend_request_id,uuid,uuid,NO,gen_random_uuid(),,,
+friend_requests,2,sender_account_id,uuid,uuid,NO,,,,
+friend_requests,3,recipient_account_id,uuid,uuid,NO,,,,
+friend_requests,4,status,character varying,varchar,NO,'Pending'::character varying,20,,
+friend_requests,5,sent_at,timestamp with time zone,timestamptz,NO,now(),,,
+friend_requests,6,responded_at,timestamp with time zone,timestamptz,YES,,,,
+friend_requests,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+gathering_results,1,gathering_result_id,uuid,uuid,NO,gen_random_uuid(),,,
+gathering_results,2,gathering_session_id,uuid,uuid,NO,,,,
+gathering_results,3,material_id,uuid,uuid,NO,,,,
+gathering_results,4,quantity,bigint,int8,NO,,,64,0
+gathering_results,5,successful_rolls,integer,int4,NO,,,32,0
+gathering_results,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+gathering_sessions,1,gathering_session_id,uuid,uuid,NO,gen_random_uuid(),,,
+gathering_sessions,2,character_id,uuid,uuid,NO,,,,
+gathering_sessions,3,started_at,timestamp with time zone,timestamptz,NO,now(),,,
+gathering_sessions,4,ended_at,timestamp with time zone,timestamptz,YES,,,,
+gathering_sessions,5,status,character varying,varchar,NO,'Active'::character varying,20,,
+gathering_sessions,6,gathering_level_at_start,integer,int4,NO,,,32,0
+gathering_sessions,7,total_minutes_gathered,integer,int4,NO,0,,32,0
+gathering_sessions,8,experience_earned,bigint,int8,NO,0,,64,0
+gathering_sessions,9,results_collected,boolean,bool,NO,false,,,
+gathering_sessions,10,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+gathering_sessions,11,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+hall_of_fame,1,hall_of_fame_id,uuid,uuid,NO,gen_random_uuid(),,,
+hall_of_fame,2,season_id,uuid,uuid,NO,,,,
+hall_of_fame,3,character_id,uuid,uuid,YES,,,,
+hall_of_fame,4,character_name,character varying,varchar,NO,,32,,
+hall_of_fame,5,rank_position,integer,int4,NO,,,32,0
+hall_of_fame,6,final_level,integer,int4,NO,,,32,0
+hall_of_fame,7,final_experience,bigint,int8,NO,,,64,0
+hall_of_fame,8,achievement_score,bigint,int8,NO,0,,64,0
+hall_of_fame,9,holy_grail_percent,numeric,numeric,NO,0,,7,4
+hall_of_fame,10,total_playtime_seconds,bigint,int8,NO,0,,64,0
+hall_of_fame,11,total_deaths,bigint,int8,NO,0,,64,0
+hall_of_fame,12,recorded_at,timestamp with time zone,timestamptz,NO,now(),,,
+hall_of_fame,13,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+holy_grail_entries,1,holy_grail_entry_id,uuid,uuid,NO,gen_random_uuid(),,,
+holy_grail_entries,2,account_id,uuid,uuid,NO,,,,
+holy_grail_entries,3,unique_template_id,uuid,uuid,YES,,,,
+holy_grail_entries,4,set_template_id,uuid,uuid,YES,,,,
+holy_grail_entries,5,found_by_character_id,uuid,uuid,YES,,,,
+holy_grail_entries,6,found_season_id,uuid,uuid,YES,,,,
+holy_grail_entries,7,first_found_at,timestamp with time zone,timestamptz,NO,now(),,,
+holy_grail_entries,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+hourly_chest_progress,1,hourly_chest_progress_id,uuid,uuid,NO,gen_random_uuid(),,,
+hourly_chest_progress,2,character_id,uuid,uuid,NO,,,,
+hourly_chest_progress,3,next_available_at,timestamp with time zone,timestamptz,NO,,,,
+hourly_chest_progress,4,is_available,boolean,bool,NO,false,,,
+hourly_chest_progress,5,last_claimed_at,timestamp with time zone,timestamptz,YES,,,,
+hourly_chest_progress,6,total_claims,bigint,int8,NO,0,,64,0
+hourly_chest_progress,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+hourly_chest_progress,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+inventory_items,1,inventory_item_id,uuid,uuid,NO,gen_random_uuid(),,,
+inventory_items,2,character_id,uuid,uuid,NO,,,,
+inventory_items,3,item_id,uuid,uuid,NO,,,,
+inventory_items,4,position,integer,int4,NO,,,32,0
+inventory_items,5,is_equipped,boolean,bool,NO,false,,,
+inventory_items,6,acquired_at,timestamp with time zone,timestamptz,NO,now(),,,
+item_affixes,1,item_affix_id,uuid,uuid,NO,gen_random_uuid(),,,
+item_affixes,2,item_id,uuid,uuid,NO,,,,
+item_affixes,3,affix_template_id,uuid,uuid,NO,,,,
+item_affixes,4,roll_value,numeric,numeric,NO,,,12,4
+item_affixes,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+item_bases,1,item_base_id,uuid,uuid,NO,gen_random_uuid(),,,
+item_bases,2,unique_template_id,uuid,uuid,YES,,,,
+item_bases,3,set_template_id,uuid,uuid,YES,,,,
+item_bases,4,name,character varying,varchar,NO,,100,,
+item_bases,5,description,text,text,NO,,,,
+item_bases,6,artwork,text,text,YES,,,,
+item_bases,7,item_level,integer,int4,NO,,,32,0
+item_bases,8,required_level,integer,int4,NO,1,,32,0
+item_bases,9,slot,character varying,varchar,NO,,20,,
+item_bases,10,weapon_type,character varying,varchar,YES,,32,,
+item_bases,11,attack,numeric,numeric,NO,0,,12,4
+item_bases,12,defense,numeric,numeric,NO,0,,12,4
+item_bases,13,spell_power,numeric,numeric,NO,0,,12,4
+item_bases,14,health,numeric,numeric,NO,0,,12,4
+item_bases,15,mana,numeric,numeric,NO,0,,12,4
+item_bases,16,energy,numeric,numeric,NO,0,,12,4
+item_bases,17,gold_percent,numeric,numeric,NO,0,,8,4
+item_bases,18,experience_percent,numeric,numeric,NO,0,,8,4
+item_bases,19,base_item_score,bigint,int8,NO,0,,64,0
+item_bases,20,is_boss_exclusive,boolean,bool,NO,false,,,
+item_bases,21,is_unique,boolean,bool,NO,false,,,
+item_bases,22,is_set,boolean,bool,NO,false,,,
+item_bases,23,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+item_bases,24,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+item_bases,25,code,character varying,varchar,NO,,64,,
+items,1,item_id,uuid,uuid,NO,gen_random_uuid(),,,
+items,2,item_base_id,uuid,uuid,NO,,,,
+items,3,item_level,integer,int4,NO,,,32,0
+items,4,rarity,character varying,varchar,NO,,20,,
+items,5,item_score,bigint,int8,NO,0,,64,0
+items,6,is_locked,boolean,bool,NO,false,,,
+items,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+login_streak_progress,1,login_streak_progress_id,uuid,uuid,NO,gen_random_uuid(),,,
+login_streak_progress,2,character_id,uuid,uuid,NO,,,,
+login_streak_progress,3,current_streak,integer,int4,NO,0,,32,0
+login_streak_progress,4,highest_streak,integer,int4,NO,0,,32,0
+login_streak_progress,5,last_login_date,date,date,YES,,,,
+login_streak_progress,6,last_reward_day,integer,int4,NO,0,,32,0
+login_streak_progress,7,completed_cycles,bigint,int8,NO,0,,64,0
+login_streak_progress,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+login_streak_progress,9,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+loot_tables,1,loot_table_id,uuid,uuid,NO,gen_random_uuid(),,,
+loot_tables,2,monster_id,uuid,uuid,NO,,,,
+loot_tables,3,item_base_id,uuid,uuid,NO,,,,
+loot_tables,4,drop_chance_percent,numeric,numeric,NO,,,7,4
+loot_tables,5,min_item_level,integer,int4,NO,,,32,0
+loot_tables,6,max_item_level,integer,int4,NO,,,32,0
+loot_tables,7,loot_level_modifier,integer,int4,NO,0,,32,0
+loot_tables,8,is_enabled,boolean,bool,NO,true,,,
+loot_tables,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+loot_tables,10,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+mail_attachments,1,mail_attachment_id,uuid,uuid,NO,gen_random_uuid(),,,
+mail_attachments,2,mail_message_id,uuid,uuid,NO,,,,
+mail_attachments,3,attachment_type,character varying,varchar,NO,,20,,
+mail_attachments,4,gold_amount,bigint,int8,YES,,,64,0
+mail_attachments,5,item_id,uuid,uuid,YES,,,,
+mail_attachments,6,material_id,uuid,uuid,YES,,,,
+mail_attachments,7,material_quantity,bigint,int8,YES,,,64,0
+mail_attachments,8,consumable_definition_id,uuid,uuid,YES,,,,
+mail_attachments,9,consumable_quantity,bigint,int8,YES,,,64,0
+mail_attachments,10,is_collected,boolean,bool,NO,false,,,
+mail_attachments,11,collected_at,timestamp with time zone,timestamptz,YES,,,,
+mail_attachments,12,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+mail_messages,1,mail_message_id,uuid,uuid,NO,gen_random_uuid(),,,
+mail_messages,2,character_id,uuid,uuid,NO,,,,
+mail_messages,3,subject,character varying,varchar,NO,,200,,
+mail_messages,4,body,text,text,NO,,,,
+mail_messages,5,message_type,character varying,varchar,NO,,32,,
+mail_messages,6,is_read,boolean,bool,NO,false,,,
+mail_messages,7,expires_at,timestamp with time zone,timestamptz,YES,,,,
+mail_messages,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+mail_messages,9,read_at,timestamp with time zone,timestamptz,YES,,,,
+mail_templates,1,mail_template_id,uuid,uuid,NO,gen_random_uuid(),,,
+mail_templates,2,code,character varying,varchar,NO,,64,,
+mail_templates,3,subject_template,text,text,NO,,,,
+mail_templates,4,body_template,text,text,NO,,,,
+mail_templates,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+mail_templates,6,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+material_storage,1,material_storage_id,uuid,uuid,NO,gen_random_uuid(),,,
+material_storage,2,character_id,uuid,uuid,NO,,,,
+material_storage,3,material_id,uuid,uuid,NO,,,,
+material_storage,4,quantity,bigint,int8,NO,0,,64,0
+material_storage,5,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+materials,1,material_id,uuid,uuid,NO,gen_random_uuid(),,,
+materials,2,name,character varying,varchar,NO,,100,,
+materials,3,description,text,text,NO,,,,
+materials,4,artwork,text,text,YES,,,,
+materials,5,material_level,integer,int4,NO,1,,32,0
+materials,6,vendor_available,boolean,bool,NO,false,,,
+materials,7,vendor_price,bigint,int8,YES,,,64,0
+materials,8,is_gatherable,boolean,bool,NO,false,,,
+materials,9,is_lootable,boolean,bool,NO,false,,,
+materials,10,is_crafting_ingredient,boolean,bool,NO,true,,,
+materials,11,required_gathering_level,integer,int4,NO,1,,32,0
+materials,12,minimum_monster_level,integer,int4,YES,,,32,0
+materials,13,max_stack_size,integer,int4,NO,999,,32,0
+materials,14,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+materials,15,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+materials,16,code,character varying,varchar,NO,,64,,
+monster_abilities,1,monster_ability_id,uuid,uuid,NO,gen_random_uuid(),,,
+monster_abilities,2,monster_id,uuid,uuid,NO,,,,
+monster_abilities,3,spell_id,uuid,uuid,NO,,,,
+monster_abilities,4,is_enabled,boolean,bool,NO,true,,,
+monster_abilities,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+monster_ability_weights,1,monster_ability_weight_id,uuid,uuid,NO,gen_random_uuid(),,,
+monster_ability_weights,2,monster_ability_id,uuid,uuid,NO,,,,
+monster_ability_weights,3,weight,numeric,numeric,NO,,,12,4
+monster_ability_weights,4,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+monster_families,1,monster_family_id,uuid,uuid,NO,gen_random_uuid(),,,
+monster_families,2,name,character varying,varchar,NO,,100,,
+monster_families,3,description,text,text,NO,,,,
+monster_families,4,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+monster_families,5,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+monster_families,6,code,character varying,varchar,NO,,64,,
+monster_tasks,1,monster_task_id,uuid,uuid,NO,gen_random_uuid(),,,
+monster_tasks,2,monster_id,uuid,uuid,NO,,,,
+monster_tasks,3,boss_id,uuid,uuid,NO,,,,
+monster_tasks,4,required_kills,bigint,int8,NO,,,64,0
+monster_tasks,5,reunlock_gold_cost,bigint,int8,NO,0,,64,0
+monster_tasks,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+monster_tasks,7,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+monsters,1,monster_id,uuid,uuid,NO,gen_random_uuid(),,,
+monsters,2,monster_family_id,uuid,uuid,NO,,,,
+monsters,3,name,character varying,varchar,NO,,100,,
+monsters,4,description,text,text,NO,,,,
+monsters,5,artwork,text,text,YES,,,,
+monsters,6,monster_type,character varying,varchar,NO,,20,,
+monsters,7,level,integer,int4,NO,,,32,0
+monsters,8,health,bigint,int8,NO,,,64,0
+monsters,9,attack,numeric,numeric,NO,,,12,4
+monsters,10,defense,numeric,numeric,NO,,,12,4
+monsters,11,spell_power_percent,numeric,numeric,NO,100.0000,,8,4
+monsters,12,cooldown_seconds,integer,int4,NO,0,,32,0
+monsters,13,ability_chance_percent,numeric,numeric,NO,0,,7,4
+monsters,14,gold_min,bigint,int8,NO,0,,64,0
+monsters,15,gold_max,bigint,int8,NO,0,,64,0
+monsters,16,loot_level_modifier,integer,int4,NO,0,,32,0
+monsters,17,power_score,bigint,int8,NO,0,,64,0
+monsters,18,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+monsters,19,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+monsters,20,code,character varying,varchar,NO,,64,,
+npc_definitions,1,npc_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+npc_definitions,2,name,character varying,varchar,NO,,100,,
+npc_definitions,3,description,text,text,NO,,,,
+npc_definitions,4,artwork,text,text,YES,,,,
+npc_definitions,5,npc_type,character varying,varchar,NO,,32,,
+npc_definitions,6,level_min,integer,int4,YES,,,32,0
+npc_definitions,7,level_max,integer,int4,YES,,,32,0
+npc_definitions,8,is_active,boolean,bool,NO,true,,,
+npc_definitions,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+npc_definitions,10,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+npc_definitions,11,code,character varying,varchar,NO,,64,,
+other_loot_tables,1,other_loot_table_id,uuid,uuid,NO,gen_random_uuid(),,,
+other_loot_tables,2,monster_id,uuid,uuid,NO,,,,
+other_loot_tables,3,material_id,uuid,uuid,YES,,,,
+other_loot_tables,4,consumable_definition_id,uuid,uuid,YES,,,,
+other_loot_tables,5,drop_chance_percent,numeric,numeric,NO,,,7,4
+other_loot_tables,6,min_quantity,integer,int4,NO,1,,32,0
+other_loot_tables,7,max_quantity,integer,int4,NO,1,,32,0
+other_loot_tables,8,is_enabled,boolean,bool,NO,true,,,
+other_loot_tables,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+other_loot_tables,10,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+outfit_definitions,1,outfit_definition_id,uuid,uuid,NO,gen_random_uuid(),,,
+outfit_definitions,2,name,character varying,varchar,NO,,100,,
+outfit_definitions,3,description,text,text,NO,,,,
+outfit_definitions,4,artwork,text,text,YES,,,,
+outfit_definitions,5,category,character varying,varchar,NO,,64,,
+outfit_definitions,6,display_order,integer,int4,NO,0,,32,0
+outfit_definitions,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+outfit_definitions,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+outfit_definitions,9,code,character varying,varchar,NO,,64,,
+private_messages,1,private_message_id,uuid,uuid,NO,gen_random_uuid(),,,
+private_messages,2,sender_account_id,uuid,uuid,NO,,,,
+private_messages,3,recipient_account_id,uuid,uuid,NO,,,,
+private_messages,4,subject,character varying,varchar,NO,,200,,
+private_messages,5,message_body,text,text,NO,,,,
+private_messages,6,is_read,boolean,bool,NO,false,,,
+private_messages,7,sent_at,timestamp with time zone,timestamptz,NO,now(),,,
+private_messages,8,read_at,timestamp with time zone,timestamptz,YES,,,,
+private_messages,9,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+punishments,1,punishment_id,uuid,uuid,NO,gen_random_uuid(),,,
+punishments,2,account_id,uuid,uuid,NO,,,,
+punishments,3,punishment_type,character varying,varchar,NO,,32,,
+punishments,4,reason,text,text,NO,,,,
+punishments,5,issued_by,character varying,varchar,NO,,100,,
+punishments,6,issued_at,timestamp with time zone,timestamptz,NO,now(),,,
+punishments,7,expires_at,timestamp with time zone,timestamptz,YES,,,,
+punishments,8,is_active,boolean,bool,NO,true,,,
+punishments,9,removed_at,timestamp with time zone,timestamptz,YES,,,,
+punishments,10,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+recipe_materials,1,recipe_material_id,uuid,uuid,NO,gen_random_uuid(),,,
+recipe_materials,2,recipe_id,uuid,uuid,NO,,,,
+recipe_materials,3,material_id,uuid,uuid,NO,,,,
+recipe_materials,4,required_quantity,bigint,int8,NO,,,64,0
+recipe_materials,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+recipes,1,recipe_id,uuid,uuid,NO,gen_random_uuid(),,,
+recipes,2,name,character varying,varchar,NO,,100,,
+recipes,3,description,text,text,NO,,,,
+recipes,4,category,character varying,varchar,NO,,20,,
+recipes,5,consumable_definition_id,uuid,uuid,NO,,,,
+recipes,6,required_crafting_level,integer,int4,NO,1,,32,0
+recipes,7,required_character_level,integer,int4,NO,1,,32,0
+recipes,8,gold_cost,bigint,int8,NO,0,,64,0
+recipes,9,crafting_time_seconds,integer,int4,NO,,,32,0
+recipes,10,crafting_xp_reward,bigint,int8,NO,0,,64,0
+recipes,11,output_quantity,integer,int4,NO,1,,32,0
+recipes,12,is_enabled,boolean,bool,NO,true,,,
+recipes,13,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+recipes,14,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+recipes,15,code,character varying,varchar,NO,,64,,
+season_rankings,1,season_ranking_id,uuid,uuid,NO,gen_random_uuid(),,,
+season_rankings,2,season_id,uuid,uuid,NO,,,,
+season_rankings,3,character_id,uuid,uuid,NO,,,,
+season_rankings,4,ranking_type,character varying,varchar,NO,,20,,
+season_rankings,5,rank_position,integer,int4,NO,,,32,0
+season_rankings,6,character_level,integer,int4,NO,,,32,0
+season_rankings,7,character_experience,bigint,int8,NO,,,64,0
+season_rankings,8,total_deaths,bigint,int8,NO,0,,64,0
+season_rankings,9,captured_at,timestamp with time zone,timestamptz,NO,now(),,,
+season_rankings,10,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+seasons,1,season_id,uuid,uuid,NO,gen_random_uuid(),,,
+seasons,2,season_number,integer,int4,NO,,,32,0
+seasons,3,name,character varying,varchar,NO,,100,,
+seasons,4,start_date,timestamp with time zone,timestamptz,NO,,,,
+seasons,5,end_date,timestamp with time zone,timestamptz,NO,,,,
+seasons,6,status,character varying,varchar,NO,'Upcoming'::character varying,20,,
+seasons,7,is_current,boolean,bool,NO,false,,,
+seasons,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+seasons,9,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+seed_history,1,seed_history_id,uuid,uuid,NO,gen_random_uuid(),,,
+seed_history,2,seed_name,character varying,varchar,NO,,255,,
+seed_history,3,checksum_sha256,character varying,varchar,NO,,64,,
+seed_history,4,applied_at,timestamp with time zone,timestamptz,NO,now(),,,
+set_bonuses,1,set_bonus_id,uuid,uuid,NO,gen_random_uuid(),,,
+set_bonuses,2,set_template_id,uuid,uuid,NO,,,,
+set_bonuses,3,required_pieces,integer,int4,NO,,,32,0
+set_bonuses,4,bonus_type,character varying,varchar,NO,,32,,
+set_bonuses,5,bonus_value,numeric,numeric,NO,,,12,4
+set_bonuses,6,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+set_progress,1,set_progress_id,uuid,uuid,NO,gen_random_uuid(),,,
+set_progress,2,account_id,uuid,uuid,NO,,,,
+set_progress,3,set_template_id,uuid,uuid,NO,,,,
+set_progress,4,pieces_discovered,integer,int4,NO,0,,32,0
+set_progress,5,total_pieces_required,integer,int4,NO,,,32,0
+set_progress,6,is_completed,boolean,bool,NO,false,,,
+set_progress,7,completed_at,timestamp with time zone,timestamptz,YES,,,,
+set_progress,8,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+set_progress,9,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+set_templates,1,set_template_id,uuid,uuid,NO,gen_random_uuid(),,,
+set_templates,2,name,character varying,varchar,NO,,100,,
+set_templates,3,description,text,text,NO,,,,
+set_templates,4,required_pieces,integer,int4,NO,,,32,0
+set_templates,5,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+set_templates,6,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+set_templates,7,code,character varying,varchar,NO,,64,,
+spells,1,spell_id,uuid,uuid,NO,gen_random_uuid(),,,
+spells,2,name,character varying,varchar,NO,,100,,
+spells,3,description,text,text,NO,,,,
+spells,4,icon,text,text,YES,,,,
+spells,5,category,character varying,varchar,NO,,32,,
+spells,6,target_type,character varying,varchar,NO,,20,,
+spells,7,mana_cost,integer,int4,NO,0,,32,0
+spells,8,cooldown_turns,integer,int4,NO,0,,32,0
+spells,9,base_value,numeric,numeric,NO,0,,12,4
+spells,10,duration_turns,integer,int4,NO,0,,32,0
+spells,11,required_level,integer,int4,NO,1,,32,0
+spells,12,gold_cost,bigint,int8,NO,0,,64,0
+spells,13,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+spells,14,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+spells,15,code,character varying,varchar,NO,,64,,
+unique_pity_tracking,1,unique_pity_tracking_id,uuid,uuid,NO,gen_random_uuid(),,,
+unique_pity_tracking,2,character_id,uuid,uuid,NO,,,,
+unique_pity_tracking,3,eligible_kill_count,bigint,int8,NO,0,,64,0
+unique_pity_tracking,4,current_chance_percent,numeric,numeric,NO,0,,7,4
+unique_pity_tracking,5,last_unique_drop_at,timestamp with time zone,timestamptz,YES,,,,
+unique_pity_tracking,6,last_set_drop_at,timestamp with time zone,timestamptz,YES,,,,
+unique_pity_tracking,7,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+unique_pity_tracking,8,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+unique_templates,1,unique_template_id,uuid,uuid,NO,gen_random_uuid(),,,
+unique_templates,2,name,character varying,varchar,NO,,100,,
+unique_templates,3,description,text,text,NO,,,,
+unique_templates,4,min_attack,numeric,numeric,NO,0,,12,4
+unique_templates,5,max_attack,numeric,numeric,NO,0,,12,4
+unique_templates,6,min_defense,numeric,numeric,NO,0,,12,4
+unique_templates,7,max_defense,numeric,numeric,NO,0,,12,4
+unique_templates,8,min_spell_power,numeric,numeric,NO,0,,12,4
+unique_templates,9,max_spell_power,numeric,numeric,NO,0,,12,4
+unique_templates,10,min_health,numeric,numeric,NO,0,,12,4
+unique_templates,11,max_health,numeric,numeric,NO,0,,12,4
+unique_templates,12,min_mana,numeric,numeric,NO,0,,12,4
+unique_templates,13,max_mana,numeric,numeric,NO,0,,12,4
+unique_templates,14,min_energy,numeric,numeric,NO,0,,12,4
+unique_templates,15,max_energy,numeric,numeric,NO,0,,12,4
+unique_templates,16,created_at,timestamp with time zone,timestamptz,NO,now(),,,
+unique_templates,17,updated_at,timestamp with time zone,timestamptz,NO,now(),,,
+unique_templates,18,code,character varying,varchar,NO,,64,,
