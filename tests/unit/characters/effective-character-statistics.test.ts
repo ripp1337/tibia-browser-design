@@ -141,4 +141,73 @@ describe("calculateEffectiveCharacterStatistics", () => {
       })
     ).toThrow("Spell Mastery Power must be non-negative.");
   });
-});
+
+  it("returns identical results for repeated calculations", () => {
+    const input = {
+      level: 50,
+      spellMasteryPower: 125,
+      equipment: {
+        attack: 12.75,
+        defense: 8.25,
+        spellPower: 15.5,
+        maximumHealth: 100,
+        maximumMana: 40,
+        maximumEnergy: 20,
+        goldBonusPercent: 5.5,
+        experienceBonusPercent: 7.25,
+      },
+      achievements: {
+        attack: 3,
+        defense: 2,
+        goldBonusPercent: 1.5,
+        experienceBonusPercent: 2.5,
+      },
+      progressionBoosts: {
+        goldBonusPercent: 10,
+        experienceBonusPercent: 20,
+      },
+      combat: {
+        attack: -4,
+        defense: 6,
+        spellPower: -10,
+      },
+    };
+
+    const first =
+      calculateEffectiveCharacterStatistics(input);
+
+    const second =
+      calculateEffectiveCharacterStatistics(input);
+
+    expect(second).toEqual(first);
+    expect(input).toEqual({
+      level: 50,
+      spellMasteryPower: 125,
+      equipment: {
+        attack: 12.75,
+        defense: 8.25,
+        spellPower: 15.5,
+        maximumHealth: 100,
+        maximumMana: 40,
+        maximumEnergy: 20,
+        goldBonusPercent: 5.5,
+        experienceBonusPercent: 7.25,
+      },
+      achievements: {
+        attack: 3,
+        defense: 2,
+        goldBonusPercent: 1.5,
+        experienceBonusPercent: 2.5,
+      },
+      progressionBoosts: {
+        goldBonusPercent: 10,
+        experienceBonusPercent: 20,
+      },
+      combat: {
+        attack: -4,
+        defense: 6,
+        spellPower: -10,
+      },
+    });
+  });});
+
