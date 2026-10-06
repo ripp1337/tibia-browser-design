@@ -34,9 +34,6 @@ type CharacterStatisticsSourcesRow = {
   achievement_defense: string;
   achievement_gold_percent: string;
   achievement_experience_percent: string;
-  boost_attack: string;
-  boost_defense: string;
-  boost_spell_power: string;
   boost_gold_percent: string;
   boost_experience_percent: string;
 };
@@ -88,9 +85,6 @@ const CALCULATION_SOURCES_QUERY = `
     COALESCE(MAX(achievement.experience_percent), 0)
       AS achievement_experience_percent,
 
-    COALESCE(MAX(boost.attack), 0) AS boost_attack,
-    COALESCE(MAX(boost.defense), 0) AS boost_defense,
-    COALESCE(MAX(boost.spell_power), 0) AS boost_spell_power,
     COALESCE(MAX(boost.gold_percent), 0) AS boost_gold_percent,
     COALESCE(MAX(boost.experience_percent), 0)
       AS boost_experience_percent
@@ -213,15 +207,7 @@ const CALCULATION_SOURCES_QUERY = `
 
   LEFT JOIN LATERAL (
     SELECT
-      COALESCE(SUM(cb.value) FILTER (
-        WHERE cb.buff_type = 'AttackBuff'
-      ), 0) AS attack,
-      COALESCE(SUM(cb.value) FILTER (
-        WHERE cb.buff_type = 'DefenseBuff'
-      ), 0) AS defense,
-      COALESCE(SUM(cb.value) FILTER (
-        WHERE cb.buff_type = 'SpellPowerBuff'
-      ), 0) AS spell_power,
+
       COALESCE(SUM(cb.value) FILTER (
         WHERE cb.buff_type = 'GoldBoost'
       ), 0) AS gold_percent,
@@ -296,18 +282,7 @@ export class PostgresCharacterStatisticsRepository
         "current_spell_power"
       ),
            progressionBoosts: {
-        attack: parseNumericValue(
-          row.boost_attack,
-          "boost_attack"
-        ),
-        defense: parseNumericValue(
-          row.boost_defense,
-          "boost_defense"
-        ),
-        spellPower: parseNumericValue(
-          row.boost_spell_power,
-          "boost_spell_power"
-        ),
+
         goldBonusPercent: parseNumericValue(
           row.boost_gold_percent,
           "boost_gold_percent"
@@ -372,6 +347,7 @@ export class PostgresCharacterStatisticsRepository
     };
   }
 }
+
 
 
 

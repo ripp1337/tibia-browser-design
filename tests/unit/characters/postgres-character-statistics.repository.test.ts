@@ -64,9 +64,6 @@ describe("PostgresCharacterStatisticsRepository", () => {
         experienceBonusPercent: 1.25,
       },
       progressionBoosts: {
-        attack: 11,
-        defense: 12,
-        spellPower: 13,
         goldBonusPercent: 14.5,
         experienceBonusPercent: 15.25,
       },
@@ -164,5 +161,6 @@ describe("PostgresCharacterStatisticsRepository", () => {
     );
   });
 });
+
 
 

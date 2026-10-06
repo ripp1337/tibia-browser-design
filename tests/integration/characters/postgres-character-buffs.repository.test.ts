@@ -40,7 +40,7 @@ describe("active character buffs integration", () => {
     await testPool.end();
   });
 
-  it("includes only active positive supported buffs", async () => {
+  it("includes progression boosts and ignores combat buffs outside combat", async () => {
     const account = await createTestAccount(testPool);
     accountIds.push(account.accountId);
 
@@ -79,8 +79,8 @@ describe("active character buffs integration", () => {
             TRUE, NOW() - INTERVAL '2 hours',
             NOW() - INTERVAL '1 hour'),
 
-          ($1, 'GoldBoost', 'System', 1000, 'Permanent', NULL,
-            FALSE, NOW(), NULL)
+          ($1, 'GoldBoost', 'System', 3.5, 'Permanent', NULL,
+            TRUE, NOW(), NULL)
       `,
       [character.characterId]
     );
@@ -90,11 +90,9 @@ describe("active character buffs integration", () => {
     );
 
     expect(result?.progressionBoosts).toEqual({
-      attack: 7,
-      defense: 0,
-      spellPower: 0,
-      goldBonusPercent: 0,
+      goldBonusPercent: 3.5,
       experienceBonusPercent: 4.5,
     });
   });
 });
+
