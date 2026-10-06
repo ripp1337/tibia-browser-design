@@ -39,14 +39,6 @@ type CharacterStatisticsSourcesRow = {
   boost_spell_power: string;
   boost_gold_percent: string;
   boost_experience_percent: string;
-  permanent_attack: string;
-  permanent_defense: string;
-  permanent_spell_power: string;
-  permanent_health: string;
-  permanent_mana: string;
-  permanent_energy: string;
-  permanent_gold_percent: string;
-  permanent_experience_percent: string;
 };
 
 const CALCULATION_SOURCES_QUERY = `
@@ -101,25 +93,12 @@ const CALCULATION_SOURCES_QUERY = `
     COALESCE(MAX(boost.spell_power), 0) AS boost_spell_power,
     COALESCE(MAX(boost.gold_percent), 0) AS boost_gold_percent,
     COALESCE(MAX(boost.experience_percent), 0)
-      AS boost_experience_percent,
-
-    COALESCE(MAX(cpb.attack), 0) AS permanent_attack,
-    COALESCE(MAX(cpb.defense), 0) AS permanent_defense,
-    COALESCE(MAX(cpb.spell_power), 0) AS permanent_spell_power,
-    COALESCE(MAX(cpb.health), 0) AS permanent_health,
-    COALESCE(MAX(cpb.mana), 0) AS permanent_mana,
-    COALESCE(MAX(cpb.energy), 0) AS permanent_energy,
-    COALESCE(MAX(cpb.gold_percent), 0) AS permanent_gold_percent,
-    COALESCE(MAX(cpb.experience_percent), 0)
-      AS permanent_experience_percent
+      AS boost_experience_percent
 
   FROM characters c
 
   INNER JOIN character_spell_mastery csm
     ON csm.character_id = c.character_id
-
-  INNER JOIN character_permanent_bonuses cpb
-    ON cpb.character_id = c.character_id
 
   LEFT JOIN inventory_items ii
     ON ii.character_id = c.character_id
@@ -316,35 +295,7 @@ export class PostgresCharacterStatisticsRepository
         row.current_spell_power,
         "current_spell_power"
       ),
-           permanentBonuses: {
-        attack: parseNumericValue(row.permanent_attack, "permanent_attack"),
-        defense: parseNumericValue(row.permanent_defense, "permanent_defense"),
-        spellPower: parseNumericValue(
-          row.permanent_spell_power,
-          "permanent_spell_power"
-        ),
-        maximumHealth: parseNumericValue(
-          row.permanent_health,
-          "permanent_health"
-        ),
-        maximumMana: parseNumericValue(
-          row.permanent_mana,
-          "permanent_mana"
-        ),
-        maximumEnergy: parseNumericValue(
-          row.permanent_energy,
-          "permanent_energy"
-        ),
-        goldBonusPercent: parseNumericValue(
-          row.permanent_gold_percent,
-          "permanent_gold_percent"
-        ),
-        experienceBonusPercent: parseNumericValue(
-          row.permanent_experience_percent,
-          "permanent_experience_percent"
-        ),
-      },
-      progressionBoosts: {
+           progressionBoosts: {
         attack: parseNumericValue(
           row.boost_attack,
           "boost_attack"
@@ -421,8 +372,6 @@ export class PostgresCharacterStatisticsRepository
     };
   }
 }
-
-
 
 
 

@@ -11,7 +11,6 @@ export type CharacterStatisticsSources = {
   equipment: CharacterStatModifiers;
   achievements: Partial<CharacterStatModifiers>;
   progressionBoosts: Partial<CharacterStatModifiers>;
-  permanentBonuses: Partial<CharacterStatModifiers>;
 };
 
 export interface CharacterStatisticsRepository {
@@ -19,6 +18,5 @@ export interface CharacterStatisticsRepository {
     characterId: CharacterId
   ): Promise<CharacterStatisticsSources | null>;
 }
-
 
 

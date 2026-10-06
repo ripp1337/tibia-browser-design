@@ -27,7 +27,6 @@ describe("CalculateCharacterStatsService", () => {
       spellMasteryPower: 110,
       achievements: {},
       progressionBoosts: {},
-      permanentBonuses: {},
       equipment: {
         attack: 20,
         defense: 10,
@@ -80,6 +79,5 @@ describe("CalculateCharacterStatsService", () => {
     ).rejects.toBeInstanceOf(CharacterNotFoundError);
   });
 });
-
 
 

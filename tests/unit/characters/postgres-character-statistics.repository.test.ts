@@ -32,14 +32,6 @@ describe("PostgresCharacterStatisticsRepository", () => {
           boost_spell_power: "13",
           boost_gold_percent: "14.5",
           boost_experience_percent: "15.25",
-          permanent_attack: "21",
-          permanent_defense: "22",
-          permanent_spell_power: "23",
-          permanent_health: "24",
-          permanent_mana: "25",
-          permanent_energy: "26",
-          permanent_gold_percent: "27.5",
-          permanent_experience_percent: "28.25",
         },
       ],
       rowCount: 1,
@@ -77,16 +69,6 @@ describe("PostgresCharacterStatisticsRepository", () => {
         spellPower: 13,
         goldBonusPercent: 14.5,
         experienceBonusPercent: 15.25,
-      },
-      permanentBonuses: {
-        attack: 21,
-        defense: 22,
-        spellPower: 23,
-        maximumHealth: 24,
-        maximumMana: 25,
-        maximumEnergy: 26,
-        goldBonusPercent: 27.5,
-        experienceBonusPercent: 28.25,
       },
       equipment: {
         attack: 25,
@@ -158,14 +140,6 @@ describe("PostgresCharacterStatisticsRepository", () => {
           boost_spell_power: "0",
           boost_gold_percent: "0",
           boost_experience_percent: "0",
-          permanent_attack: "0",
-          permanent_defense: "0",
-          permanent_spell_power: "0",
-          permanent_health: "0",
-          permanent_mana: "0",
-          permanent_energy: "0",
-          permanent_gold_percent: "0",
-          permanent_experience_percent: "0",
         },
       ],
       rowCount: 1,
@@ -190,6 +164,5 @@ describe("PostgresCharacterStatisticsRepository", () => {
     );
   });
 });
-
 
 

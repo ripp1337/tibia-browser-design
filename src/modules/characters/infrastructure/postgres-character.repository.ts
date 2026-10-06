@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   Pool,
   PoolClient,
   QueryResult,
@@ -233,16 +233,6 @@ export class PostgresCharacterRepository
 
           await client.query(
             `
-              INSERT INTO character_permanent_bonuses (
-                character_id
-              )
-              VALUES ($1)
-            `,
-            [characterId]
-          );
-
-          await client.query(
-            `
               INSERT INTO character_loadouts (
                 character_id,
                 name,
@@ -451,5 +441,3 @@ export class PostgresCharacterRepository
     return count;
   }
 }
-
-
