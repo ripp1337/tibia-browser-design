@@ -23,6 +23,10 @@ describe("PostgresCharacterStatisticsRepository", () => {
           equipment_energy: "5",
           equipment_gold_percent: "8.5",
           equipment_experience_percent: "4.25",
+          achievement_attack: "3",
+          achievement_defense: "2",
+          achievement_gold_percent: "6.5",
+          achievement_experience_percent: "1.25",
         },
       ],
       rowCount: 1,
@@ -48,6 +52,12 @@ describe("PostgresCharacterStatisticsRepository", () => {
     expect(result).toEqual({
       level: 10,
       spellMasteryPower: 120,
+      achievements: {
+        attack: 3,
+        defense: 2,
+        goldBonusPercent: 6.5,
+        experienceBonusPercent: 1.25,
+      },
       equipment: {
         attack: 25,
         defense: 15,
@@ -109,6 +119,10 @@ describe("PostgresCharacterStatisticsRepository", () => {
           equipment_energy: "0",
           equipment_gold_percent: "0",
           equipment_experience_percent: "0",
+          achievement_attack: "0",
+          achievement_defense: "0",
+          achievement_gold_percent: "0",
+          achievement_experience_percent: "0",
         },
       ],
       rowCount: 1,
@@ -133,3 +147,4 @@ describe("PostgresCharacterStatisticsRepository", () => {
     );
   });
 });
+

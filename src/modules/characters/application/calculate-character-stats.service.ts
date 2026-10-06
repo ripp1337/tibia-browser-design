@@ -39,6 +39,8 @@ export class CalculateCharacterStatsService {
       spellMasteryPower:
         sources.spellMasteryPower,
       equipment: sources.equipment,
+      achievements: sources.achievements,
     });
   }
 }
+

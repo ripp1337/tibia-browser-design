@@ -25,6 +25,7 @@ describe("CalculateCharacterStatsService", () => {
     ).mockResolvedValue({
       level: 2,
       spellMasteryPower: 110,
+      achievements: {},
       equipment: {
         attack: 20,
         defense: 10,
@@ -77,3 +78,4 @@ describe("CalculateCharacterStatsService", () => {
     ).rejects.toBeInstanceOf(CharacterNotFoundError);
   });
 });
+

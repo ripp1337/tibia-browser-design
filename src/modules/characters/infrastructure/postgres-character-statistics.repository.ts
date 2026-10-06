@@ -30,6 +30,10 @@ type CharacterStatisticsSourcesRow = {
   equipment_energy: string;
   equipment_gold_percent: string;
   equipment_experience_percent: string;
+  achievement_attack: string;
+  achievement_defense: string;
+  achievement_gold_percent: string;
+  achievement_experience_percent: string;
 };
 
 const CALCULATION_SOURCES_QUERY = `
@@ -68,7 +72,16 @@ const CALCULATION_SOURCES_QUERY = `
       ),
       0
     ) + COALESCE(MAX(sb.experience_percent), 0)
-      AS equipment_experience_percent
+      AS equipment_experience_percent,
+
+    COALESCE(MAX(achievement.attack), 0)
+      AS achievement_attack,
+    COALESCE(MAX(achievement.defense), 0)
+      AS achievement_defense,
+    COALESCE(MAX(achievement.gold_percent), 0)
+      AS achievement_gold_percent,
+    COALESCE(MAX(achievement.experience_percent), 0)
+      AS achievement_experience_percent
 
   FROM characters c
 
@@ -172,6 +185,20 @@ const CALCULATION_SOURCES_QUERY = `
     ) selected
   ) sb ON TRUE
 
+  LEFT JOIN LATERAL (
+    SELECT
+      COALESCE(SUM(a.reward_attack), 0) AS attack,
+      COALESCE(SUM(a.reward_defense), 0) AS defense,
+      COALESCE(SUM(a.reward_gold_percent), 0) AS gold_percent,
+      COALESCE(SUM(a.reward_experience_percent), 0)
+        AS experience_percent
+    FROM achievement_progress ap
+    INNER JOIN achievements a
+      ON a.achievement_id = ap.achievement_id
+    WHERE ap.account_id = c.account_id
+      AND ap.is_completed = TRUE
+  ) achievement ON TRUE
+
   WHERE c.character_id = $1
 
   GROUP BY
@@ -226,6 +253,24 @@ export class PostgresCharacterStatisticsRepository
         row.current_spell_power,
         "current_spell_power"
       ),
+           achievements: {
+        attack: parseNumericValue(
+          row.achievement_attack,
+          "achievement_attack"
+        ),
+        defense: parseNumericValue(
+          row.achievement_defense,
+          "achievement_defense"
+        ),
+        goldBonusPercent: parseNumericValue(
+          row.achievement_gold_percent,
+          "achievement_gold_percent"
+        ),
+        experienceBonusPercent: parseNumericValue(
+          row.achievement_experience_percent,
+          "achievement_experience_percent"
+        ),
+      },
       equipment: {
         attack: parseNumericValue(
           row.equipment_attack,
@@ -263,5 +308,7 @@ export class PostgresCharacterStatisticsRepository
     };
   }
 }
+
+
 
 
