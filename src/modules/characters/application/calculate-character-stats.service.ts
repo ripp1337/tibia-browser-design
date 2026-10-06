@@ -40,7 +40,9 @@ export class CalculateCharacterStatsService {
         sources.spellMasteryPower,
       equipment: sources.equipment,
       achievements: sources.achievements,
+      progressionBoosts: sources.progressionBoosts,
     });
   }
 }
+
 

@@ -10,6 +10,7 @@ export type CharacterStatisticsSources = {
   spellMasteryPower: number;
   equipment: CharacterStatModifiers;
   achievements: Partial<CharacterStatModifiers>;
+  progressionBoosts: Partial<CharacterStatModifiers>;
 };
 
 export interface CharacterStatisticsRepository {
@@ -17,4 +18,5 @@ export interface CharacterStatisticsRepository {
     characterId: CharacterId
   ): Promise<CharacterStatisticsSources | null>;
 }
+
 

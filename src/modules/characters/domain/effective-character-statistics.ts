@@ -1,4 +1,4 @@
-export type CharacterStatModifiers = {
+﻿export type CharacterStatModifiers = {
   attack: number;
   defense: number;
   spellPower: number;
@@ -90,17 +90,20 @@ export function calculateEffectiveCharacterStatistics(
     BASE_STATISTICS.attack +
     modifierValue(input.equipment, "attack") +
     modifierValue(input.achievements, "attack") +
+    modifierValue(input.progressionBoosts, "attack") +
     modifierValue(input.combat, "attack");
 
   const defense =
     BASE_STATISTICS.defense +
     modifierValue(input.equipment, "defense") +
     modifierValue(input.achievements, "defense") +
+    modifierValue(input.progressionBoosts, "defense") +
     modifierValue(input.combat, "defense");
 
   const spellPower =
     input.spellMasteryPower +
     modifierValue(input.equipment, "spellPower") +
+    modifierValue(input.progressionBoosts, "spellPower") +
     modifierValue(input.combat, "spellPower");
 
   const maximumHealth =
@@ -163,3 +166,4 @@ export function calculateEffectiveCharacterStatistics(
     ),
   };
 }
+

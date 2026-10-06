@@ -34,6 +34,11 @@ type CharacterStatisticsSourcesRow = {
   achievement_defense: string;
   achievement_gold_percent: string;
   achievement_experience_percent: string;
+  boost_attack: string;
+  boost_defense: string;
+  boost_spell_power: string;
+  boost_gold_percent: string;
+  boost_experience_percent: string;
 };
 
 const CALCULATION_SOURCES_QUERY = `
@@ -81,7 +86,14 @@ const CALCULATION_SOURCES_QUERY = `
     COALESCE(MAX(achievement.gold_percent), 0)
       AS achievement_gold_percent,
     COALESCE(MAX(achievement.experience_percent), 0)
-      AS achievement_experience_percent
+      AS achievement_experience_percent,
+
+    COALESCE(MAX(boost.attack), 0) AS boost_attack,
+    COALESCE(MAX(boost.defense), 0) AS boost_defense,
+    COALESCE(MAX(boost.spell_power), 0) AS boost_spell_power,
+    COALESCE(MAX(boost.gold_percent), 0) AS boost_gold_percent,
+    COALESCE(MAX(boost.experience_percent), 0)
+      AS boost_experience_percent
 
   FROM characters c
 
@@ -199,6 +211,36 @@ const CALCULATION_SOURCES_QUERY = `
       AND ap.is_completed = TRUE
   ) achievement ON TRUE
 
+  LEFT JOIN LATERAL (
+    SELECT
+      COALESCE(SUM(cb.value) FILTER (
+        WHERE cb.buff_type = 'AttackBuff'
+      ), 0) AS attack,
+      COALESCE(SUM(cb.value) FILTER (
+        WHERE cb.buff_type = 'DefenseBuff'
+      ), 0) AS defense,
+      COALESCE(SUM(cb.value) FILTER (
+        WHERE cb.buff_type = 'SpellPowerBuff'
+      ), 0) AS spell_power,
+      COALESCE(SUM(cb.value) FILTER (
+        WHERE cb.buff_type = 'GoldBoost'
+      ), 0) AS gold_percent,
+      COALESCE(SUM(cb.value) FILTER (
+        WHERE cb.buff_type = 'ExperienceBoost'
+      ), 0) AS experience_percent
+    FROM character_buffs cb
+    WHERE cb.character_id = c.character_id
+      AND cb.is_positive = TRUE
+      AND (
+        cb.duration_type = 'Permanent'
+        OR cb.duration_remaining > 0
+      )
+      AND (
+        cb.expires_at IS NULL
+        OR cb.expires_at > NOW()
+      )
+  ) boost ON TRUE
+
   WHERE c.character_id = $1
 
   GROUP BY
@@ -253,7 +295,29 @@ export class PostgresCharacterStatisticsRepository
         row.current_spell_power,
         "current_spell_power"
       ),
-           achievements: {
+           progressionBoosts: {
+        attack: parseNumericValue(
+          row.boost_attack,
+          "boost_attack"
+        ),
+        defense: parseNumericValue(
+          row.boost_defense,
+          "boost_defense"
+        ),
+        spellPower: parseNumericValue(
+          row.boost_spell_power,
+          "boost_spell_power"
+        ),
+        goldBonusPercent: parseNumericValue(
+          row.boost_gold_percent,
+          "boost_gold_percent"
+        ),
+        experienceBonusPercent: parseNumericValue(
+          row.boost_experience_percent,
+          "boost_experience_percent"
+        ),
+      },
+      achievements: {
         attack: parseNumericValue(
           row.achievement_attack,
           "achievement_attack"
@@ -308,6 +372,8 @@ export class PostgresCharacterStatisticsRepository
     };
   }
 }
+
+
 
 
 

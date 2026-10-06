@@ -27,6 +27,11 @@ describe("PostgresCharacterStatisticsRepository", () => {
           achievement_defense: "2",
           achievement_gold_percent: "6.5",
           achievement_experience_percent: "1.25",
+          boost_attack: "11",
+          boost_defense: "12",
+          boost_spell_power: "13",
+          boost_gold_percent: "14.5",
+          boost_experience_percent: "15.25",
         },
       ],
       rowCount: 1,
@@ -57,6 +62,13 @@ describe("PostgresCharacterStatisticsRepository", () => {
         defense: 2,
         goldBonusPercent: 6.5,
         experienceBonusPercent: 1.25,
+      },
+      progressionBoosts: {
+        attack: 11,
+        defense: 12,
+        spellPower: 13,
+        goldBonusPercent: 14.5,
+        experienceBonusPercent: 15.25,
       },
       equipment: {
         attack: 25,
@@ -123,6 +135,11 @@ describe("PostgresCharacterStatisticsRepository", () => {
           achievement_defense: "0",
           achievement_gold_percent: "0",
           achievement_experience_percent: "0",
+          boost_attack: "0",
+          boost_defense: "0",
+          boost_spell_power: "0",
+          boost_gold_percent: "0",
+          boost_experience_percent: "0",
         },
       ],
       rowCount: 1,
@@ -147,4 +164,5 @@ describe("PostgresCharacterStatisticsRepository", () => {
     );
   });
 });
+
 
