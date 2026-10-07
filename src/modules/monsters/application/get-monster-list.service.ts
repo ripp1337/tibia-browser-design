@@ -38,13 +38,28 @@ function mapMonsterListItem(
       calculateMonsterEligibility({
         characterLevel:
           record.characterLevel,
+
         monsterLevel: record.level,
         monsterType: record.monsterType,
-        cooldownActive: cooldown.isActive,
-        taskStatus: record.taskStatus,
+
+        cooldownActive:
+          cooldown.isActive,
+
+        taskStatus:
+          record.taskStatus,
+
+        dailyBossAvailable:
+          record.dailyBossAvailable,
+
+        dailyAttemptsUsed:
+          record.dailyAttemptsUsed,
+
+        dailyAttemptsPerDay:
+          record.dailyAttemptsPerDay,
       }),
 
     cooldown,
+
     bestiaryVisible:
       record.bestiaryVisible,
   };
@@ -54,6 +69,7 @@ export class GetMonsterListService {
   public constructor(
     private readonly repository:
       MonsterDiscoveryRepository,
+
     private readonly clock: Clock
   ) {}
 
@@ -61,7 +77,9 @@ export class GetMonsterListService {
     input: ListMonstersInput
   ): Promise<readonly MonsterListItem[]> {
     const records =
-      await this.repository.listMonsters(input);
+      await this.repository.listMonsters(
+        input
+      );
 
     const now = this.clock.now();
 

@@ -22,6 +22,7 @@ export class GetMonsterDetailsService {
   public constructor(
     private readonly repository:
       MonsterDiscoveryRepository,
+
     private readonly clock: Clock
   ) {}
 
@@ -29,7 +30,9 @@ export class GetMonsterDetailsService {
     input: FindMonsterInput
   ): Promise<MonsterDetails> {
     const record =
-      await this.repository.findMonster(input);
+      await this.repository.findMonster(
+        input
+      );
 
     if (!record) {
       throw new MonsterNotFoundError();
@@ -53,15 +56,29 @@ export class GetMonsterDetailsService {
         calculateMonsterEligibility({
           characterLevel:
             record.characterLevel,
+
           monsterLevel: record.level,
           monsterType:
             record.monsterType,
+
           cooldownActive:
             cooldown.isActive,
-          taskStatus: record.taskStatus,
+
+          taskStatus:
+            record.taskStatus,
+
+          dailyBossAvailable:
+            record.dailyBossAvailable,
+
+          dailyAttemptsUsed:
+            record.dailyAttemptsUsed,
+
+          dailyAttemptsPerDay:
+            record.dailyAttemptsPerDay,
         }),
 
       cooldown,
+
       bestiaryVisible:
         record.bestiaryVisible,
 

@@ -21,6 +21,10 @@ export type MonsterDiscoveryRecord = {
   cooldownAvailableAt: Date | null;
 
   taskStatus: TaskStatus | null;
+
+  dailyBossAvailable?: boolean;
+  dailyAttemptsUsed?: number;
+  dailyAttemptsPerDay?: number;
 };
 
 export type MonsterDiscoveryDetailsRecord =
