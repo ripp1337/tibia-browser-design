@@ -37,7 +37,37 @@ describe("monster eligibility", () => {
     });
   });
 
-  it("reports incomplete Task Boss progress for ACTIVE status", () => {
+  it("applies an individual cooldown to a normal monster", () => {
+    expect(
+      calculateMonsterEligibility({
+        characterLevel: 10,
+        monsterLevel: 10,
+        monsterType: "Normal",
+        cooldownActive: true,
+        taskStatus: null,
+      })
+    ).toEqual({
+      isEligible: false,
+      reasons: ["COOLDOWN_ACTIVE"],
+    });
+  });
+
+  it("applies an individual cooldown to a Mini Boss", () => {
+    expect(
+      calculateMonsterEligibility({
+        characterLevel: 10,
+        monsterLevel: 10,
+        monsterType: "MiniBoss",
+        cooldownActive: true,
+        taskStatus: null,
+      })
+    ).toEqual({
+      isEligible: false,
+      reasons: ["COOLDOWN_ACTIVE"],
+    });
+  });
+
+  it("reports incomplete Task Boss progress", () => {
     expect(
       calculateMonsterEligibility({
         characterLevel: 10,
@@ -45,23 +75,6 @@ describe("monster eligibility", () => {
         monsterType: "TaskBoss",
         cooldownActive: false,
         taskStatus: "ACTIVE",
-      })
-    ).toEqual({
-      isEligible: false,
-      reasons: [
-        "TASK_PROGRESS_INCOMPLETE",
-      ],
-    });
-  });
-
-  it("reports incomplete Task Boss progress when state does not exist", () => {
-    expect(
-      calculateMonsterEligibility({
-        characterLevel: 10,
-        monsterLevel: 10,
-        monsterType: "TaskBoss",
-        cooldownActive: false,
-        taskStatus: null,
       })
     ).toEqual({
       isEligible: false,
@@ -104,7 +117,22 @@ describe("monster eligibility", () => {
     });
   });
 
-  it("combines level, cooldown and Task Boss reasons", () => {
+  it("ignores ordinary cooldown state for a Task Boss", () => {
+    expect(
+      calculateMonsterEligibility({
+        characterLevel: 10,
+        monsterLevel: 10,
+        monsterType: "TaskBoss",
+        cooldownActive: true,
+        taskStatus: "UNLOCKED",
+      })
+    ).toEqual({
+      isEligible: true,
+      reasons: [],
+    });
+  });
+
+  it("combines level and Task Boss restrictions", () => {
     expect(
       calculateMonsterEligibility({
         characterLevel: 8,
@@ -117,24 +145,8 @@ describe("monster eligibility", () => {
       isEligible: false,
       reasons: [
         "LEVEL_TOO_LOW",
-        "COOLDOWN_ACTIVE",
         "TASK_PROGRESS_INCOMPLETE",
       ],
-    });
-  });
-
-  it("does not apply Task Boss rules to a normal monster", () => {
-    expect(
-      calculateMonsterEligibility({
-        characterLevel: 10,
-        monsterLevel: 10,
-        monsterType: "Normal",
-        cooldownActive: false,
-        taskStatus: null,
-      })
-    ).toEqual({
-      isEligible: true,
-      reasons: [],
     });
   });
 

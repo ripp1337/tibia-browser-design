@@ -184,7 +184,7 @@ describe(
       });
     });
 
-    it("combines Task Boss, level and cooldown restrictions", async () => {
+    it("ignores cooldown when evaluating Task Boss eligibility", async () => {
       const record = {
         ...createTaskBossRecord("ACTIVE"),
         level: 12,
@@ -215,7 +215,6 @@ describe(
           isEligible: false,
           reasons: [
             "LEVEL_TOO_LOW",
-            "COOLDOWN_ACTIVE",
             "TASK_PROGRESS_INCOMPLETE",
           ],
         },
@@ -228,3 +227,4 @@ describe(
     });
   }
 );
+
