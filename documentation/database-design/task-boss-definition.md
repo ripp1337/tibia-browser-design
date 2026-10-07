@@ -4,9 +4,7 @@
 
 Task Bosses are special bosses unlocked through monster kill progression.
 
-Task Bosses are unlocked by killing specific monsters.
-
-Requirements are defined individually for each monster family.
+Task Bosses are unlocked by killing specific monsters. given boss is unlocked by killing only the specific monster (e.g. rats -> rat king)
 
 Examples:
 
@@ -38,7 +36,6 @@ Monster Families are used for:
 Task Bosses are intended to provide:
 
 - Better Loot
-- Family-Themed Boss Encounters
 - Long-Term Monster Progression Goals
 
 ---
@@ -197,24 +194,6 @@ The modifier is applied together with pity mechanics.
 
 ---
 
-# Monster Family Integration
-
-Task Bosses are associated with monster families.
-
-Example:
-
-Rat Family
-
-- Rat
-- Plague Rat
-- Giant Rat
-
-Task Boss:
-
-- Rat King
-
----
-
 # Bestiary Integration
 
 The Bestiary displays task progress for monsters that unlock Task Bosses.
@@ -366,6 +345,3 @@ Fight Task Boss
 ↓
 
 Receive Enhanced Rewards
-
-Task Bosses provide family-themed progression goals and act as stronger encounters tied directly to monster kill progression.
-``
