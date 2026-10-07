@@ -8,6 +8,16 @@ export const MONSTER_TYPE = {
 export type MonsterType =
   (typeof MONSTER_TYPE)[keyof typeof MONSTER_TYPE];
 
+export const TASK_STATUS = {
+  active: "ACTIVE",
+  unlocked: "UNLOCKED",
+  waitingForReunlock:
+    "WAITING_FOR_REUNLOCK",
+} as const;
+
+export type TaskStatus =
+  (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
+
 export type MonsterCode = string;
 
 export type EligibilityReason =
