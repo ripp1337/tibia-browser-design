@@ -17,7 +17,6 @@ export type MonsterListItem = {
 
   bestiaryVisible: boolean;
 
-  cooldownActive: boolean;
   cooldownAvailableAt: Date | null;
 };
 
