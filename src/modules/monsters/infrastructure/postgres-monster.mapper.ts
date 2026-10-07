@@ -2,7 +2,6 @@ import type {
   MonsterDetails,
   MonsterListItem,
 } from "../application/monster-discovery.repository.js";
-
 import {
   MONSTER_TYPE,
   type MonsterType,
@@ -22,6 +21,9 @@ export type PostgreSqlMonsterRow = {
 
   energy_cost: number;
   cooldown_seconds: number;
+
+  bestiary_visible: boolean;
+  cooldown_available_at: Date | null;
 };
 
 export type PostgreSqlMonsterListRow =
@@ -53,22 +55,46 @@ export function mapMonsterType(
   }
 }
 
+function mapNullableDate(
+  value: Date | null,
+  fieldName: string
+): Date | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (
+    !(value instanceof Date) ||
+    Number.isNaN(value.getTime())
+  ) {
+    throw new Error(
+      `${fieldName} must contain a valid date or null.`
+    );
+  }
+
+  return value;
+}
+
 export function mapMonsterListRow(
   row: PostgreSqlMonsterListRow
 ): MonsterListItem {
   return {
     code: row.code,
     name: row.name,
+    level: row.level,
 
     monsterType: mapMonsterType(
       row.monster_type
     ),
 
-    level: row.level,
     energyCost: row.energy_cost,
 
-    bestiaryVisible: false,
-    cooldownAvailableAt: null,
+    bestiaryVisible: row.bestiary_visible,
+
+    cooldownAvailableAt: mapNullableDate(
+      row.cooldown_available_at,
+      "cooldown_available_at"
+    ),
   };
 }
 
