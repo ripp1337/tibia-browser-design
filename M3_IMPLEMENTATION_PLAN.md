@@ -1,4 +1,4 @@
-ï»¿# M3 Implementation Plan
+# M3 Implementation Plan
 
 ## Milestone
 
@@ -6,7 +6,7 @@ M3: Monster Discovery and Eligibility
 
 ## Status
 
-Preparation complete. Implementation not started.
+Completed and fully verified.
 
 ## Objective
 
@@ -54,9 +54,9 @@ character.level >= monster.level
 Higher-level monsters may be visible in discovery results, but must not be reported as startable.
 
 All monsters may be visible in discovery results.
-Â 
+ 
 Visibility does not imply eligibility.
-Â 
+ 
 A monster may be visible while unavailable for combat.
 
 ## Monster types
@@ -419,3 +419,17 @@ Do not create downloadable generator scripts when a direct console command is su
 - Production build passes.
 - Documentation is updated and committed.
 
+
+### Completion evidence
+
+Completed on 2026-10-07.
+
+- 87 migrations applied.
+- 0 pending migrations.
+- PostgreSQL connectivity verified.
+- 79 database tables detected.
+- Typecheck passed.
+- 42 test files passed.
+- 226 tests passed.
+- Production build passed.
+- Authenticated monster list and details endpoints verified.

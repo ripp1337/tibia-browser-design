@@ -1,8 +1,8 @@
-﻿# Current Milestone
+# Current Milestone
 
 ## Milestone
 
-M2: Effective Character Statistics
+M3: Monster Discovery and Eligibility
 
 ## Status
 
@@ -10,132 +10,113 @@ Completed.
 
 ## Objective
 
-Provide one authoritative and deterministic calculator for effective character statistics, used by the character snapshot and future combat, reward, and equipment operations.
+Provide authenticated, read-only monster discovery for an owned character.
 
-## Effective statistics
+## Implemented scope
 
-- Attack
-- Defense
-- Spell Power
-- Maximum Health
-- Maximum Mana
-- Maximum Energy
-- Gold Bonus
-- Experience Bonus
+- Monster list endpoint.
+- Monster details endpoint loaded by stable monster code.
+- Character ownership enforcement.
+- Character-level eligibility.
+- Character-specific Bestiary visibility.
+- Energy-cost preview.
+- Support for Normal, MiniBoss, TaskBoss and DailyBoss.
+- Deterministic cooldown calculation using Clock.
+- Task Boss lifecycle eligibility.
+- Daily Boss rotation and attempt eligibility.
+- Stable public application models.
+- PostgreSQL row validation.
+- Authenticated HTTP integration.
 
-## Implemented sources
+## Endpoints
 
-- Base character statistics
-- Character level progression
-- Spell Mastery
-- Equipped item base statistics
-- Equipped item affixes
-- Highest reached set-bonus threshold
-- Completed account achievement bonuses
-- Active Gold and Experience progression boosts
-- Optional combat modifiers supplied by combat context
+- GET /characters/:characterId/monsters
+- GET /characters/:characterId/monsters/:monsterCode
 
-## Important rules
+## Eligibility rules
 
-- `inventory_items.is_equipped` is the authoritative equipment state.
-- Unequipped items do not affect statistics.
-- Only the highest reached threshold of a set bonus is active.
-- Completed achievements affect every character belonging to the account.
-- Gold and Experience bonuses are additive percentage points.
-- Combat buffs and debuffs are not included in the normal character snapshot.
-- Final integer statistics are rounded down.
-- Repeated calculations with identical input return identical results.
-- The calculator does not mutate its input.
-- Current Health, Mana, and Energy are clamped when their effective maximum decreases.
+### Normal
 
-## Architecture
+- Character level requirement.
+- Independent character-and-monster cooldown.
 
-The implementation is divided into:
+### MiniBoss
 
-- Pure domain calculator
-- Repository contract for calculation sources
-- PostgreSQL implementation of calculation sources
-- Application service exposing the central calculation
-- Character snapshot integration
+- Character level requirement.
+- Independent character-and-monster cooldown.
 
-Controllers and PostgreSQL repositories do not contain final-statistic formulas.
+### TaskBoss
 
-## Implementation checklist
+- Character level requirement.
+- Task status must be UNLOCKED.
+- ACTIVE returns TASK_PROGRESS_INCOMPLETE.
+- WAITING_FOR_REUNLOCK returns TASK_REUNLOCK_REQUIRED.
+- Ordinary monster cooldown does not affect Task Boss eligibility.
 
-- [x] Normalize Spell Power representation
-- [x] Define effective-statistics types
-- [x] Implement deterministic domain calculator
-- [x] Implement Health and Mana level progression
-- [x] Implement Energy level progression
-- [x] Add equipped item base statistics
-- [x] Add equipped item affixes
-- [x] Add highest reached set-bonus threshold
-- [x] Add completed achievement bonuses
-- [x] Add active Gold and Experience boosts
-- [x] Separate progression boosts from combat modifiers
-- [x] Add PostgreSQL calculation-source repository
-- [x] Add central calculation application service
-- [x] Integrate effective statistics with character snapshot
-- [x] Implement resource hard clamp in snapshot flow
-- [x] Add deterministic and non-mutation tests
-- [x] Add unit and integration coverage for implemented sources
-- [x] Implement transactional equip operation
-- [x] Implement transactional unequip operation
-- [x] Recalculate maxima and clamp resources inside equipment transactions
-- [x] Add equip and unequip integration tests
-- [x] Complete final M2 verification and documentation closure
+Each Task Boss has exactly one monster task.
+A specific source monster unlocks a specific Task Boss.
+Family-based task aggregation is outside M3.
 
-## Test coverage
+### DailyBoss
 
-Automated coverage currently includes:
+- Character level requirement.
+- Boss must belong to the active rotation.
+- Character must have attempts remaining.
+- Ordinary monster cooldown does not affect Daily Boss eligibility.
+- Attempts are tracked per rotation.
 
-- Base statistics
-- Level-based Health and Mana
-- Energy progression and cap
-- Spell Mastery
-- Equipped and unequipped items
-- Item affixes
-- Set-bonus threshold selection
-- Completed and incomplete achievements
-- Active and inactive progression boosts
-- Snapshot effective statistics
-- Resource hard clamp
-- Deterministic repeated calculations
-- Invalid source values
-- Missing characters
+## Daily Boss rotation
 
-## Definition of done
+- Reset hour is configurable in UTC through DAILY_BOSS_RESET_HOUR_UTC.
+- A rotation is active when created_at <= observedAt and reset_timestamp > observedAt.
+- Multiple active rotations are treated as a configuration error.
+- Each rotation contains one definition for tiers 1, 2 and 3.
 
-- [x] One central statistics calculator exists
-- [x] Every effective statistic has automated coverage
-- [x] Equipped item sources affect statistics
-- [x] Unequipped items are ignored
-- [x] Repeated calculations return identical results
-- [x] Character snapshot uses the central calculator
-- [x] Current resources are safely clamped
-- [x] Progression boosts and combat modifiers are separated
-- [x] No separate permanent-character-bonus system exists
-- [x] Equipment mutations use the central calculator transactionally
-- [x] Equip and unequip behavior is covered by integration tests
-- [x] Full type-check, test suite, build, and database verification pass
-- [x] Documentation closure is committed
+## Eligibility reasons
 
-## Remaining work
+- LEVEL_TOO_LOW
+- COOLDOWN_ACTIVE
+- TASK_PROGRESS_INCOMPLETE
+- TASK_REUNLOCK_REQUIRED
+- DAILY_BOSS_UNAVAILABLE
+- DAILY_ATTEMPTS_EXHAUSTED
 
-The remaining functional part of M2 is the equipment mutation flow:
+## Database changes
 
-1. Equip an owned valid item.
-2. Unequip the currently equipped item.
-3. Recalculate effective statistics in the same transaction.
-4. Persist new maximum resources.
-5. Clamp current resources when maxima decrease.
-6. Roll back the entire operation if any step fails.
+- Added tracked migration runner and schema_migrations.
+- Added unique Task Boss assignment constraint.
+- Added Daily Boss rotation window constraint.
+- Changed Daily Boss attempts to be tracked per rotation.
+- Added configurable Daily Boss reset hour.
 
-## Verification commands
+## Out of scope
 
-```powershell
-npm run db:test
-npm run typecheck
-npm test
-npm run build
+M3 does not:
 
+- start combat,
+- deduct Energy,
+- create combat sessions,
+- grant rewards,
+- write cooldowns,
+- update Bestiary,
+- update kill statistics,
+- mutate Task Boss progress,
+- generate or mutate Daily Boss rotations.
+
+## Verification
+
+Verified on 2026-10-07:
+
+- 87 migrations applied.
+- 0 pending migrations.
+- PostgreSQL connection successful.
+- 79 database tables detected.
+- TypeScript typecheck passed.
+- 42 test files passed.
+- 226 tests passed.
+- Production build passed.
+- Git working tree clean.
+
+## Completion log
+
+M3 Monster Discovery and Eligibility completed and verified.
