@@ -7,7 +7,7 @@ import type {
   MonsterType,
 } from "../domain/monster.types.js";
 
-export type MonsterListItem = {
+export type MonsterDiscoveryRecord = {
   code: MonsterCode;
   name: string;
   level: number;
@@ -15,14 +15,15 @@ export type MonsterListItem = {
   monsterType: MonsterType;
   energyCost: number;
 
+  characterLevel: number;
   bestiaryVisible: boolean;
-
   cooldownAvailableAt: Date | null;
 };
 
-export type MonsterDetails = MonsterListItem & {
-  description: string | null;
-};
+export type MonsterDiscoveryDetailsRecord =
+  MonsterDiscoveryRecord & {
+    description: string;
+  };
 
 export type FindMonsterInput = {
   accountId: AccountId;
@@ -38,9 +39,9 @@ export type ListMonstersInput = {
 export interface MonsterDiscoveryRepository {
   listMonsters(
     input: ListMonstersInput
-  ): Promise<readonly MonsterListItem[]>;
+  ): Promise<readonly MonsterDiscoveryRecord[]>;
 
   findMonster(
     input: FindMonsterInput
-  ): Promise<MonsterDetails | null>;
+  ): Promise<MonsterDiscoveryDetailsRecord | null>;
 }

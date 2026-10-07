@@ -1,6 +1,6 @@
 import type {
-  MonsterDetails,
-  MonsterListItem,
+  MonsterDiscoveryDetailsRecord,
+  MonsterDiscoveryRecord,
 } from "../application/monster-discovery.repository.js";
 import {
   MONSTER_TYPE,
@@ -18,10 +18,10 @@ export type PostgreSqlMonsterRow = {
 
   monster_type: string;
   level: number;
-
   energy_cost: number;
   cooldown_seconds: number;
 
+  character_level: number;
   bestiary_visible: boolean;
   cooldown_available_at: Date | null;
 };
@@ -55,6 +55,22 @@ export function mapMonsterType(
   }
 }
 
+function assertNonNegativeInteger(
+  value: number,
+  fieldName: string
+): number {
+  if (
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw new Error(
+      `${fieldName} must contain a non-negative safe integer.`
+    );
+  }
+
+  return value;
+}
+
 function mapNullableDate(
   value: Date | null,
   fieldName: string
@@ -77,17 +93,29 @@ function mapNullableDate(
 
 export function mapMonsterListRow(
   row: PostgreSqlMonsterListRow
-): MonsterListItem {
+): MonsterDiscoveryRecord {
   return {
     code: row.code,
     name: row.name,
-    level: row.level,
+
+    level: assertNonNegativeInteger(
+      row.level,
+      "level"
+    ),
 
     monsterType: mapMonsterType(
       row.monster_type
     ),
 
-    energyCost: row.energy_cost,
+    energyCost: assertNonNegativeInteger(
+      row.energy_cost,
+      "energy_cost"
+    ),
+
+    characterLevel: assertNonNegativeInteger(
+      row.character_level,
+      "character_level"
+    ),
 
     bestiaryVisible: row.bestiary_visible,
 
@@ -100,10 +128,9 @@ export function mapMonsterListRow(
 
 export function mapMonsterDetailsRow(
   row: PostgreSqlMonsterDetailsRow
-): MonsterDetails {
+): MonsterDiscoveryDetailsRecord {
   return {
     ...mapMonsterListRow(row),
-
     description: row.description,
   };
 }
