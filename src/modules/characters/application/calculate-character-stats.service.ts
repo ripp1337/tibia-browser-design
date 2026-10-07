@@ -14,6 +14,7 @@ import type {
 
 export type CalculateCharacterStatsInput = {
   characterId: CharacterId;
+  observedAt?: Date;
 };
 
 export class CalculateCharacterStatsService {
@@ -26,9 +27,14 @@ export class CalculateCharacterStatsService {
     input: CalculateCharacterStatsInput
   ): Promise<EffectiveCharacterStatistics> {
     const sources =
-      await this.repository.findCalculationSources(
-        input.characterId
-      );
+      input.observedAt === undefined
+        ? await this.repository.findCalculationSources(
+            input.characterId
+          )
+        : await this.repository.findCalculationSources(
+            input.characterId,
+            input.observedAt
+          );
 
     if (sources === null) {
       throw new CharacterNotFoundError();
@@ -44,5 +50,3 @@ export class CalculateCharacterStatsService {
     });
   }
 }
-
-

@@ -1,4 +1,7 @@
-import type { Pool } from "pg";
+import type {
+  QueryResult,
+  QueryResultRow,
+} from "pg";
 
 import type {
   FindMonsterRecordInput,
@@ -112,11 +115,18 @@ const MONSTER_JOINS = `
       active_rotation.daily_boss_rotation_id
 `;
 
+type Queryable = {
+  query<Row extends QueryResultRow>(
+    queryText: string,
+    values?: unknown[]
+  ): Promise<QueryResult<Row>>;
+};
+
 export class PostgresMonsterDiscoveryRepository
   implements MonsterDiscoveryRepository
 {
   public constructor(
-    private readonly pool: Pool
+    private readonly pool: Queryable
   ) {}
 
   public async listMonsters(

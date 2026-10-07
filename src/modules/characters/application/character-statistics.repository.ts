@@ -15,8 +15,7 @@ export type CharacterStatisticsSources = {
 
 export interface CharacterStatisticsRepository {
   findCalculationSources(
-    characterId: CharacterId
+    characterId: CharacterId,
+    observedAt?: Date
   ): Promise<CharacterStatisticsSources | null>;
 }
-
-

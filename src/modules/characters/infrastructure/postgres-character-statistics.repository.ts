@@ -223,7 +223,7 @@ const CALCULATION_SOURCES_QUERY = `
       )
       AND (
         cb.expires_at IS NULL
-        OR cb.expires_at > NOW()
+        OR cb.expires_at > COALESCE($2::timestamptz, NOW())
       )
   ) boost ON TRUE
 
@@ -261,12 +261,24 @@ export class PostgresCharacterStatisticsRepository
   ) {}
 
   public async findCalculationSources(
-    characterId: CharacterId
+    characterId: CharacterId,
+    observedAt?: Date
   ): Promise<CharacterStatisticsSources | null> {
+    if (
+      observedAt !== undefined &&
+      (
+        !(observedAt instanceof Date) ||
+        Number.isNaN(observedAt.getTime())
+      )
+    ) {
+      throw new Error(
+        "observedAt must contain a valid date."
+      );
+    }
     const result =
       await this.database.query<CharacterStatisticsSourcesRow>(
         CALCULATION_SOURCES_QUERY,
-        [characterId]
+        [characterId, observedAt ?? null]
       );
 
     const row = result.rows[0];
@@ -347,10 +359,3 @@ export class PostgresCharacterStatisticsRepository
     };
   }
 }
-
-
-
-
-
-
-

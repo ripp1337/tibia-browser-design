@@ -86,7 +86,7 @@ describe("PostgresCharacterStatisticsRepository", () => {
     expect(queryText).toContain(
       "ii.is_equipped = TRUE"
     );
-    expect(values).toEqual(["character-1"]);
+    expect(values).toEqual(["character-1", null]);
   });
 
   it("returns null when the character does not exist", async () => {
@@ -161,6 +161,3 @@ describe("PostgresCharacterStatisticsRepository", () => {
     );
   });
 });
-
-
-
