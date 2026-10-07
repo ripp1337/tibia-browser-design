@@ -37,6 +37,10 @@ const monsterRepository =
 
 const createdAccountIds: string[] = [];
 
+const observedAt = new Date(
+  "2026-10-07T10:00:00.000Z"
+);
+
 async function createTrackedAccount(): Promise<TestAccount> {
   const account = await createTestAccount(testPool);
 
@@ -94,6 +98,7 @@ describe(
         await monsterRepository.listMonsters({
           accountId: account.accountId,
           characterId: character.characterId,
+          observedAt,
         });
 
       expect(monsters.length).toBeGreaterThan(0);
@@ -182,6 +187,7 @@ describe(
           await monsterRepository.findMonster({
             accountId: account.accountId,
             characterId: character.characterId,
+          observedAt,
             monsterCode: monster.code,
           });
 
@@ -233,6 +239,7 @@ describe(
         await monsterRepository.findMonster({
           accountId: account.accountId,
           characterId: character.characterId,
+          observedAt,
           monsterCode: monster.code,
         });
 
@@ -255,6 +262,7 @@ describe(
         await monsterRepository.findMonster({
           accountId: account.accountId,
           characterId: character.characterId,
+          observedAt,
           monsterCode: "unknown_monster_code",
         });
 
@@ -274,6 +282,7 @@ describe(
         monsterRepository.listMonsters({
           accountId: stranger.accountId,
           characterId: character.characterId,
+          observedAt,
         })
       ).rejects.toBeInstanceOf(
         CharacterNotFoundError
@@ -281,3 +290,4 @@ describe(
     });
   }
 );
+

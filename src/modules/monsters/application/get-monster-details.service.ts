@@ -29,10 +29,13 @@ export class GetMonsterDetailsService {
   public async execute(
     input: FindMonsterInput
   ): Promise<MonsterDetails> {
+    const observedAt = this.clock.now();
+
     const record =
-      await this.repository.findMonster(
-        input
-      );
+      await this.repository.findMonster({
+        ...input,
+        observedAt,
+      });
 
     if (!record) {
       throw new MonsterNotFoundError();
@@ -41,7 +44,7 @@ export class GetMonsterDetailsService {
     const cooldown =
       calculateMonsterCooldown(
         record.cooldownAvailableAt,
-        this.clock.now()
+        observedAt
       );
 
     return {

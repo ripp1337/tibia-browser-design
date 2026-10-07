@@ -76,15 +76,19 @@ export class GetMonsterListService {
   public async execute(
     input: ListMonstersInput
   ): Promise<readonly MonsterListItem[]> {
-    const records =
-      await this.repository.listMonsters(
-        input
-      );
+    const observedAt = this.clock.now();
 
-    const now = this.clock.now();
+    const records =
+      await this.repository.listMonsters({
+        ...input,
+        observedAt,
+      });
 
     return records.map((record) =>
-      mapMonsterListItem(record, now)
+      mapMonsterListItem(
+        record,
+        observedAt
+      )
     );
   }
 }

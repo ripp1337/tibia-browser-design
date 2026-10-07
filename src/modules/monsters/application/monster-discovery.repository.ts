@@ -32,23 +32,33 @@ export type MonsterDiscoveryDetailsRecord =
     description: string;
   };
 
+export type ListMonstersInput = {
+  accountId: AccountId;
+  characterId: CharacterId;
+};
+
 export type FindMonsterInput = {
   accountId: AccountId;
   characterId: CharacterId;
   monsterCode: MonsterCode;
 };
 
-export type ListMonstersInput = {
-  accountId: AccountId;
-  characterId: CharacterId;
-};
+export type ListMonsterRecordsInput =
+  ListMonstersInput & {
+    observedAt: Date;
+  };
+
+export type FindMonsterRecordInput =
+  FindMonsterInput & {
+    observedAt: Date;
+  };
 
 export interface MonsterDiscoveryRepository {
   listMonsters(
-    input: ListMonstersInput
+    input: ListMonsterRecordsInput
   ): Promise<readonly MonsterDiscoveryRecord[]>;
 
   findMonster(
-    input: FindMonsterInput
+    input: FindMonsterRecordInput
   ): Promise<MonsterDiscoveryDetailsRecord | null>;
 }

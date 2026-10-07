@@ -28,6 +28,10 @@ export type PostgreSqlMonsterRow = {
   cooldown_available_at: Date | null;
 
   task_status: string | null;
+
+  daily_boss_available: boolean;
+  daily_attempts_used: number;
+  daily_attempts_per_day: number | null;
 };
 
 export type PostgreSqlMonsterListRow =
@@ -144,7 +148,8 @@ export function mapMonsterListRow(
       "character_level"
     ),
 
-    bestiaryVisible: row.bestiary_visible,
+    bestiaryVisible:
+      row.bestiary_visible,
 
     cooldownAvailableAt: mapNullableDate(
       row.cooldown_available_at,
@@ -154,6 +159,23 @@ export function mapMonsterListRow(
     taskStatus: mapTaskStatus(
       row.task_status
     ),
+
+    dailyBossAvailable:
+      row.daily_boss_available,
+
+    dailyAttemptsUsed:
+      assertNonNegativeInteger(
+        row.daily_attempts_used,
+        "daily_attempts_used"
+      ),
+
+    dailyAttemptsPerDay:
+      row.daily_attempts_per_day === null
+        ? undefined
+        : assertNonNegativeInteger(
+            row.daily_attempts_per_day,
+            "daily_attempts_per_day"
+          ),
   };
 }
 
