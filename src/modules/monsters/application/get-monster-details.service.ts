@@ -8,11 +8,8 @@ import {
   calculateMonsterCooldown,
 } from "../domain/monster-cooldown.js";
 import {
-  calculateLevelEligibility,
+  calculateMonsterEligibility,
 } from "../domain/monster-eligibility.js";
-import type {
-  MonsterEligibility,
-} from "../domain/monster.types.js";
 import type {
   FindMonsterInput,
   MonsterDiscoveryRepository,
@@ -20,24 +17,6 @@ import type {
 import type {
   MonsterDetails,
 } from "./monster-discovery.models.js";
-
-function combineEligibility(
-  levelEligibility: MonsterEligibility,
-  cooldownActive: boolean
-): MonsterEligibility {
-  const reasons = [
-    ...levelEligibility.reasons,
-  ];
-
-  if (cooldownActive) {
-    reasons.push("COOLDOWN_ACTIVE");
-  }
-
-  return {
-    isEligible: reasons.length === 0,
-    reasons,
-  };
-}
 
 export class GetMonsterDetailsService {
   public constructor(
@@ -62,12 +41,6 @@ export class GetMonsterDetailsService {
         this.clock.now()
       );
 
-    const levelEligibility =
-      calculateLevelEligibility(
-        record.characterLevel,
-        record.level
-      );
-
     return {
       code: record.code,
       name: record.name,
@@ -76,10 +49,17 @@ export class GetMonsterDetailsService {
       monsterType: record.monsterType,
       energyCost: record.energyCost,
 
-      eligibility: combineEligibility(
-        levelEligibility,
-        cooldown.isActive
-      ),
+      eligibility:
+        calculateMonsterEligibility({
+          characterLevel:
+            record.characterLevel,
+          monsterLevel: record.level,
+          monsterType:
+            record.monsterType,
+          cooldownActive:
+            cooldown.isActive,
+          taskStatus: record.taskStatus,
+        }),
 
       cooldown,
       bestiaryVisible:

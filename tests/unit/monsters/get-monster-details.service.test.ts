@@ -61,6 +61,7 @@ describe("GetMonsterDetailsService", () => {
         characterLevel: 1,
         bestiaryVisible: true,
         cooldownAvailableAt: null,
+          taskStatus: null,
       });
 
     const service = new GetMonsterDetailsService(
@@ -108,6 +109,7 @@ describe("GetMonsterDetailsService", () => {
         characterLevel: 8,
         bestiaryVisible: false,
         cooldownAvailableAt: availableAt,
+          taskStatus: null,
       });
 
     const service = new GetMonsterDetailsService(
@@ -152,3 +154,4 @@ describe("GetMonsterDetailsService", () => {
     );
   });
 });
+

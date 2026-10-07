@@ -5,11 +5,8 @@ import {
   calculateMonsterCooldown,
 } from "../domain/monster-cooldown.js";
 import {
-  calculateLevelEligibility,
+  calculateMonsterEligibility,
 } from "../domain/monster-eligibility.js";
-import type {
-  MonsterEligibility,
-} from "../domain/monster.types.js";
 import type {
   ListMonstersInput,
   MonsterDiscoveryRecord,
@@ -18,24 +15,6 @@ import type {
 import type {
   MonsterListItem,
 } from "./monster-discovery.models.js";
-
-function combineEligibility(
-  levelEligibility: MonsterEligibility,
-  cooldownActive: boolean
-): MonsterEligibility {
-  const reasons = [
-    ...levelEligibility.reasons,
-  ];
-
-  if (cooldownActive) {
-    reasons.push("COOLDOWN_ACTIVE");
-  }
-
-  return {
-    isEligible: reasons.length === 0,
-    reasons,
-  };
-}
 
 function mapMonsterListItem(
   record: MonsterDiscoveryRecord,
@@ -47,12 +26,6 @@ function mapMonsterListItem(
       now
     );
 
-  const levelEligibility =
-    calculateLevelEligibility(
-      record.characterLevel,
-      record.level
-    );
-
   return {
     code: record.code,
     name: record.name,
@@ -61,10 +34,15 @@ function mapMonsterListItem(
     monsterType: record.monsterType,
     energyCost: record.energyCost,
 
-    eligibility: combineEligibility(
-      levelEligibility,
-      cooldown.isActive
-    ),
+    eligibility:
+      calculateMonsterEligibility({
+        characterLevel:
+          record.characterLevel,
+        monsterLevel: record.level,
+        monsterType: record.monsterType,
+        cooldownActive: cooldown.isActive,
+        taskStatus: record.taskStatus,
+      }),
 
     cooldown,
     bestiaryVisible:

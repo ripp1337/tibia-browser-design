@@ -34,7 +34,30 @@ const MONSTER_COLUMNS = `
   m.cooldown_seconds,
   $2::integer AS character_level,
   (be.bestiary_entry_id IS NOT NULL) AS bestiary_visible,
-  cc.available_at AS cooldown_available_at
+  cc.available_at AS cooldown_available_at,
+  task_statistics.task_status
+`;
+
+const MONSTER_JOINS = `
+  LEFT JOIN bestiary_entries AS be
+    ON be.character_id = $1
+    AND be.monster_id = m.monster_id
+
+  LEFT JOIN character_cooldowns AS cc
+    ON cc.character_id = $1
+    AND cc.target_id = m.monster_id
+    AND cc.cooldown_type = 'Monster'
+
+  LEFT JOIN bosses AS task_boss
+    ON task_boss.monster_id = m.monster_id
+
+  LEFT JOIN monster_tasks AS task_definition
+    ON task_definition.boss_id = task_boss.boss_id
+
+  LEFT JOIN bestiary_statistics AS task_statistics
+    ON task_statistics.character_id = $1
+    AND task_statistics.monster_id =
+      task_definition.monster_id
 `;
 
 export class PostgresMonsterDiscoveryRepository
@@ -59,13 +82,7 @@ export class PostgresMonsterDiscoveryRepository
           SELECT
             ${MONSTER_COLUMNS}
           FROM monsters AS m
-          LEFT JOIN bestiary_entries AS be
-            ON be.character_id = $1
-            AND be.monster_id = m.monster_id
-          LEFT JOIN character_cooldowns AS cc
-            ON cc.character_id = $1
-            AND cc.target_id = m.monster_id
-            AND cc.cooldown_type = 'Monster'
+          ${MONSTER_JOINS}
           ORDER BY
             m.level ASC,
             m.name ASC,
@@ -95,13 +112,7 @@ export class PostgresMonsterDiscoveryRepository
           SELECT
             ${MONSTER_COLUMNS}
           FROM monsters AS m
-          LEFT JOIN bestiary_entries AS be
-            ON be.character_id = $1
-            AND be.monster_id = m.monster_id
-          LEFT JOIN character_cooldowns AS cc
-            ON cc.character_id = $1
-            AND cc.target_id = m.monster_id
-            AND cc.cooldown_type = 'Monster'
+          ${MONSTER_JOINS}
           WHERE m.code = $3
         `,
         [

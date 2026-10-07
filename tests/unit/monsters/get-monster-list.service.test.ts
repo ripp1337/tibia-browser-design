@@ -59,6 +59,7 @@ describe("GetMonsterListService", () => {
           characterLevel: 10,
           bestiaryVisible: false,
           cooldownAvailableAt: null,
+          taskStatus: null,
         },
       ]);
 
@@ -107,6 +108,7 @@ describe("GetMonsterListService", () => {
           characterLevel: 7,
           bestiaryVisible: true,
           cooldownAvailableAt: availableAt,
+          taskStatus: null,
         },
       ]);
 
@@ -151,6 +153,7 @@ describe("GetMonsterListService", () => {
           characterLevel: 8,
           bestiaryVisible: false,
           cooldownAvailableAt: availableAt,
+          taskStatus: null,
         },
       ]);
 
@@ -175,3 +178,4 @@ describe("GetMonsterListService", () => {
     });
   });
 });
+

@@ -4,7 +4,9 @@ import type {
 } from "../application/monster-discovery.repository.js";
 import {
   MONSTER_TYPE,
+  TASK_STATUS,
   type MonsterType,
+  type TaskStatus,
 } from "../domain/monster.types.js";
 
 export type PostgreSqlMonsterRow = {
@@ -24,6 +26,8 @@ export type PostgreSqlMonsterRow = {
   character_level: number;
   bestiary_visible: boolean;
   cooldown_available_at: Date | null;
+
+  task_status: string | null;
 };
 
 export type PostgreSqlMonsterListRow =
@@ -51,6 +55,29 @@ export function mapMonsterType(
     default:
       throw new Error(
         `Unsupported monster type: ${value}`
+      );
+  }
+}
+
+function mapTaskStatus(
+  value: string | null
+): TaskStatus | null {
+  switch (value) {
+    case null:
+      return null;
+
+    case TASK_STATUS.active:
+      return TASK_STATUS.active;
+
+    case TASK_STATUS.unlocked:
+      return TASK_STATUS.unlocked;
+
+    case TASK_STATUS.waitingForReunlock:
+      return TASK_STATUS.waitingForReunlock;
+
+    default:
+      throw new Error(
+        `Unsupported task status: ${value}`
       );
   }
 }
@@ -122,6 +149,10 @@ export function mapMonsterListRow(
     cooldownAvailableAt: mapNullableDate(
       row.cooldown_available_at,
       "cooldown_available_at"
+    ),
+
+    taskStatus: mapTaskStatus(
+      row.task_status
     ),
   };
 }

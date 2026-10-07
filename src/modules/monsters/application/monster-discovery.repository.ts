@@ -5,6 +5,7 @@ import type {
 import type {
   MonsterCode,
   MonsterType,
+  TaskStatus,
 } from "../domain/monster.types.js";
 
 export type MonsterDiscoveryRecord = {
@@ -18,6 +19,8 @@ export type MonsterDiscoveryRecord = {
   characterLevel: number;
   bestiaryVisible: boolean;
   cooldownAvailableAt: Date | null;
+
+  taskStatus: TaskStatus | null;
 };
 
 export type MonsterDiscoveryDetailsRecord =
