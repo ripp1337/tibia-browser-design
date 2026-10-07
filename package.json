@@ -1,51 +1,51 @@
 {
-    "name":  "ostatnia-szansa-game",
-    "version":  "1.0.0",
-    "description":  "",
-    "main":  "index.js",
-    "scripts":  {
-                    "test":  "vitest run",
-                    "typecheck":  "tsc --noEmit",
-                    "build":  "tsc -p tsconfig.build.json",
-                    "db:test":  "tsx scripts/test-database.ts",
-                    "db:seed":  "tsx scripts/seed-database.ts",
-                    "db:materials:check":  "tsx scripts/import-materials.ts --dry-run",
-                    "db:materials:import":  "tsx scripts/import-materials.ts",
-                    "game-data:validate":  "tsx scripts/import-game-data.ts --validate-only",
-                    "game-data:check":  "tsx scripts/import-game-data.ts --dry-run",
-                    "game-data:import":  "tsx scripts/import-game-data.ts",
-                    "test:watch":  "vitest",
-                    "test:unit":  "vitest run tests/unit",
-                    "test:integration":  "vitest run tests/integration",
-                    "dev":  "tsx src/server.ts",
-                    "start":  "node dist/server.js"
-                },
-    "repository":  {
-                       "type":  "git",
-                       "url":  "git+https://github.com/ripp1337/tibia-browser-design.git"
-                   },
-    "keywords":  [
-
-                 ],
-    "author":  "",
-    "license":  "ISC",
-    "type":  "module",
-    "bugs":  {
-                 "url":  "https://github.com/ripp1337/tibia-browser-design/issues"
-             },
-    "homepage":  "https://github.com/ripp1337/tibia-browser-design#readme",
-    "dependencies":  {
-                         "csv-parse":  "^7.0.3",
-                         "dotenv":  "^18.0.5",
-                         "exceljs":  "^4.4.0",
-                         "jszip":  "^3.10.2",
-                         "pg":  "^8.23.1"
-                     },
-    "devDependencies":  {
-                            "@types/node":  "^26.6.4",
-                            "@types/pg":  "^8.23.1",
-                            "tsx":  "^4.23.15",
-                            "typescript":  "^7.0.2",
-                            "vitest":  "^5.0.3"
-                        }
+    "name": "ostatnia-szansa-game",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "vitest run",
+        "typecheck": "tsc --noEmit",
+        "build": "tsc -p tsconfig.build.json",
+        "db:test": "tsx scripts/test-database.ts",
+        "db:seed": "tsx scripts/seed-database.ts",
+        "db:materials:check": "tsx scripts/import-materials.ts --dry-run",
+        "db:materials:import": "tsx scripts/import-materials.ts",
+        "game-data:validate": "tsx scripts/import-game-data.ts --validate-only",
+        "game-data:check": "tsx scripts/import-game-data.ts --dry-run",
+        "game-data:import": "tsx scripts/import-game-data.ts",
+        "test:watch": "vitest",
+        "test:unit": "vitest run tests/unit",
+        "test:integration": "vitest run tests/integration",
+        "dev": "tsx src/server.ts",
+        "start": "node dist/server.js",
+        "db:migrate": "tsx scripts/run-migrations.ts",
+        "db:migrate:status": "tsx scripts/run-migrations.ts --status"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/ripp1337/tibia-browser-design.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "bugs": {
+        "url": "https://github.com/ripp1337/tibia-browser-design/issues"
+    },
+    "homepage": "https://github.com/ripp1337/tibia-browser-design#readme",
+    "dependencies": {
+        "csv-parse": "^7.0.3",
+        "dotenv": "^18.0.5",
+        "exceljs": "^4.4.0",
+        "jszip": "^3.10.2",
+        "pg": "^8.23.1"
+    },
+    "devDependencies": {
+        "@types/node": "^26.6.4",
+        "@types/pg": "^8.23.1",
+        "tsx": "^4.23.15",
+        "typescript": "^7.0.2",
+        "vitest": "^5.0.3"
+    }
 }
