@@ -28,9 +28,9 @@ async function testDatabaseConnection(): Promise<void> {
 
     const tableCount = Number.parseInt(result.table_count, 10);
 
-    if (tableCount !== 79) {
+    if (tableCount !== 80) {
       throw new Error(
-        `Expected 79 database tables, but PostgreSQL returned ${tableCount}.`
+        `Expected 80 database tables, but PostgreSQL returned ${tableCount}.`
       );
     }
 
@@ -55,4 +55,3 @@ testDatabaseConnection().catch((error: unknown) => {
 
   process.exitCode = 1;
 });
-
