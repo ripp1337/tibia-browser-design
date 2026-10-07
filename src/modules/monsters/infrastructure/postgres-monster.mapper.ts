@@ -10,6 +10,7 @@ export type PostgreSqlMonsterRow = {
   monster_type: string;
   level: number;
 
+  energy_cost: number;
   cooldown_seconds: number;
 };
 
