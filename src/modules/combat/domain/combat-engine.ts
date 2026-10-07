@@ -7,10 +7,12 @@ import {
   COMBAT_STATUS,
   PLAYER_ACTION_TYPE,
 } from "./combat.constants.js";
+import { resolveActiveEffects } from "./combat-effects.js";
 import { CombatInvalidStateError } from "./combat.errors.js";
 import type {
   AttackResolvedEvent,
   CombatEndedEvent,
+  CombatEvent,
   CombatResolution,
   CombatState,
   PlayerAction,
@@ -57,18 +59,12 @@ export function resolveCombatAction(
     );
   }
 
-  const events: CombatResolution["events"][number][] = [];
+  const events: CombatEvent[] = [];
 
   const playerAttack = resolveBasicAttack(
     state.player,
     state.monster,
     randomSource
-  );
-
-  const monsterHealth = Math.max(
-    0,
-    state.monster.currentHealth -
-      playerAttack.damage
   );
 
   events.push(
@@ -80,13 +76,28 @@ export function resolveCombatAction(
     )
   );
 
-  if (monsterHealth === 0) {
+  const stateAfterPlayerAttack: CombatState = {
+    ...state,
+    monster: {
+      ...state.monster,
+      currentHealth: Math.max(
+        0,
+        state.monster.currentHealth -
+          playerAttack.damage
+      ),
+    },
+  };
+
+  const stateAfterPlayerEffects =
+    resolveActiveEffects(
+      stateAfterPlayerAttack
+    );
+
+  if (
+    stateAfterPlayerEffects.monster.currentHealth === 0
+  ) {
     const finalState: CombatState = {
-      ...state,
-      monster: {
-        ...state.monster,
-        currentHealth: 0,
-      },
+      ...stateAfterPlayerEffects,
       status: COMBAT_STATUS.playerVictory,
       defeatReason: null,
     };
@@ -101,24 +112,10 @@ export function resolveCombatAction(
     };
   }
 
-  const stateAfterPlayerAttack: CombatState = {
-    ...state,
-    monster: {
-      ...state.monster,
-      currentHealth: monsterHealth,
-    },
-  };
-
   const monsterAttack = resolveBasicAttack(
-    stateAfterPlayerAttack.monster,
-    stateAfterPlayerAttack.player,
+    stateAfterPlayerEffects.monster,
+    stateAfterPlayerEffects.player,
     randomSource
-  );
-
-  const playerHealth = Math.max(
-    0,
-    stateAfterPlayerAttack.player.currentHealth -
-      monsterAttack.damage
   );
 
   events.push(
@@ -130,13 +127,28 @@ export function resolveCombatAction(
     )
   );
 
-  if (playerHealth === 0) {
+  const stateAfterMonsterAttack: CombatState = {
+    ...stateAfterPlayerEffects,
+    player: {
+      ...stateAfterPlayerEffects.player,
+      currentHealth: Math.max(
+        0,
+        stateAfterPlayerEffects.player.currentHealth -
+          monsterAttack.damage
+      ),
+    },
+  };
+
+  const stateAfterMonsterEffects =
+    resolveActiveEffects(
+      stateAfterMonsterAttack
+    );
+
+  if (
+    stateAfterMonsterEffects.player.currentHealth === 0
+  ) {
     const finalState: CombatState = {
-      ...stateAfterPlayerAttack,
-      player: {
-        ...stateAfterPlayerAttack.player,
-        currentHealth: 0,
-      },
+      ...stateAfterMonsterEffects,
       status: COMBAT_STATUS.playerDefeat,
       defeatReason:
         COMBAT_DEFEAT_REASON.playerHealthDepleted,
@@ -152,13 +164,9 @@ export function resolveCombatAction(
     };
   }
 
-  if (state.turn === MAXIMUM_TURN) {
+  if (state.turn >= MAXIMUM_TURN) {
     const finalState: CombatState = {
-      ...stateAfterPlayerAttack,
-      player: {
-        ...stateAfterPlayerAttack.player,
-        currentHealth: playerHealth,
-      },
+      ...stateAfterMonsterEffects,
       status: COMBAT_STATUS.playerDefeat,
       defeatReason:
         COMBAT_DEFEAT_REASON.turnLimitExceeded,
@@ -175,11 +183,7 @@ export function resolveCombatAction(
   }
 
   const nextState: CombatState = {
-    ...stateAfterPlayerAttack,
-    player: {
-      ...stateAfterPlayerAttack.player,
-      currentHealth: playerHealth,
-    },
+    ...stateAfterMonsterEffects,
     turn: state.turn + 1,
   };
 

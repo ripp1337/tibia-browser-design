@@ -1,4 +1,7 @@
-import { COMBAT_STATUS } from "./combat.constants.js";
+import {
+  COMBAT_DEFEAT_REASON,
+  COMBAT_STATUS,
+} from "./combat.constants.js";
 import {
   CombatAlreadyEndedError,
   CombatInvalidStateError,
@@ -58,6 +61,122 @@ function validateCombatant(
   );
 }
 
+function validateInProgressState(
+  state: CombatState
+): void {
+  if (state.defeatReason !== null) {
+    throw new CombatInvalidStateError(
+      "An in-progress combat cannot have a defeat reason."
+    );
+  }
+
+  if (state.player.currentHealth === 0) {
+    throw new CombatInvalidStateError(
+      "An in-progress combat requires the player to be alive."
+    );
+  }
+
+  if (state.monster.currentHealth === 0) {
+    throw new CombatInvalidStateError(
+      "An in-progress combat requires the monster to be alive."
+    );
+  }
+}
+
+function validatePlayerVictoryState(
+  state: CombatState
+): void {
+  if (state.defeatReason !== null) {
+    throw new CombatInvalidStateError(
+      "A player victory cannot have a defeat reason."
+    );
+  }
+
+  if (state.player.currentHealth === 0) {
+    throw new CombatInvalidStateError(
+      "A player victory requires the player to be alive."
+    );
+  }
+
+  if (state.monster.currentHealth !== 0) {
+    throw new CombatInvalidStateError(
+      "A player victory requires depleted monster health."
+    );
+  }
+}
+
+function validatePlayerDefeatState(
+  state: CombatState
+): void {
+  if (
+    state.defeatReason ===
+    COMBAT_DEFEAT_REASON.playerHealthDepleted
+  ) {
+    if (state.player.currentHealth !== 0) {
+      throw new CombatInvalidStateError(
+        "A health-depletion defeat requires depleted player health."
+      );
+    }
+
+    if (state.monster.currentHealth === 0) {
+      throw new CombatInvalidStateError(
+        "A health-depletion defeat requires the monster to be alive."
+      );
+    }
+
+    return;
+  }
+
+  if (
+    state.defeatReason ===
+    COMBAT_DEFEAT_REASON.turnLimitExceeded
+  ) {
+    if (state.turn !== 100) {
+      throw new CombatInvalidStateError(
+        "A turn-limit defeat must occur on turn 100."
+      );
+    }
+
+    if (
+      state.player.currentHealth === 0 ||
+      state.monster.currentHealth === 0
+    ) {
+      throw new CombatInvalidStateError(
+        "A turn-limit defeat requires both combatants to be alive."
+      );
+    }
+
+    return;
+  }
+
+  throw new CombatInvalidStateError(
+    "A player defeat requires a valid defeat reason."
+  );
+}
+
+function validateStatusState(
+  state: CombatState
+): void {
+  if (state.status === COMBAT_STATUS.inProgress) {
+    validateInProgressState(state);
+    return;
+  }
+
+  if (state.status === COMBAT_STATUS.playerVictory) {
+    validatePlayerVictoryState(state);
+    return;
+  }
+
+  if (state.status === COMBAT_STATUS.playerDefeat) {
+    validatePlayerDefeatState(state);
+    return;
+  }
+
+  throw new CombatInvalidStateError(
+    "Combat status is invalid."
+  );
+}
+
 export function validateCombatState(
   state: CombatState
 ): void {
@@ -66,10 +185,11 @@ export function validateCombatState(
 
   if (
     !Number.isSafeInteger(state.turn) ||
-    state.turn < 1
+    state.turn < 1 ||
+    state.turn > 100
   ) {
     throw new CombatInvalidStateError(
-      "turn must be a positive safe integer."
+      "turn must be a safe integer between 1 and 100."
     );
   }
 
@@ -78,6 +198,14 @@ export function validateCombatState(
       "effects must be an array."
     );
   }
+
+  if (state.effects.length !== 0) {
+    throw new CombatInvalidStateError(
+      "Active combat effects are not supported in M4."
+    );
+  }
+
+  validateStatusState(state);
 }
 
 export function assertCombatInProgress(

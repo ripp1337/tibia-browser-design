@@ -25,7 +25,7 @@ export type Combatant = {
   defense: number;
 };
 
-export type CombatEffect = {};
+export type CombatEffect = never;
 
 export type PlayerAction = {
   type: PlayerActionType;

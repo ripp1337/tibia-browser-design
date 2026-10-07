@@ -5,6 +5,7 @@ import {
 } from "vitest";
 
 import {
+  COMBAT_DEFEAT_REASON,
   COMBAT_STATUS,
 } from "../../../src/modules/combat/domain/combat.constants.js";
 import {
@@ -100,9 +101,124 @@ describe("Combat validation", () => {
     ).toThrow(CombatInvalidStateError);
   });
 
+  it("rejects a turn above one hundred", () => {
+    const state = createCombatState();
+
+    state.turn = 101;
+
+    expect(() =>
+      validateCombatState(state)
+    ).toThrow(CombatInvalidStateError);
+  });
+
+  it("rejects active effects during M4", () => {
+    const state = createCombatState();
+
+    const invalidState = {
+      ...state,
+      effects: [{}],
+    } as unknown as CombatState;
+
+    expect(() =>
+      validateCombatState(invalidState)
+    ).toThrow(CombatInvalidStateError);
+  });
+
+  it("rejects an in-progress state with a defeat reason", () => {
+    const state = createCombatState();
+
+    state.defeatReason =
+      COMBAT_DEFEAT_REASON.turnLimitExceeded;
+
+    expect(() =>
+      validateCombatState(state)
+    ).toThrow(CombatInvalidStateError);
+  });
+
+  it("rejects an in-progress state with depleted player health", () => {
+    const state = createCombatState();
+
+    state.player.currentHealth = 0;
+
+    expect(() =>
+      validateCombatState(state)
+    ).toThrow(CombatInvalidStateError);
+  });
+
+  it("rejects an in-progress state with depleted monster health", () => {
+    const state = createCombatState();
+
+    state.monster.currentHealth = 0;
+
+    expect(() =>
+      validateCombatState(state)
+    ).toThrow(CombatInvalidStateError);
+  });
+
+  it("accepts a valid player victory state", () => {
+    const state = createCombatState();
+
+    state.monster.currentHealth = 0;
+    state.status = COMBAT_STATUS.playerVictory;
+
+    expect(() =>
+      validateCombatState(state)
+    ).not.toThrow();
+  });
+
+  it("rejects a player victory while the monster is alive", () => {
+    const state = createCombatState();
+
+    state.status = COMBAT_STATUS.playerVictory;
+
+    expect(() =>
+      validateCombatState(state)
+    ).toThrow(CombatInvalidStateError);
+  });
+
+  it("accepts a defeat caused by depleted player health", () => {
+    const state = createCombatState();
+
+    state.player.currentHealth = 0;
+    state.status = COMBAT_STATUS.playerDefeat;
+    state.defeatReason =
+      COMBAT_DEFEAT_REASON.playerHealthDepleted;
+
+    expect(() =>
+      validateCombatState(state)
+    ).not.toThrow();
+  });
+
+  it("accepts a turn-limit defeat on turn one hundred", () => {
+    const state = createCombatState();
+
+    state.turn = 100;
+    state.status = COMBAT_STATUS.playerDefeat;
+    state.defeatReason =
+      COMBAT_DEFEAT_REASON.turnLimitExceeded;
+
+    expect(() =>
+      validateCombatState(state)
+    ).not.toThrow();
+  });
+
+  it("rejects a turn-limit defeat before turn one hundred", () => {
+    const state = createCombatState();
+
+    state.turn = 99;
+    state.status = COMBAT_STATUS.playerDefeat;
+    state.defeatReason =
+      COMBAT_DEFEAT_REASON.turnLimitExceeded;
+
+    expect(() =>
+      validateCombatState(state)
+    ).toThrow(CombatInvalidStateError);
+  });
+
   it("rejects an action after combat has ended", () => {
     const state = createCombatState();
 
+    state.monster.currentHealth = 0;
     state.status = COMBAT_STATUS.playerVictory;
 
     expect(() =>

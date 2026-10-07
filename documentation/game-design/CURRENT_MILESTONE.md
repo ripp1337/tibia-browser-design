@@ -2,7 +2,7 @@
 
 ## Milestone
 
-M3: Monster Discovery and Eligibility
+M4: Pure Combat Engine
 
 ## Status
 
@@ -10,113 +10,290 @@ Completed.
 
 ## Objective
 
-Provide authenticated, read-only monster discovery for an owned character.
+Implement deterministic turn-based combat as a pure TypeScript domain module processing one player action at a time.
 
 ## Implemented scope
 
-- Monster list endpoint.
-- Monster details endpoint loaded by stable monster code.
-- Character ownership enforcement.
-- Character-level eligibility.
-- Character-specific Bestiary visibility.
-- Energy-cost preview.
-- Support for Normal, MiniBoss, TaskBoss and DailyBoss.
-- Deterministic cooldown calculation using Clock.
-- Task Boss lifecycle eligibility.
-- Daily Boss rotation and attempt eligibility.
-- Stable public application models.
-- PostgreSQL row validation.
-- Authenticated HTTP integration.
+- Pure TypeScript combat domain.
+- Immutable combat state transitions.
+- Injected `RandomSource`.
+- Player `basic_attack`.
+- Monster `basic_attack`.
+- Shared attack resolution for player and monster.
+- Player-first round flow.
+- Hit chance calculation.
+- Damage range calculation.
+- Misses.
+- Successful zero-damage hits.
+- Immediate victory and defeat handling.
+- Maximum duration of 100 complete rounds.
+- Ordered combat events.
+- Dedicated combat domain errors.
+- Validation of combat state and RNG output.
+- Placeholder for future active combat effects.
+- Deterministic unit tests.
 
-## Endpoints
+## Public domain interface
 
-- GET /characters/:characterId/monsters
-- GET /characters/:characterId/monsters/:monsterCode
+```ts
+resolveCombatAction(
+  state: CombatState,
+  action: PlayerAction,
+  rng: RandomSource
+): CombatResolution
+```
 
-## Eligibility rules
+Initially supported action:
 
-### Normal
+```ts
+{
+  type: "basic_attack"
+}
+```
 
-- Character level requirement.
-- Independent character-and-monster cooldown.
+## Combat flow
 
-### MiniBoss
+One turn represents one complete round:
 
-- Character level requirement.
-- Independent character-and-monster cooldown.
+1. Resolve the player basic attack.
+2. Stop immediately if the monster reaches zero Health.
+3. Resolve the monster basic attack.
+4. Stop immediately if the player reaches zero Health.
+5. Apply the turn-limit rule.
+6. Advance the turn if combat continues.
 
-### TaskBoss
+The player always acts first.
 
-- Character level requirement.
-- Task status must be UNLOCKED.
-- ACTIVE returns TASK_PROGRESS_INCOMPLETE.
-- WAITING_FOR_REUNLOCK returns TASK_REUNLOCK_REQUIRED.
-- Ordinary monster cooldown does not affect Task Boss eligibility.
+The monster does not act after being killed by the player.
 
-Each Task Boss has exactly one monster task.
-A specific source monster unlocks a specific Task Boss.
-Family-based task aggregation is outside M3.
+## Basic attack formulas
 
-### DailyBoss
+```txt
+hitChancePercent =
+  clamp((attack - defense) * 4, 5, 90)
 
-- Character level requirement.
-- Boss must belong to the active rotation.
-- Character must have attempts remaining.
-- Ordinary monster cooldown does not affect Daily Boss eligibility.
-- Attempts are tracked per rotation.
+minimumDamage =
+  max(0, attack - defense)
 
-## Daily Boss rotation
+maximumDamage =
+  max(0, (attack - defense) * 2)
+```
 
-- Reset hour is configurable in UTC through DAILY_BOSS_RESET_HOUR_UTC.
-- A rotation is active when created_at <= observedAt and reset_timestamp > observedAt.
-- Multiple active rotations are treated as a configuration error.
-- Each rotation contains one definition for tiers 1, 2 and 3.
+Player and monster basic attacks use the same formulas.
 
-## Eligibility reasons
+## Randomness contract
 
-- LEVEL_TOO_LOW
-- COOLDOWN_ACTIVE
-- TASK_PROGRESS_INCOMPLETE
-- TASK_REUNLOCK_REQUIRED
-- DAILY_BOSS_UNAVAILABLE
-- DAILY_ATTEMPTS_EXHAUSTED
+```ts
+interface RandomSource {
+  nextFloat(): number;
 
-## Database changes
+  nextInt(
+    minimum: number,
+    maximum: number
+  ): number;
+}
+```
 
-- Added tracked migration runner and schema_migrations.
-- Added unique Task Boss assignment constraint.
-- Added Daily Boss rotation window constraint.
-- Changed Daily Boss attempts to be tracked per rotation.
-- Added configurable Daily Boss reset hour.
+Rules:
 
-## Out of scope
+- `nextFloat()` returns a value greater than or equal to `0` and less than `1`.
+- `nextInt(minimum, maximum)` uses inclusive minimum and maximum bounds.
+- A hit occurs when `nextFloat() * 100` is lower than the calculated hit chance.
+- Invalid RNG output causes a dedicated domain error.
+- Combat domain code does not call `Math.random()`.
 
-M3 does not:
+## Combat state rules
 
-- start combat,
+- `currentHealth`, `maximumHealth`, `attack`, `defense`, and `turn` are safe integers.
+- `maximumHealth` must be positive.
+- `currentHealth`, `attack`, and `defense` must be non-negative.
+- `currentHealth` cannot exceed `maximumHealth`.
+- Initial combat turn is `1`.
+- Health cannot fall below `0`.
+- Combat cannot resolve another action after reaching a terminal state.
+- Input state is never mutated.
+
+## Combat outcomes
+
+Combat status:
+
+- `InProgress`
+- `PlayerVictory`
+- `PlayerDefeat`
+
+Player defeat reasons:
+
+- `PlayerHealthDepleted`
+- `TurnLimitExceeded`
+
+A successful hit may deal zero damage.
+
+The following outcomes remain distinct:
+
+```ts
+{
+  hit: false,
+  damage: 0
+}
+```
+
+```ts
+{
+  hit: true,
+  damage: 0
+}
+```
+
+## Turn limit
+
+Turn `100` resolves normally.
+
+If the player kills the monster during turn `100`, combat ends in player victory.
+
+If the monster kills the player during turn `100`, combat ends in player defeat caused by depleted Health.
+
+If both combatants survive turn `100`, combat ends in player defeat caused by the turn limit.
+
+Terminal combat does not advance to another turn. The final state preserves the number of the round in which combat ended.
+
+## Combat events
+
+The engine returns a new state and an ordered readonly event list.
+
+Supported events:
+
+- `AttackResolved`
+- `CombatEnded`
+- `TurnAdvanced`
+
+`AttackResolved` records:
+
+- actor,
+- target,
+- whether the attack hit,
+- damage dealt.
+
+`CombatEnded` records:
+
+- final combat status,
+- defeat reason when applicable.
+
+`TurnAdvanced` is emitted only when combat remains in progress.
+
+## Active effects
+
+Combat state contains an active-effects collection as an extension point for future milestones.
+
+M4 does not implement:
+
+- buffs,
+- debuffs,
+- damage over time,
+- healing over time,
+- effect duration,
+- effect stacking.
+
+The effects collection remains empty in the initial combat engine.
+
+## Error handling
+
+Dedicated domain errors cover:
+
+- invalid combat state,
+- actions submitted after combat has ended,
+- invalid RNG output.
+
+The combat engine rejects invalid input instead of repairing or normalizing it.
+
+## Architectural boundary
+
+M4 does not:
+
+- expose HTTP endpoints,
+- access PostgreSQL,
+- use repositories,
+- persist combat sessions,
+- persist combat events or logs,
 - deduct Energy,
-- create combat sessions,
 - grant rewards,
-- write cooldowns,
+- grant Experience or Gold,
+- generate loot,
+- update progression,
+- update monster cooldowns,
 - update Bestiary,
 - update kill statistics,
-- mutate Task Boss progress,
-- generate or mutate Daily Boss rotations.
+- update Task Boss progress,
+- use monster abilities,
+- use spells or consumables,
+- call `Math.random()`,
+- call `Date.now()`.
+
+Combat receives final combat-ready player and monster statistics. It does not calculate equipment, progression, bonuses, or database definitions.
+
+## Implemented files
+
+```txt
+src/modules/combat/
++-- domain/
+¦   +-- combat-attack.ts
+¦   +-- combat-effects.ts
+¦   +-- combat-engine.ts
+¦   +-- combat-validation.ts
+¦   +-- combat.constants.ts
+¦   +-- combat.errors.ts
+¦   +-- combat.types.ts
++-- ports/
+    +-- random-source.ts
+```
+
+Tests:
+
+```txt
+tests/unit/combat/
++-- combat-attack.test.ts
++-- combat-engine.test.ts
++-- combat-validation.test.ts
+```
 
 ## Verification
 
 Verified on 2026-10-07:
 
-- 87 migrations applied.
-- 0 pending migrations.
-- PostgreSQL connection successful.
-- 79 database tables detected.
 - TypeScript typecheck passed.
-- 42 test files passed.
-- 226 tests passed.
+- 4 M4 test files passed.
+- 41 M4 tests passed.
+- 46 total test files passed.
+- 267 total tests passed.
 - Production build passed.
-- Git working tree clean.
+- No regressions were detected in M1-M3 tests.
+- M4 branch was pushed and synchronized with `origin/m4/pure-combat-engine`.
+
+## Out of scope
+
+The following remain for later milestones:
+
+- persistent combat sessions,
+- combat API endpoints,
+- expected-turn concurrency control,
+- Energy deduction,
+- persistent combat logs,
+- victory rewards,
+- death penalties,
+- Experience and Gold rewards,
+- loot generation,
+- cooldown writes,
+- Bestiary updates,
+- kill statistics,
+- Task Boss progression,
+- player spells,
+- combat consumables,
+- monster abilities,
+- buffs and debuffs,
+- damage and healing over time,
+- multiple targets.
 
 ## Completion log
 
-M3 Monster Discovery and Eligibility completed and verified.
+M4 Pure Combat Engine completed and verified.
+
+The next milestone is M5: Persistent Combat API.
