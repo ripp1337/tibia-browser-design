@@ -150,6 +150,12 @@ function createFixture(
   const repository:
   CombatSessionRepository = {
     withStartTransaction,
+    withActionTransaction:
+      vi.fn(async () => {
+        throw new Error(
+          "Action transaction is not used by StartCombatService tests."
+        );
+      }),
   };
 
   const clock: Clock = {

@@ -35,23 +35,50 @@ import {
 } from "../../monsters/infrastructure/postgres-monster.mapper.js";
 import {
   CombatAlreadyActiveError,
+  CombatSessionNotFoundError,
   InvalidPersistentCombatStateError,
 } from "../application/combat-session.errors.js";
-import type {
-  CombatSessionSnapshot,
+import {
+  PERSISTENT_COMBAT_STATUS,
+  type CombatSessionSnapshot,
+  type PersistedCombatEvent,
 } from "../application/combat-session.models.js";
 import type {
+  CombatActionTransaction,
+  CombatActionTransactionInput,
   CombatSessionRepository,
   CombatStartMonster,
   CombatStartTransaction,
   CombatStartTransactionInput,
   CreateCombatSessionInput,
   LockedCombatCharacter,
+  LockedCombatSession,
+  PersistCombatActionInput,
 } from "../application/combat-session.repository.js";
 import {
   mapPostgreSqlCombatSessionRow,
   type PostgreSqlCombatSessionRow,
 } from "./postgres-combat.mapper.js";
+import {
+  COMBAT_DEFEAT_REASON,
+  COMBAT_STATUS,
+} from "../domain/combat.constants.js";
+import type {
+  CombatEvent,
+  CombatState,
+} from "../domain/combat.types.js";
+
+
+
+type PostgreSqlCombatEventRow = {
+  combat_session_event_id: string;
+  combat_session_id: string;
+  turn_number: number;
+  event_order: number;
+  event_type: string;
+  event_data_json: unknown;
+  created_at: Date;
+};
 
 type LockedCharacterRow = {
   character_id: string;
@@ -119,6 +146,112 @@ function mapValidDate(
   }
 
   return new Date(value.getTime());
+}
+
+
+
+function mapPersistedEvent(
+  row: PostgreSqlCombatEventRow
+): PersistedCombatEvent {
+  if (
+    !Number.isSafeInteger(row.turn_number) ||
+    row.turn_number < 1 ||
+    row.turn_number > 100
+  ) {
+    throw new InvalidPersistentCombatStateError(
+      "Persisted event turn number is invalid."
+    );
+  }
+
+  if (
+    !Number.isSafeInteger(row.event_order) ||
+    row.event_order < 0
+  ) {
+    throw new InvalidPersistentCombatStateError(
+      "Persisted event order is invalid."
+    );
+  }
+
+  if (
+    typeof row.event_type !== "string" ||
+    row.event_type.trim().length === 0
+  ) {
+    throw new InvalidPersistentCombatStateError(
+      "Persisted event type is invalid."
+    );
+  }
+
+  if (
+    typeof row.event_data_json !== "object" ||
+    row.event_data_json === null ||
+    Array.isArray(row.event_data_json)
+  ) {
+    throw new InvalidPersistentCombatStateError(
+      "Persisted event data is invalid."
+    );
+  }
+
+  return {
+    combatSessionEventId:
+      row.combat_session_event_id,
+    combatSessionId:
+      row.combat_session_id,
+    turnNumber: row.turn_number,
+    eventOrder: row.event_order,
+    eventType: row.event_type,
+    event:
+      row.event_data_json as CombatEvent,
+    createdAt: mapValidDate(
+      row.created_at,
+      "event.created_at"
+    ),
+  };
+}
+
+function mapDomainStatusToPersistent(
+  state: CombatState
+): {
+  status: string;
+  defeatReason: string | null;
+  endedAtRequired: boolean;
+} {
+  switch (state.status) {
+    case COMBAT_STATUS.inProgress:
+      return {
+        status:
+          PERSISTENT_COMBAT_STATUS.active,
+        defeatReason: null,
+        endedAtRequired: false,
+      };
+
+    case COMBAT_STATUS.playerVictory:
+      return {
+        status:
+          PERSISTENT_COMBAT_STATUS.victory,
+        defeatReason: null,
+        endedAtRequired: true,
+      };
+
+    case COMBAT_STATUS.playerDefeat:
+      if (
+        state.defeatReason !==
+          COMBAT_DEFEAT_REASON.playerHealthDepleted &&
+        state.defeatReason !==
+          COMBAT_DEFEAT_REASON.turnLimitExceeded
+      ) {
+        throw new InvalidPersistentCombatStateError(
+          "Player defeat requires a valid defeat reason."
+        );
+      }
+
+      return {
+        status:
+          PERSISTENT_COMBAT_STATUS.defeat,
+        defeatReason:
+          state.defeatReason,
+        endedAtRequired: true,
+      };
+  }
 }
 
 function mapLockedCharacter(
@@ -570,6 +703,174 @@ class PostgresCombatStartTransaction
   }
 }
 
+
+
+class PostgresCombatActionTransaction
+  implements CombatActionTransaction {
+  public constructor(
+    private readonly client: PoolClient,
+    public readonly locked:
+      LockedCombatSession
+  ) {}
+
+  public async persistAction(
+    input: PersistCombatActionInput
+  ): Promise<readonly PersistedCombatEvent[]> {
+    const persistent =
+      mapDomainStatusToPersistent(
+        input.state
+      );
+
+    const endedAt =
+      persistent.endedAtRequired
+        ? input.observedAt
+        : null;
+
+    const update =
+      await this.client.query(
+        `
+          UPDATE combat_sessions
+          SET
+            status = $2,
+            current_turn = $3,
+            character_health = $4,
+            monster_health = $5,
+            defeat_reason = $6,
+            ended_at = $7,
+            updated_at = $8
+          WHERE combat_session_id = $1
+            AND status = 'Active'
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+          persistent.status,
+          input.state.turn,
+          input.state.player
+            .currentHealth,
+          input.state.monster
+            .currentHealth,
+          persistent.defeatReason,
+          endedAt,
+          input.observedAt,
+        ]
+      );
+
+    if (update.rowCount !== 1) {
+      throw new CombatSessionNotFoundError();
+    }
+
+    const persistedEvents:
+      PersistedCombatEvent[] = [];
+
+    for (
+      let eventOrder = 0;
+      eventOrder < input.events.length;
+      eventOrder += 1
+    ) {
+      const event =
+        input.events[eventOrder];
+
+      if (event === undefined) {
+        throw new InvalidPersistentCombatStateError(
+          "Combat event array contains an empty position."
+        );
+      }
+
+      const result =
+        await this.client.query<
+          PostgreSqlCombatEventRow
+        >(
+          `
+            INSERT INTO combat_session_events (
+              combat_session_id,
+              turn_number,
+              event_order,
+              event_type,
+              event_data_json,
+              created_at
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4,
+              $5::jsonb,
+              $6
+            )
+            RETURNING
+              combat_session_event_id,
+              combat_session_id,
+              turn_number,
+              event_order,
+              event_type,
+              event_data_json,
+              created_at
+          `,
+          [
+            this.locked.session
+              .combatSessionId,
+            input.resolvedTurn,
+            eventOrder,
+            event.type,
+            JSON.stringify(event),
+            input.observedAt,
+          ]
+        );
+
+      const row = result.rows[0];
+
+      if (!row) {
+        throw new Error(
+          "Combat event insert did not return a row."
+        );
+      }
+
+      persistedEvents.push(
+        mapPersistedEvent(row)
+      );
+    }
+
+    if (
+      input.state.status !==
+      COMBAT_STATUS.inProgress
+    ) {
+      const health =
+        input.state.status ===
+        COMBAT_STATUS.playerDefeat
+          ? 0
+          : input.state.player
+              .currentHealth;
+
+      const healthUpdate =
+        await this.client.query(
+          `
+            UPDATE characters
+            SET
+              current_health = $2,
+              updated_at = $3
+            WHERE character_id = $1
+              AND status = 'IsActive'
+          `,
+          [
+            this.locked.session
+              .characterId,
+            health,
+            input.observedAt,
+          ]
+        );
+
+      if (
+        healthUpdate.rowCount !== 1
+      ) {
+        throw new CharacterNotFoundError();
+      }
+    }
+
+    return persistedEvents;
+  }
+}
+
 export class PostgresCombatSessionRepository
   implements CombatSessionRepository {
   public constructor(
@@ -619,4 +920,93 @@ export class PostgresCombatSessionRepository
       }
     );
   }
+
+  public async withActionTransaction<TResult>(
+    input: CombatActionTransactionInput,
+    operation: (
+      transaction: CombatActionTransaction
+    ) => Promise<TResult>
+  ): Promise<TResult> {
+    if (
+      !(input.observedAt instanceof Date) ||
+      Number.isNaN(
+        input.observedAt.getTime()
+      )
+    ) {
+      throw new Error(
+        "observedAt must contain a valid date."
+      );
+    }
+
+    return withTransaction(
+      this.pool,
+      async (client) => {
+        const result =
+          await client.query<
+            PostgreSqlCombatSessionRow
+          >(
+            `
+              SELECT
+                cs.combat_session_id,
+                cs.character_id,
+                cs.monster_id,
+                m.code AS monster_code,
+                cs.status,
+                cs.current_turn,
+                cs.character_health,
+                cs.character_maximum_health,
+                cs.character_attack,
+                cs.character_defense,
+                cs.monster_health,
+                cs.monster_maximum_health,
+                cs.monster_attack,
+                cs.monster_defense,
+                cs.defeat_reason,
+                cs.started_at,
+                cs.ended_at
+              FROM combat_sessions AS cs
+              INNER JOIN characters AS c
+                ON c.character_id =
+                  cs.character_id
+              INNER JOIN monsters AS m
+                ON m.monster_id =
+                  cs.monster_id
+              WHERE c.account_id = $1
+                AND c.character_id = $2
+                AND c.status = 'IsActive'
+                AND cs.status = 'Active'
+              FOR UPDATE OF cs
+            `,
+            [
+              input.accountId,
+              input.characterId,
+            ]
+          );
+
+        const row = result.rows[0];
+
+        if (!row) {
+          throw new CombatSessionNotFoundError();
+        }
+
+        const mapped =
+          mapPostgreSqlCombatSessionRow(
+            row
+          );
+
+        const transaction =
+          new PostgresCombatActionTransaction(
+            client,
+            {
+              session: mapped.session,
+              combatState:
+                mapped.combatState,
+            }
+          );
+
+        return operation(transaction);
+      }
+    );
+  }
+
 }

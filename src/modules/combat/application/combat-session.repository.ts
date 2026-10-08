@@ -10,7 +10,12 @@ import type {
 } from "../../monsters/domain/monster.types.js";
 import type {
   CombatSessionSnapshot,
+  PersistedCombatEvent,
 } from "./combat-session.models.js";
+import type {
+  CombatEvent,
+  CombatState,
+} from "../domain/combat.types.js";
 
 export type CombatStartTransactionInput = {
   accountId: string;
@@ -73,11 +78,45 @@ export interface CombatStartTransaction {
   ): Promise<CombatSessionSnapshot>;
 }
 
+export type CombatActionTransactionInput = {
+  accountId: string;
+  characterId: string;
+  observedAt: Date;
+};
+
+export type LockedCombatSession = {
+  session: CombatSessionSnapshot;
+  combatState: CombatState;
+};
+
+export type PersistCombatActionInput = {
+  state: CombatState;
+  resolvedTurn: number;
+  events: readonly CombatEvent[];
+  observedAt: Date;
+};
+
+export interface CombatActionTransaction {
+  readonly locked:
+    LockedCombatSession;
+
+  persistAction(
+    input: PersistCombatActionInput
+  ): Promise<readonly PersistedCombatEvent[]>;
+}
+
 export interface CombatSessionRepository {
   withStartTransaction<TResult>(
     input: CombatStartTransactionInput,
     operation: (
       transaction: CombatStartTransaction
+    ) => Promise<TResult>
+  ): Promise<TResult>;
+
+  withActionTransaction<TResult>(
+    input: CombatActionTransactionInput,
+    operation: (
+      transaction: CombatActionTransaction
     ) => Promise<TResult>
   ): Promise<TResult>;
 }
