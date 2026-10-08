@@ -5,4 +5,9 @@ export interface RandomSource {
     minimum: number,
     maximum: number
   ): number;
+
+  nextBigInt?(
+    minimum: bigint,
+    maximum: bigint
+  ): bigint;
 }

@@ -42,9 +42,15 @@ function createSession() {
       attack: 15,
       defense: 8,
     },
+    rewards: {
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
+    },
     startedAt:
       new Date("2026-10-07T20:00:00.000Z"),
     endedAt: null,
+    settledAt: null,
   };
 }
 
@@ -84,6 +90,8 @@ describe("Combat retrieval services", () => {
     ).resolves.toEqual({
       ...createSession(),
       events: [],
+
+      settlement: null,
     });
 
     expect(
@@ -123,6 +131,8 @@ describe("Combat retrieval services", () => {
     ).resolves.toEqual({
       ...createSession(),
       events: [],
+
+      settlement: null,
     });
 
     expect(
@@ -153,6 +163,8 @@ describe("Combat retrieval services", () => {
     const log = {
       combatSessionId: "session-1",
       events: [],
+
+      settlement: null,
     };
 
     vi.mocked(

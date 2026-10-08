@@ -108,12 +108,19 @@ export class StartCombatService {
               monster.attack,
             monsterDefense:
               monster.defense,
+            monsterExperienceReward:
+              monster.experienceReward,
+            monsterGoldMinimum:
+              monster.goldMinimum,
+            monsterGoldMaximum:
+              monster.goldMaximum,
             startedAt: observedAt,
           });
 
         return {
           ...session,
           events: [],
+          settlement: null,
         };
       }
     );

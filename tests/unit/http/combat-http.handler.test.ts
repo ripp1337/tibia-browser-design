@@ -66,6 +66,7 @@ function createCombatView() {
     startedAt:
       new Date("2026-10-07T20:00:00.000Z"),
     endedAt: null,
+    settledAt: null,
     events: [],
   };
 }

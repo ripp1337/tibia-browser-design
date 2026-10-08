@@ -40,8 +40,12 @@ export type PostgreSqlCombatSessionRow = {
   monster_attack: unknown;
   monster_defense: unknown;
   defeat_reason: unknown;
+  monster_experience_reward: unknown;
+  monster_gold_min: unknown;
+  monster_gold_max: unknown;
   started_at: unknown;
   ended_at: unknown;
+  settled_at: unknown;
 };
 
 const UUID_PATTERN =
@@ -118,6 +122,22 @@ function mapSafeInteger(
   }
 
   return mapped;
+}
+
+function mapBigInt(
+  value: unknown,
+  fieldName: string
+): bigint {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9]+$/u.test(value)
+  ) {
+    return invalid(
+      `${fieldName} must contain a non-negative bigint.`
+    );
+  }
+
+  return BigInt(value);
 }
 
 function mapDate(
@@ -350,6 +370,20 @@ export function mapPostgreSqlCombatSessionSnapshotRow(
         0
       ),
     },
+    rewards: {
+      monsterExperienceReward: mapBigInt(
+        row.monster_experience_reward,
+        "monster_experience_reward"
+      ),
+      monsterGoldMinimum: mapBigInt(
+        row.monster_gold_min,
+        "monster_gold_min"
+      ),
+      monsterGoldMaximum: mapBigInt(
+        row.monster_gold_max,
+        "monster_gold_max"
+      ),
+    },
     startedAt: mapDate(
       row.started_at,
       "started_at"
@@ -357,6 +391,10 @@ export function mapPostgreSqlCombatSessionSnapshotRow(
     endedAt: mapNullableDate(
       row.ended_at,
       "ended_at"
+    ),
+    settledAt: mapNullableDate(
+      row.settled_at,
+      "settled_at"
     ),
   };
 

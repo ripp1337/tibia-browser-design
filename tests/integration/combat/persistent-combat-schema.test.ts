@@ -44,6 +44,10 @@ type SessionOverrides = {
     | string
     | null;
   endedAt?: Date | null;
+  settledAt?: Date | null;
+  monsterExperienceReward?: number;
+  monsterGoldMin?: number;
+  monsterGoldMax?: number;
 };
 
 let accountId: string;
@@ -60,6 +64,13 @@ async function insertCombatSession(
       : status === "Active"
         ? null
         : new Date();
+
+  const settledAt =
+    overrides.settledAt !== undefined
+      ? overrides.settledAt
+      : status === "Active"
+        ? null
+        : endedAt;
 
   const result = await testPool.query<{
     combat_session_id: string;
@@ -81,13 +92,18 @@ async function insertCombatSession(
         monster_maximum_health,
         monster_attack,
         monster_defense,
-        defeat_reason
+        defeat_reason,
+        settled_at,
+        monster_experience_reward,
+        monster_gold_min,
+        monster_gold_max
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         NOW() - INTERVAL '1 minute',
         $8,
-        $9, $10, $11, $12, $13, $14, $15
+        $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, $19
       )
       RETURNING combat_session_id
     `,
@@ -107,6 +123,10 @@ async function insertCombatSession(
       overrides.monsterAttack ?? 15,
       overrides.monsterDefense ?? 8,
       overrides.defeatReason ?? null,
+      settledAt,
+      overrides.monsterExperienceReward ?? 0,
+      overrides.monsterGoldMin ?? 0,
+      overrides.monsterGoldMax ?? 0,
     ]
   );
 
@@ -129,7 +149,7 @@ async function expectCheckViolation(
   });
 }
 
-describe("M5 persistent combat schema", () => {
+describe("M6 persistent combat schema", () => {
   beforeAll(async () => {
     const account = await createTestAccount(testPool);
     accountId = account.accountId;
@@ -207,7 +227,7 @@ describe("M5 persistent combat schema", () => {
     }
   });
 
-  it("contains the M5 snapshot columns and event table", async () => {
+  it("contains the M6 settlement schema", async () => {
     const columns = await testPool.query<{
       table_name: string;
       column_name: string;
@@ -220,7 +240,10 @@ describe("M5 persistent combat schema", () => {
         WHERE table_schema = 'public'
           AND table_name IN (
             'combat_sessions',
-            'combat_session_events'
+            'combat_session_events',
+            'monsters',
+            'character_blessings',
+            'character_statistics'
           )
       `
     );
@@ -256,6 +279,27 @@ describe("M5 persistent combat schema", () => {
     )).toBe(true);
     expect(names.has(
       "combat_sessions.defeat_reason"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.settled_at"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.monster_experience_reward"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.monster_gold_min"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.monster_gold_max"
+    )).toBe(true);
+    expect(names.has(
+      "monsters.experience_reward"
+    )).toBe(true);
+    expect(names.has(
+      "character_blessings.character_id"
+    )).toBe(true);
+    expect(names.has(
+      "character_statistics.current_no_death_streak"
     )).toBe(true);
     expect(names.has(
       "combat_session_events.event_data_json"
@@ -333,10 +377,12 @@ describe("M5 persistent combat schema", () => {
       defeatReason: "PlayerHealthDepleted",
     });
 
-    await insertCombatSession({
-      status: "Abandoned",
-      defeatReason: null,
-    });
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        status: "Abandoned",
+        defeatReason: null,
+      })
+    );
   });
 
   it("rejects inconsistent status and defeat reason combinations", async () => {
@@ -363,8 +409,17 @@ describe("M5 persistent combat schema", () => {
 
     await expectCheckViolation(() =>
       insertCombatSession({
-        status: "Abandoned",
-        defeatReason: "TurnLimitExceeded",
+        status: "Victory",
+        settledAt: null,
+      })
+    );
+
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        status: "Defeat",
+        characterHealth: 0,
+        defeatReason: "PlayerHealthDepleted",
+        settledAt: null,
       })
     );
   });
@@ -376,6 +431,119 @@ describe("M5 persistent combat schema", () => {
         defeatReason: "UnsupportedReason",
       })
     );
+  });
+
+  it("rejects invalid reward snapshots", async () => {
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        monsterExperienceReward: -1,
+      })
+    );
+
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        monsterGoldMin: -1,
+      })
+    );
+
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        monsterGoldMin: 10,
+        monsterGoldMax: 9,
+      })
+    );
+  });
+
+  it("enforces one active Blessing per character", async () => {
+    await testPool.query(
+      `
+        INSERT INTO character_blessings (
+          character_id,
+          activated_at
+        )
+        VALUES ($1, NOW())
+      `,
+      [characterId]
+    );
+
+    await expect(
+      testPool.query(
+        `
+          INSERT INTO character_blessings (
+            character_id,
+            activated_at
+          )
+          VALUES ($1, NOW())
+        `,
+        [characterId]
+      )
+    ).rejects.toMatchObject({
+      code: "23505",
+    });
+
+    await testPool.query(
+      `
+        DELETE FROM character_blessings
+        WHERE character_id = $1
+      `,
+      [characterId]
+    );
+  });
+
+  it("rejects negative M6 progression values", async () => {
+    await testPool.query(
+      `
+        INSERT INTO character_statistics (
+          character_id
+        )
+        VALUES ($1)
+        ON CONFLICT (character_id) DO NOTHING
+      `,
+      [characterId]
+    );
+
+    await expect(
+      testPool.query(
+        `
+          UPDATE monsters
+          SET experience_reward = -1
+          WHERE monster_id = $1
+        `,
+        [monsterId]
+      )
+    ).rejects.toMatchObject({
+      code: "23514",
+    });
+
+    await expect(
+      testPool.query(
+        `
+          UPDATE character_statistics
+          SET current_no_death_streak = -1
+          WHERE character_id = $1
+        `,
+        [characterId]
+      )
+    ).rejects.toMatchObject({
+      code: "23514",
+    });
+  });
+
+  it("contains the recent combat-log index", async () => {
+    const result = await testPool.query<{
+      indexname: string;
+    }>(
+      `
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'combat_logs'
+          AND indexname =
+            'ix_combat_logs_character_recent'
+      `
+    );
+
+    expect(result.rows).toHaveLength(1);
   });
 
   it("rejects duplicate event positions in one turn", async () => {

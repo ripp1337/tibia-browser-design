@@ -114,7 +114,10 @@ Promise<Fixture> {
           health,
           attack,
           defense,
-          energy_cost
+          energy_cost,
+          experience_reward,
+          gold_min,
+          gold_max
         )
         SELECT
           monster_family_id,
@@ -126,7 +129,10 @@ Promise<Fixture> {
           100,
           5,
           2,
-          5
+          5,
+          75,
+          11,
+          22
         FROM monster_families
         ORDER BY monster_family_id
         LIMIT 1
@@ -317,6 +323,38 @@ describe(
         expect(
           stored.rows[0]?.count
         ).toBe("1");
+
+        expect(result.rewards).toEqual({
+          monsterExperienceReward: 75n,
+          monsterGoldMinimum: 11n,
+          monsterGoldMaximum: 22n,
+        });
+
+        const rewardSnapshot =
+          await testPool.query<{
+            monster_experience_reward: string;
+            monster_gold_min: string;
+            monster_gold_max: string;
+          }>(
+            `
+              SELECT
+                monster_experience_reward,
+                monster_gold_min,
+                monster_gold_max
+              FROM combat_sessions
+              WHERE character_id = $1
+                AND status = 'Active'
+            `,
+            [fixture.characterId]
+          );
+
+        expect(
+          rewardSnapshot.rows[0]
+        ).toEqual({
+          monster_experience_reward: "75",
+          monster_gold_min: "11",
+          monster_gold_max: "22",
+        });
       }
     );
 

@@ -180,6 +180,31 @@ function normalizedString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+export function validateMonsterExperienceReward(
+  value: unknown
+): string | null {
+  const text = normalizedString(value);
+
+  if (!text) {
+    return "experience_reward is required.";
+  }
+
+  if (!/^[0-9]+$/.test(text)) {
+    return "experience_reward must be a non-negative integer.";
+  }
+
+  const reward = BigInt(text);
+
+  if (
+    reward <= 0n ||
+    reward > 9223372036854775807n
+  ) {
+    return "experience_reward must be between 1 and PostgreSQL BIGINT maximum.";
+  }
+
+  return null;
+}
+
 function unwrapCellValue(value: ExcelJS.CellValue): unknown {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value;
@@ -278,6 +303,21 @@ function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]
           problems.push(`${config.sheet} row ${index + 2}: duplicate identity "${identity}".`);
         } else identities.set(identity, index + 2);
       });
+      if (config.table === "monsters") {
+        rows.forEach((row, index) => {
+          const problem =
+            validateMonsterExperienceReward(
+              row.experience_reward
+            );
+
+          if (problem) {
+            problems.push(
+              `${config.sheet} row ${index + 2}: ${problem}`
+            );
+          }
+        });
+      }
+
       if (config.table === "other_loot_tables") {
         rows.forEach((row, index) => {
           const materialCode = normalizedString(row.material_code);
@@ -363,11 +403,41 @@ function convertValue(value: unknown, metadata: ColumnMetadata): unknown {
       throw new Error(`${metadata.column_name}: expected TRUE or FALSE, received "${value}".`);
     }
     case "smallint":
-    case "integer":
-    case "bigint": {
-      const number = typeof value === "number" ? value : Number(normalizedString(value));
-      if (!Number.isInteger(number)) throw new Error(`${metadata.column_name}: expected an integer, received "${value}".`);
+    case "integer": {
+      const number =
+        typeof value === "number"
+          ? value
+          : Number(normalizedString(value));
+
+      if (!Number.isSafeInteger(number)) {
+        throw new Error(
+          `${metadata.column_name}: expected a safe integer, received "${value}".`
+        );
+      }
+
       return number;
+    }
+    case "bigint": {
+      const text = normalizedString(value);
+
+      if (!/^-?[0-9]+$/.test(text)) {
+        throw new Error(
+          `${metadata.column_name}: expected an integer, received "${value}".`
+        );
+      }
+
+      const number = BigInt(text);
+
+      if (
+        number < -9223372036854775808n ||
+        number > 9223372036854775807n
+      ) {
+        throw new Error(
+          `${metadata.column_name}: value is outside PostgreSQL BIGINT range.`
+        );
+      }
+
+      return number.toString();
     }
     case "numeric":
     case "real":

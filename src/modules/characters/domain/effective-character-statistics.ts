@@ -45,14 +45,14 @@ function modifierValue(
   return source?.[statistic] ?? 0;
 }
 
-function calculateLevelMaximumHealth(level: number): number {
+export function calculateLevelMaximumHealth(level: number): number {
   return (
     BASE_STATISTICS.maximumHealth +
     (level - 1) * 30
   );
 }
 
-function calculateLevelMaximumMana(level: number): number {
+export function calculateLevelMaximumMana(level: number): number {
   return (
     BASE_STATISTICS.maximumMana +
     (level - 1) * 15

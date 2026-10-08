@@ -50,6 +50,73 @@ export class CryptoRandomSource
     return value / RANDOM_FLOAT_DIVISOR;
   }
 
+  public nextBigInt(
+    minimum: bigint,
+    maximum: bigint
+  ): bigint {
+    if (minimum > maximum) {
+      throw new RangeError(
+        "Random bigint minimum cannot exceed maximum."
+      );
+    }
+
+    if (minimum === maximum) {
+      return minimum;
+    }
+
+    const range =
+      maximum - minimum + 1n;
+
+    const bitLength =
+      range.toString(2).length;
+
+    const byteLength =
+      Math.ceil(bitLength / 8);
+
+    const excessBits =
+      byteLength * 8 - bitLength;
+
+    while (true) {
+      const bytes =
+        this.randomBytesProvider(
+          byteLength
+        );
+
+      if (
+        !Buffer.isBuffer(bytes) ||
+        bytes.length !== byteLength
+      ) {
+        throw new Error(
+          "Crypto random byte provider returned an invalid bigint buffer."
+        );
+      }
+
+      const candidateBytes =
+        Buffer.from(bytes);
+
+      if (excessBits > 0) {
+        const mask =
+          0xff >>> excessBits;
+
+        candidateBytes[0] =
+          (candidateBytes[0] ?? 0) &
+          mask;
+      }
+
+      let candidate = 0n;
+
+      for (const byte of candidateBytes) {
+        candidate =
+          candidate * 256n +
+          BigInt(byte);
+      }
+
+      if (candidate < range) {
+        return minimum + candidate;
+      }
+    }
+  }
+
   public nextInt(
     minimum: number,
     maximum: number

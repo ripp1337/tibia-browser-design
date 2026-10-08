@@ -93,14 +93,179 @@ function createFixture(
         monster: {
           ...state.monster,
         },
+    rewards: {
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
+    },
         startedAt:
           new Date(
             "2026-10-07T19:59:00.000Z"
           ),
         endedAt: null,
+        settledAt: null,
       },
       combatState: state,
     },
+    loadSettlementContext:
+      vi.fn(async () => ({
+        character: {
+          characterId: "character-1",
+          level: 1,
+          experience: 0n,
+          gold: 0n,
+          resources: {
+            currentHealth:
+              state.player.currentHealth,
+            maximumHealth: 180,
+            currentMana: 35,
+            maximumMana: 35,
+            currentEnergy: 100,
+            maximumEnergy: 100,
+            resourcesUpdatedAt:
+              new Date(
+                "2026-10-07T19:59:00.000Z"
+              ),
+          },
+        },
+
+        promoted: false,
+        blessed: false,
+
+        statistics: {
+          totalGoldEarned: 0n,
+          highestGoldOwned: 0n,
+          totalMonstersKilled: 0n,
+          totalBossesKilled: 0n,
+          totalDailyBossesKilled: 0n,
+          totalDeaths: 0n,
+          totalDamageDealt: 0n,
+          totalDamageTaken: 0n,
+          highestPhysicalHit: 0n,
+
+          strongestMonsterKilledId:
+            null,
+          strongestMonsterPowerScore:
+            null,
+          strongestBossKilledId:
+            null,
+          strongestBossPowerScore:
+            null,
+
+          currentNoDeathStreak: 0n,
+          longestNoDeathStreak: 0n,
+        },
+
+        rewardBonuses: {
+          goldBonusPercent: 0,
+          experienceBonusPercent: 0,
+        },
+
+        monster: {
+          monsterId: "monster-1",
+          monsterType: "Normal" as const,
+          powerScore: 10n,
+          cooldownSeconds: 30,
+          bossId: null,
+          bossType: null,
+          additionalCooldownSeconds: 0,
+        },
+
+        task: null,
+        dailyBoss: null,
+        fightBuffs: [],
+        events: [],
+      })),
+
+    applyVictorySettlement:
+      vi.fn(async (input) => ({
+        outcome: "Victory" as const,
+
+        experience: {
+          before:
+            input.context.character
+              .experience,
+          awarded:
+            input.experienceAwarded,
+          lost: 0n,
+          after:
+            input.experienceAfter,
+        },
+
+        gold: {
+          before:
+            input.context.character
+              .gold,
+          baseRolled:
+            input.baseGold,
+          awarded:
+            input.goldAwarded,
+          after:
+            input.goldAfter,
+        },
+
+        level: {
+          before:
+            input.context.character
+              .level,
+          after:
+            input.levelAfter,
+          levelsChanged:
+            input.levelAfter -
+            input.context.character
+              .level,
+        },
+
+        blessingConsumed: false,
+
+        bestiary: {
+          discovered: true,
+          killCount: 1n,
+        },
+
+        taskBoss: {
+          progressed: false,
+          status: null,
+        },
+
+        cooldown: {
+          applied: true,
+          availableAt:
+            new Date(
+              input.observedAt.getTime() +
+              30_000
+            ),
+        },
+
+        dailyBoss: {
+          updated: false,
+          victoryRecorded: false,
+        },
+
+        statistics: {
+          damageDealt:
+            input.damageDealt,
+          damageTaken:
+            input.damageTaken,
+          highestPhysicalHit:
+            input.highestPhysicalHit,
+        },
+
+        finalSummary: {
+          combatSessionId:
+            "session-1",
+          outcome: "Victory" as const,
+          turnCount:
+            input.state.turn,
+          startedAt:
+            new Date(
+              "2026-10-07T19:59:00.000Z"
+            ),
+          endedAt:
+            input.observedAt,
+        },
+      })),
+
     persistAction,
   };
 
@@ -199,6 +364,8 @@ describe(
         status: "Active",
         currentTurn: 2,
         endedAt: null,
+        settledAt: null,
+        settlement: null,
       });
 
       expect(

@@ -41,8 +41,14 @@ export type CombatSessionSnapshot = {
   currentTurn: number;
   player: CombatSessionCombatantSnapshot;
   monster: CombatSessionCombatantSnapshot;
+  rewards: {
+    monsterExperienceReward: bigint;
+    monsterGoldMinimum: bigint;
+    monsterGoldMaximum: bigint;
+  };
   startedAt: Date;
   endedAt: Date | null;
+  settledAt: Date | null;
 };
 
 export type PersistedCombatEvent = {
@@ -55,8 +61,81 @@ export type PersistedCombatEvent = {
   createdAt: Date;
 };
 
+export type CombatSettlementOutcome =
+  | "Victory"
+  | "Defeat";
+
+export type CombatSettlementExperience = {
+  before: bigint;
+  awarded: bigint;
+  lost: bigint;
+  after: bigint;
+};
+
+export type CombatSettlementGold = {
+  before: bigint;
+  baseRolled: bigint;
+  awarded: bigint;
+  after: bigint;
+};
+
+export type CombatSettlementLevel = {
+  before: number;
+  after: number;
+  levelsChanged: number;
+};
+
+export type CombatSettlementBestiary = {
+  discovered: boolean;
+  killCount: bigint | null;
+};
+
+export type CombatSettlementTaskBoss = {
+  progressed: boolean;
+  status: string | null;
+};
+
+export type CombatSettlementCooldown = {
+  applied: boolean;
+  availableAt: Date | null;
+};
+
+export type CombatSettlementDailyBoss = {
+  updated: boolean;
+  victoryRecorded: boolean;
+};
+
+export type CombatSettlementStatistics = {
+  damageDealt: bigint;
+  damageTaken: bigint;
+  highestPhysicalHit: bigint;
+};
+
+export type CombatFinalSummary = {
+  combatSessionId: CombatSessionId;
+  outcome: CombatSettlementOutcome;
+  turnCount: number;
+  startedAt: Date;
+  endedAt: Date;
+};
+
+export type CombatSettlement = {
+  outcome: CombatSettlementOutcome;
+  experience: CombatSettlementExperience;
+  gold: CombatSettlementGold;
+  level: CombatSettlementLevel;
+  blessingConsumed: boolean;
+  bestiary: CombatSettlementBestiary;
+  taskBoss: CombatSettlementTaskBoss;
+  cooldown: CombatSettlementCooldown;
+  dailyBoss: CombatSettlementDailyBoss;
+  statistics: CombatSettlementStatistics;
+  finalSummary: CombatFinalSummary;
+};
+
 export type CombatSessionView = CombatSessionSnapshot & {
   events: readonly CombatEvent[];
+  settlement: CombatSettlement | null;
 };
 
 export type StartCombatInput = {

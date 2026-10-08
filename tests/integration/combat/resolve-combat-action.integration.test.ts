@@ -245,6 +245,69 @@ describe(
     });
 
     it(
+      "loads authoritative settlement context under transaction locks",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        const context =
+          await combatRepository
+            .withActionTransaction(
+              {
+                accountId:
+                  fixture.accountId,
+                characterId:
+                  fixture.characterId,
+                observedAt,
+              },
+              async (transaction) =>
+                transaction
+                  .loadSettlementContext()
+            );
+
+        expect(context).toMatchObject({
+          character: {
+            characterId:
+              fixture.characterId,
+            level: 1,
+            experience: 0n,
+            gold: 0n,
+          },
+          promoted: false,
+          blessed: false,
+          rewardBonuses: {
+            goldBonusPercent: 0,
+            experienceBonusPercent: 0,
+          },
+          statistics: {
+            totalGoldEarned: 0n,
+            totalMonstersKilled: 0n,
+            totalDeaths: 0n,
+            currentNoDeathStreak: 0n,
+          },
+        });
+
+        expect(
+          context.character.resources
+            .currentHealth
+        ).toBeGreaterThanOrEqual(0);
+
+        expect(
+          context.monster.powerScore
+        ).toBeGreaterThanOrEqual(0n);
+
+        expect(
+          context.monster.cooldownSeconds
+        ).toBeGreaterThanOrEqual(0);
+
+        expect(context.events).toEqual([]);
+        expect(context.fightBuffs).toEqual([]);
+        expect(context.task).toBeNull();
+        expect(context.dailyBoss).toBeNull();
+      }
+    );
+
+    it(
       "persists the next state and ordered events atomically",
       async () => {
         const fixture =

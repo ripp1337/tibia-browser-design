@@ -83,8 +83,14 @@ CombatSessionSnapshot {
       attack: 15,
       defense: 8,
     },
+    rewards: {
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
+    },
     startedAt: observedAt,
     endedAt: null,
+    settledAt: null,
   };
 }
 
@@ -102,6 +108,9 @@ function createFixture(
       monsterType: MONSTER_TYPE.normal,
       level: 1,
       energyCost: 3,
+      experienceReward: 50n,
+      goldMinimum: 10n,
+      goldMaximum: 20n,
       maximumHealth: 80,
       attack: 15,
       defense: 8,
@@ -245,6 +254,9 @@ describe("StartCombatService", () => {
       monsterMaximumHealth: 80,
       monsterAttack: 15,
       monsterDefense: 8,
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
       startedAt: observedAt,
     });
 
@@ -301,6 +313,9 @@ describe("StartCombatService", () => {
       monsterType: MONSTER_TYPE.normal,
       level: 1,
       energyCost: 0,
+      experienceReward: 50n,
+      goldMinimum: 10n,
+      goldMaximum: 20n,
       maximumHealth: 80,
       attack: 15,
       defense: 8,
@@ -402,6 +417,9 @@ describe("StartCombatService", () => {
       monsterType: MONSTER_TYPE.normal,
       level: 20,
       energyCost: 3,
+      experienceReward: 50n,
+      goldMinimum: 10n,
+      goldMaximum: 20n,
       maximumHealth: 80,
       attack: 15,
       defense: 8,

@@ -5,6 +5,9 @@ import type {
   RandomSource,
 } from "../ports/random-source.js";
 import {
+  planVictorySettlement,
+} from "../../progression/domain/victory-settlement.js";
+import {
   COMBAT_STATUS,
 } from "../domain/combat.constants.js";
 import {
@@ -64,12 +67,109 @@ export class ResolveCombatActionService {
             this.randomSource
           );
 
-        await transaction.persistAction({
-          state: resolution.state,
-          resolvedTurn: currentTurn,
-          events: resolution.events,
-          observedAt,
-        });
+        let settlement = null;
+
+        if (
+          resolution.state.status ===
+          COMBAT_STATUS.playerVictory
+        ) {
+          const victoryContext =
+            await transaction
+              .loadSettlementContext();
+
+          const completeEvents = [
+            ...victoryContext.events.map(
+              (event) => event.event
+            ),
+            ...resolution.events,
+          ];
+
+          const victoryPlan =
+            planVictorySettlement(
+              transaction.locked.session,
+              victoryContext,
+              resolution.state.player
+                .currentHealth,
+              completeEvents,
+              this.randomSource
+            );
+
+          settlement =
+            await transaction
+              .applyVictorySettlement({
+                context:
+                  victoryContext,
+                state:
+                  resolution.state,
+                resolvedTurn:
+                  currentTurn,
+                events:
+                  resolution.events,
+                observedAt,
+
+                baseExperience:
+                  victoryPlan.baseExperience,
+                baseGold:
+                  victoryPlan.baseGold,
+
+                experienceBonusBasisPoints:
+                  victoryPlan
+                    .experienceBonusBasisPoints,
+                goldBonusBasisPoints:
+                  victoryPlan
+                    .goldBonusBasisPoints,
+
+                experienceAwarded:
+                  victoryPlan
+                    .experienceAwarded,
+                goldAwarded:
+                  victoryPlan
+                    .goldAwarded,
+
+                experienceAfter:
+                  victoryPlan
+                    .experienceAfter,
+                goldAfter:
+                  victoryPlan.goldAfter,
+
+                levelAfter:
+                  victoryPlan.levelAfter,
+
+                resourcesAfter: {
+                  ...victoryPlan
+                    .resourcesAfter,
+                  resourcesUpdatedAt:
+                    observedAt,
+                },
+
+                damageDealt:
+                  victoryPlan.damageDealt,
+                damageTaken:
+                  victoryPlan.damageTaken,
+                highestPhysicalHit:
+                  victoryPlan
+                    .highestPhysicalHit,
+
+                strongestMonsterKilledIdAfter:
+                  victoryPlan
+                    .strongestMonsterKilledIdAfter,
+
+                strongestBossKilledIdAfter:
+                  victoryPlan
+                    .strongestBossKilledIdAfter,
+
+                statisticsAfter:
+                  victoryPlan
+                    .statisticsAfter,
+              });
+        } else {
+          await transaction.persistAction({
+            state: resolution.state,
+            resolvedTurn: currentTurn,
+            events: resolution.events,
+            observedAt,
+          });
+        }
 
         const persistentStatus =
           resolution.state.status ===
@@ -114,7 +214,13 @@ export class ResolveCombatActionService {
             COMBAT_STATUS.inProgress
               ? null
               : observedAt,
+          settledAt:
+            resolution.state.status ===
+            COMBAT_STATUS.inProgress
+              ? null
+              : observedAt,
           events: resolution.events,
+          settlement,
         };
       }
     );

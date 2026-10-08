@@ -116,5 +116,66 @@ describe("CryptoRandomSource", () => {
       "Crypto random byte provider must return exactly eight bytes."
     );
   });
+
+  it("generates an inclusive bigint", () => {
+    const randomBytesProvider =
+      vi.fn((size: number) =>
+        Buffer.alloc(size, 0)
+      );
+
+    const randomSource =
+      new CryptoRandomSource(
+        randomBytesProvider
+      );
+
+    expect(
+      randomSource.nextBigInt(
+        10n,
+        20n
+      )
+    ).toBe(10n);
+
+    expect(
+      randomBytesProvider
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("returns an equal bigint bound without randomness", () => {
+    const randomBytesProvider =
+      vi.fn((size: number) =>
+        Buffer.alloc(size, 0)
+      );
+
+    const randomSource =
+      new CryptoRandomSource(
+        randomBytesProvider
+      );
+
+    expect(
+      randomSource.nextBigInt(
+        25n,
+        25n
+      )
+    ).toBe(25n);
+
+    expect(
+      randomBytesProvider
+    ).not.toHaveBeenCalled();
+  });
+
+  it("rejects reversed bigint bounds", () => {
+    const randomSource =
+      new CryptoRandomSource();
+
+    expect(() =>
+      randomSource.nextBigInt(
+        20n,
+        10n
+      )
+    ).toThrow(
+      "Random bigint minimum cannot exceed maximum."
+    );
+  });
+
 });
 

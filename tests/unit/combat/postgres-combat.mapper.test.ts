@@ -42,9 +42,13 @@ PostgreSqlCombatSessionRow {
     monster_attack: "15",
     monster_defense: "8",
     defeat_reason: null,
+    monster_experience_reward: "50",
+    monster_gold_min: "10",
+    monster_gold_max: "20",
     started_at:
       new Date("2026-01-01T00:00:00.000Z"),
     ended_at: null,
+    settled_at: null,
   };
 }
 
