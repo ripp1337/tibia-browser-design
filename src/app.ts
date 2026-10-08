@@ -7,6 +7,15 @@ import { databasePool } from "./database/pool.js";
 import { PostgresAuthenticationProvider } from "./http/postgres-authentication.provider.js";
 import { SystemClock } from "./infrastructure/clock/system-clock.js";
 
+import { GetActiveCombatService } from "./modules/combat/application/get-active-combat.service.js";
+import { GetCombatLogService } from "./modules/combat/application/get-combat-log.service.js";
+import { GetCombatSessionService } from "./modules/combat/application/get-combat-session.service.js";
+import { ResolveCombatActionService } from "./modules/combat/application/resolve-combat-action.service.js";
+import { StartCombatService } from "./modules/combat/application/start-combat.service.js";
+import { CryptoRandomSource } from "./modules/combat/infrastructure/crypto-random-source.js";
+import { PostgresCombatSessionRepository } from "./modules/combat/infrastructure/postgres-combat-session.repository.js";
+import { createCombatHttpHandler } from "./modules/combat/http/combat-http.handler.js";
+
 import { ArchiveCharacterService } from "./modules/characters/application/archive-character.service.js";
 import { CalculateCharacterStatsService } from "./modules/characters/application/calculate-character-stats.service.js";
 import { CreateCharacterService } from "./modules/characters/application/create-character.service.js";
@@ -20,6 +29,19 @@ import { GetMonsterDetailsService } from "./modules/monsters/application/get-mon
 import { GetMonsterListService } from "./modules/monsters/application/get-monster-list.service.js";
 import { PostgresMonsterDiscoveryRepository } from "./modules/monsters/infrastructure/postgres-monster-discovery.repository.js";
 import { createMonsterHttpHandler } from "./modules/monsters/http/monster-http.handler.js";
+
+function isCombatRoute(
+  requestUrl: string | undefined
+): boolean {
+  const url = new URL(
+    requestUrl ?? "/",
+    "http://localhost"
+  );
+
+  return /^\/characters\/[^/]+\/combat(?:\/[^/]+(?:\/log)?|\/actions)?$/u.test(
+    url.pathname
+  );
+}
 
 function isMonsterRoute(
   requestUrl: string | undefined
@@ -50,6 +72,11 @@ export function createApplicationServer(): Server {
       databasePool
     );
 
+  const combatRepository =
+    new PostgresCombatSessionRepository(
+      databasePool
+    );
+
   const calculateCharacterStatsService =
     new CalculateCharacterStatsService(
       characterStatisticsRepository
@@ -61,6 +88,8 @@ export function createApplicationServer(): Server {
     );
 
   const clock = new SystemClock();
+  const randomSource =
+    new CryptoRandomSource();
 
   const createCharacterService =
     new CreateCharacterService(
@@ -96,6 +125,34 @@ export function createApplicationServer(): Server {
       clock
     );
 
+  const startCombatService =
+    new StartCombatService(
+      combatRepository,
+      clock
+    );
+
+  const resolveCombatActionService =
+    new ResolveCombatActionService(
+      combatRepository,
+      randomSource,
+      clock
+    );
+
+  const getActiveCombatService =
+    new GetActiveCombatService(
+      combatRepository
+    );
+
+  const getCombatSessionService =
+    new GetCombatSessionService(
+      combatRepository
+    );
+
+  const getCombatLogService =
+    new GetCombatLogService(
+      combatRepository
+    );
+
   const characterHandler =
     createCharacterHttpHandler({
       authenticationProvider,
@@ -112,8 +169,27 @@ export function createApplicationServer(): Server {
       getMonsterDetailsService,
     });
 
+  const combatHandler =
+    createCombatHttpHandler({
+      authenticationProvider,
+      startCombatService,
+      resolveCombatActionService,
+      getActiveCombatService,
+      getCombatSessionService,
+      getCombatLogService,
+    });
+
   return createServer(
     (request, response) => {
+      if (isCombatRoute(request.url)) {
+        void combatHandler(
+          request,
+          response
+        );
+
+        return;
+      }
+
       if (isMonsterRoute(request.url)) {
         void monsterHandler(
           request,
