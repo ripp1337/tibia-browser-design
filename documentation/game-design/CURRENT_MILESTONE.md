@@ -1,8 +1,8 @@
-# Current Milestone
+ï»¿# Current Milestone
 
 ## Milestone
 
-M4: Pure Combat Engine
+M5: Persistent Combat API
 
 ## Status
 
@@ -10,78 +10,201 @@ Completed.
 
 ## Objective
 
-Implement deterministic turn-based combat as a pure TypeScript domain module processing one player action at a time.
+Connect the pure M4 combat engine to authenticated HTTP endpoints and persistent PostgreSQL combat sessions.
 
 ## Implemented scope
 
-- Pure TypeScript combat domain.
-- Immutable combat state transitions.
-- Injected `RandomSource`.
-- Player `basic_attack`.
-- Monster `basic_attack`.
-- Shared attack resolution for player and monster.
-- Player-first round flow.
-- Hit chance calculation.
-- Damage range calculation.
-- Misses.
-- Successful zero-damage hits.
-- Immediate victory and defeat handling.
-- Maximum duration of 100 complete rounds.
-- Ordered combat events.
-- Dedicated combat domain errors.
-- Validation of combat state and RNG output.
-- Placeholder for future active combat effects.
-- Deterministic unit tests.
+- Persistent combat-session schema.
+- Combat-ready player and monster statistic snapshots.
+- Persistent current Health and turn state.
+- Persistent terminal status and defeat reason.
+- Ordered combat-session events.
+- Transactional combat start.
+- Transactional combat-action resolution.
+- Active combat retrieval.
+- Specific combat-session retrieval.
+- Ordered combat-log retrieval.
+- Authenticated combat HTTP API.
+- Character and session ownership isolation.
+- Server-controlled cryptographic randomness.
+- Application-controlled time through `Clock`.
+- Rollback and concurrency protection.
+- Full unit, PostgreSQL integration, HTTP integration, and regression coverage.
 
-## Public domain interface
+## HTTP API
 
-```ts
-resolveCombatAction(
-  state: CombatState,
-  action: PlayerAction,
-  rng: RandomSource
-): CombatResolution
+Implemented endpoints:
+
+```http
+POST /characters/:characterId/combat
+GET /characters/:characterId/combat
+GET /characters/:characterId/combat/:combatSessionId
+POST /characters/:characterId/combat/actions
+GET /characters/:characterId/combat/:combatSessionId/log
 ```
 
-Initially supported action:
+All combat endpoints require authentication.
 
-```ts
+All operations validate that the character belongs to the authenticated account.
+
+Specific session and log endpoints also validate that the session belongs to the selected character.
+
+Foreign characters and sessions are not disclosed.
+
+## Start-combat request
+
+```json
 {
-  type: "basic_attack"
+  "monsterCode": "stable_monster_code"
 }
 ```
 
-## Combat flow
+Combat start:
 
-One turn represents one complete round:
+1. Reads one timestamp from `Clock`.
+2. Opens a PostgreSQL transaction.
+3. Locks the owned active character with `FOR UPDATE`.
+4. Rejects an existing active combat.
+5. Applies authoritative resource regeneration.
+6. Loads the monster by stable code.
+7. Revalidates monster eligibility.
+8. Requires positive character Health.
+9. Validates available Energy.
+10. Calculates authoritative effective character statistics.
+11. Deducts Energy exactly once.
+12. Persists updated character resources.
+13. Creates the active combat session with combat-ready snapshots.
+14. Commits the transaction.
+15. Returns the current session view.
 
-1. Resolve the player basic attack.
-2. Stop immediately if the monster reaches zero Health.
-3. Resolve the monster basic attack.
-4. Stop immediately if the player reaches zero Health.
-5. Apply the turn-limit rule.
-6. Advance the turn if combat continues.
+Any failure rolls back the whole transaction.
 
-The player always acts first.
+Concurrent combat-start requests cannot create multiple active sessions or deduct Energy more than once.
 
-The monster does not act after being killed by the player.
+## Combat-action request
 
-## Basic attack formulas
-
-```txt
-hitChancePercent =
-  clamp((attack - defense) * 4, 5, 90)
-
-minimumDamage =
-  max(0, attack - defense)
-
-maximumDamage =
-  max(0, (attack - defense) * 2)
+```json
+{
+  "expectedTurn": 1,
+  "action": {
+    "type": "basic_attack"
+  }
+}
 ```
 
-Player and monster basic attacks use the same formulas.
+Rules:
 
-## Randomness contract
+- `expectedTurn` must be a positive safe integer.
+- The action must be a JSON object.
+- The action may contain only `type`.
+- M5 currently supports only `basic_attack`.
+- Clients cannot submit random values, combat results, statistics, timestamps, or damage.
+- The action endpoint resolves the character's current active session.
+
+Combat action:
+
+1. Reads one timestamp from `Clock`.
+2. Opens a PostgreSQL transaction.
+3. Locks the owned active session with `FOR UPDATE`.
+4. Compares `expectedTurn` with the locked session turn.
+5. Reconstructs the M4 combat state from persistent snapshots.
+6. Resolves the action through the pure M4 engine.
+7. Uses server-controlled cryptographic randomness.
+8. Persists the resulting session state.
+9. Persists ordered combat events.
+10. Synchronizes terminal character Health when required.
+11. Commits the transaction.
+12. Returns the current session view and current-operation events.
+
+A stale action does not resolve combat or modify persistent state.
+
+Concurrent requests cannot resolve the same turn twice.
+
+## Persistence
+
+Migration:
+
+```txt
+088_persistent_combat_api.sql
+```
+
+The migration:
+
+- strengthens persistent combat-state constraints,
+- adds combat-ready statistic snapshots,
+- supports persistent defeat reasons,
+- enforces valid turn values,
+- creates `combat_session_events`,
+- preserves one active combat per character,
+- supports deterministic event ordering.
+
+Persistent combat sessions survive application restarts.
+
+The database stores all combat statistics required to reconstruct the M4 combat state without recalculating equipment or progression during an active fight.
+
+## Combat-session events
+
+Each persisted event stores:
+
+- combat-session ID,
+- resolved turn,
+- event order within the turn,
+- event type,
+- complete event data as JSONB,
+- creation timestamp.
+
+Event logs are returned in deterministic order:
+
+1. turn number,
+2. event order.
+
+The M5 log endpoint reads from `combat_session_events`.
+
+The older `combat_logs` table remains outside the incremental M5 action flow.
+
+## Retrieval
+
+### Active combat
+
+```http
+GET /characters/:characterId/combat
+```
+
+Returns only the character's active combat session.
+
+If no active session exists, the API returns:
+
+```txt
+COMBAT_SESSION_NOT_FOUND
+```
+
+### Specific session
+
+```http
+GET /characters/:characterId/combat/:combatSessionId
+```
+
+Returns an owned active or completed combat session.
+
+Foreign or unavailable sessions return the same not-found response.
+
+### Combat log
+
+```http
+GET /characters/:characterId/combat/:combatSessionId/log
+```
+
+Returns the complete ordered persistent event log for an owned session.
+
+## Randomness and time
+
+Production combat uses:
+
+```ts
+CryptoRandomSource
+```
+
+It implements:
 
 ```ts
 interface RandomSource {
@@ -94,206 +217,124 @@ interface RandomSource {
 }
 ```
 
-Rules:
+Production combat does not use `Math.random()`.
 
-- `nextFloat()` returns a value greater than or equal to `0` and less than `1`.
-- `nextInt(minimum, maximum)` uses inclusive minimum and maximum bounds.
-- A hit occurs when `nextFloat() * 100` is lower than the calculated hit chance.
-- Invalid RNG output causes a dedicated domain error.
-- Combat domain code does not call `Math.random()`.
+Application services receive time through `Clock`.
 
-## Combat state rules
-
-- `currentHealth`, `maximumHealth`, `attack`, `defense`, and `turn` are safe integers.
-- `maximumHealth` must be positive.
-- `currentHealth`, `attack`, and `defense` must be non-negative.
-- `currentHealth` cannot exceed `maximumHealth`.
-- Initial combat turn is `1`.
-- Health cannot fall below `0`.
-- Combat cannot resolve another action after reaching a terminal state.
-- Input state is never mutated.
-
-## Combat outcomes
-
-Combat status:
-
-- `InProgress`
-- `PlayerVictory`
-- `PlayerDefeat`
-
-Player defeat reasons:
-
-- `PlayerHealthDepleted`
-- `TurnLimitExceeded`
-
-A successful hit may deal zero damage.
-
-The following outcomes remain distinct:
-
-```ts
-{
-  hit: false,
-  damage: 0
-}
-```
-
-```ts
-{
-  hit: true,
-  damage: 0
-}
-```
-
-## Turn limit
-
-Turn `100` resolves normally.
-
-If the player kills the monster during turn `100`, combat ends in player victory.
-
-If the monster kills the player during turn `100`, combat ends in player defeat caused by depleted Health.
-
-If both combatants survive turn `100`, combat ends in player defeat caused by the turn limit.
-
-Terminal combat does not advance to another turn. The final state preserves the number of the round in which combat ended.
-
-## Combat events
-
-The engine returns a new state and an ordered readonly event list.
-
-Supported events:
-
-- `AttackResolved`
-- `CombatEnded`
-- `TurnAdvanced`
-
-`AttackResolved` records:
-
-- actor,
-- target,
-- whether the attack hit,
-- damage dealt.
-
-`CombatEnded` records:
-
-- final combat status,
-- defeat reason when applicable.
-
-`TurnAdvanced` is emitted only when combat remains in progress.
-
-## Active effects
-
-Combat state contains an active-effects collection as an extension point for future milestones.
-
-M4 does not implement:
-
-- buffs,
-- debuffs,
-- damage over time,
-- healing over time,
-- effect duration,
-- effect stacking.
-
-The effects collection remains empty in the initial combat engine.
+The pure M4 combat engine remains independent from PostgreSQL, HTTP, system time, and cryptographic APIs.
 
 ## Error handling
 
-Dedicated domain errors cover:
+Stable application errors cover:
 
-- invalid combat state,
-- actions submitted after combat has ended,
-- invalid RNG output.
+- missing or foreign characters,
+- missing or foreign combat sessions,
+- an existing active combat,
+- stale expected turns,
+- insufficient Energy,
+- depleted character Health,
+- ineligible monsters,
+- invalid persistent combat state,
+- malformed HTTP requests,
+- unsupported actions,
+- authentication failure.
 
-The combat engine rejects invalid input instead of repairing or normalizing it.
+HTTP errors use the existing application error mapper.
 
-## Architectural boundary
+## Concurrency guarantees
 
-M4 does not:
+M5 guarantees:
 
-- expose HTTP endpoints,
-- access PostgreSQL,
-- use repositories,
-- persist combat sessions,
-- persist combat events or logs,
-- deduct Energy,
-- grant rewards,
-- grant Experience or Gold,
-- generate loot,
-- update progression,
-- update monster cooldowns,
-- update Bestiary,
-- update kill statistics,
-- update Task Boss progress,
-- use monster abilities,
-- use spells or consumables,
-- call `Math.random()`,
-- call `Date.now()`.
+- one active combat per character,
+- one Energy deduction per successful combat start,
+- concurrent starts cannot create duplicate sessions,
+- concurrent actions cannot resolve the same turn twice,
+- stale actions are rejected after lock acquisition,
+- session updates and event inserts are atomic,
+- terminal Health synchronization is atomic,
+- failed transactions roll back all related changes.
 
-Combat receives final combat-ready player and monster statistics. It does not calculate equipment, progression, bonuses, or database definitions.
-
-## Implemented files
+## Implemented module structure
 
 ```txt
 src/modules/combat/
++-- application/
+|   +-- combat-session.errors.ts
+|   +-- combat-session.models.ts
+|   +-- combat-session.repository.ts
+|   +-- get-active-combat.service.ts
+|   +-- get-combat-log.service.ts
+|   +-- get-combat-session.service.ts
+|   +-- resolve-combat-action.service.ts
+|   +-- start-combat.service.ts
 +-- domain/
-¦   +-- combat-attack.ts
-¦   +-- combat-effects.ts
-¦   +-- combat-engine.ts
-¦   +-- combat-validation.ts
-¦   +-- combat.constants.ts
-¦   +-- combat.errors.ts
-¦   +-- combat.types.ts
+|   +-- combat-attack.ts
+|   +-- combat-effects.ts
+|   +-- combat-engine.ts
+|   +-- combat-validation.ts
+|   +-- combat.constants.ts
+|   +-- combat.errors.ts
+|   +-- combat.types.ts
++-- http/
+|   +-- combat-http.handler.ts
+|   +-- combat-http.request.ts
++-- infrastructure/
+|   +-- crypto-random-source.ts
+|   +-- postgres-combat.mapper.ts
+|   +-- postgres-combat-session.repository.ts
 +-- ports/
     +-- random-source.ts
 ```
 
-Tests:
-
-```txt
-tests/unit/combat/
-+-- combat-attack.test.ts
-+-- combat-engine.test.ts
-+-- combat-validation.test.ts
-```
-
 ## Verification
 
-Verified on 2026-10-07:
+Verified during M5 completion:
 
+- PostgreSQL connection passed.
+- Database contains 80 tables.
+- 88 migrations are applied.
+- 0 migrations are pending.
 - TypeScript typecheck passed.
-- 4 M4 test files passed.
-- 41 M4 tests passed.
-- 46 total test files passed.
-- 267 total tests passed.
 - Production build passed.
-- No regressions were detected in M1-M3 tests.
-- M4 branch was pushed and synchronized with `origin/m4/pure-combat-engine`.
+- 60 test files passed.
+- 361 tests passed.
+- Combat unit tests passed.
+- PostgreSQL integration tests passed.
+- HTTP integration tests passed.
+- Transaction rollback tests passed.
+- Concurrent combat-start tests passed.
+- Concurrent combat-action tests passed.
+- Full five-endpoint authenticated combat flow passed.
+- Full regression suite passed.
+- No whitespace errors were detected.
+- The M5 branch was pushed and synchronized with `origin/m5/persistent-combat-api`.
 
 ## Out of scope
 
-The following remain for later milestones:
+The following remain outside M5:
 
-- persistent combat sessions,
-- combat API endpoints,
-- expected-turn concurrency control,
-- Energy deduction,
-- persistent combat logs,
 - victory rewards,
-- death penalties,
-- Experience and Gold rewards,
+- Experience rewards,
+- Gold rewards,
 - loot generation,
-- cooldown writes,
-- Bestiary updates,
-- kill statistics,
+- death penalties,
+- blessing consumption,
+- monster kill statistics,
+- Bestiary progression,
 - Task Boss progression,
+- monster cooldown writes,
+- final combat summaries in `combat_logs`,
 - player spells,
 - combat consumables,
 - monster abilities,
 - buffs and debuffs,
 - damage and healing over time,
-- multiple targets.
+- multiple targets,
+- escape,
+- combat abandonment.
 
 ## Completion log
 
-M4 Pure Combat Engine completed and verified.
+M5 Persistent Combat API completed and verified.
 
-The next milestone is M5: Persistent Combat API.
+The next milestone is M6: Victory, Death, and Progression.
