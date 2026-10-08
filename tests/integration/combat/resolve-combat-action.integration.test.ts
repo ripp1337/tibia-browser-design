@@ -123,38 +123,6 @@ async function createFixture(
           "Default Equipment",
       });
 
-  const monsterResult =
-    await testPool.query<{
-      monster_id: string;
-    }>(
-      `
-        SELECT monster_id
-        FROM monsters
-        ORDER BY monster_id
-        LIMIT 1
-      `
-    );
-
-  const monster =
-    monsterResult.rows[0];
-
-  if (!monster) {
-    throw new Error(
-      "Combat action integration tests require one seeded monster."
-    );
-  }
-
-  await testPool.query(
-    `
-      UPDATE characters
-      SET
-        current_health = 100,
-        max_health = 100
-      WHERE character_id = $1
-    `,
-    [character.characterId]
-  );
-
   const sessionResult =
     await testPool.query<{
       combat_session_id: string;
@@ -176,27 +144,28 @@ async function createFixture(
           monster_defense,
           started_at
         )
-        VALUES (
+        SELECT
           $1,
-          $2,
+          m.monster_id,
           'Active',
           1,
           100,
           35,
-          $3,
+          $2,
           100,
           20,
           10,
-          $3,
+          $2,
           15,
           5,
-          $4
-        )
+          $3
+        FROM monsters AS m
+        ORDER BY m.monster_id
+        LIMIT 1
         RETURNING combat_session_id
       `,
       [
         character.characterId,
-        monster.monster_id,
         monsterHealth,
         new Date(
           observedAt.getTime() - 60_000

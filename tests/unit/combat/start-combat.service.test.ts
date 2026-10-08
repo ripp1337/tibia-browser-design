@@ -156,6 +156,12 @@ function createFixture(
           "Action transaction is not used by StartCombatService tests."
         );
       }),
+    findActiveSession:
+      vi.fn(async () => null),
+    findSession:
+      vi.fn(async () => null),
+    findEventLog:
+      vi.fn(async () => null),
   };
 
   const clock: Clock = {

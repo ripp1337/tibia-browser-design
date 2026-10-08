@@ -119,6 +119,12 @@ function createFixture(
         );
       }),
     withActionTransaction,
+    findActiveSession:
+      vi.fn(async () => null),
+    findSession:
+      vi.fn(async () => null),
+    findEventLog:
+      vi.fn(async () => null),
   };
 
   const clock: Clock = {

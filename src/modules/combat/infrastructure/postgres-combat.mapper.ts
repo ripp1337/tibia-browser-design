@@ -274,9 +274,9 @@ function createCombatState(
   return state;
 }
 
-export function mapPostgreSqlCombatSessionRow(
+export function mapPostgreSqlCombatSessionSnapshotRow(
   row: PostgreSqlCombatSessionRow
-): PersistentCombatState {
+): CombatSessionSnapshot {
   const snapshot: CombatSessionSnapshot = {
     combatSessionId: mapIdentifier(
       row.combat_session_id,
@@ -359,6 +359,17 @@ export function mapPostgreSqlCombatSessionRow(
       "ended_at"
     ),
   };
+
+  return snapshot;
+}
+
+export function mapPostgreSqlCombatSessionRow(
+  row: PostgreSqlCombatSessionRow
+): PersistentCombatState {
+  const snapshot =
+    mapPostgreSqlCombatSessionSnapshotRow(
+      row
+    );
 
   return {
     session: snapshot,

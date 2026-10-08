@@ -9,7 +9,10 @@ import type {
   MonsterType,
 } from "../../monsters/domain/monster.types.js";
 import type {
+  CombatEventLog,
   CombatSessionSnapshot,
+  GetActiveCombatInput,
+  GetCombatSessionInput,
   PersistedCombatEvent,
 } from "./combat-session.models.js";
 import type {
@@ -119,4 +122,16 @@ export interface CombatSessionRepository {
       transaction: CombatActionTransaction
     ) => Promise<TResult>
   ): Promise<TResult>;
+
+  findActiveSession(
+    input: GetActiveCombatInput
+  ): Promise<CombatSessionSnapshot | null>;
+
+  findSession(
+    input: GetCombatSessionInput
+  ): Promise<CombatSessionSnapshot | null>;
+
+  findEventLog(
+    input: GetCombatSessionInput
+  ): Promise<CombatEventLog | null>;
 }

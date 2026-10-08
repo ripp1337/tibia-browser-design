@@ -40,7 +40,10 @@ import {
 } from "../application/combat-session.errors.js";
 import {
   PERSISTENT_COMBAT_STATUS,
+  type CombatEventLog,
   type CombatSessionSnapshot,
+  type GetActiveCombatInput,
+  type GetCombatSessionInput,
   type PersistedCombatEvent,
 } from "../application/combat-session.models.js";
 import type {
@@ -57,6 +60,7 @@ import type {
 } from "../application/combat-session.repository.js";
 import {
   mapPostgreSqlCombatSessionRow,
+  mapPostgreSqlCombatSessionSnapshotRow,
   type PostgreSqlCombatSessionRow,
 } from "./postgres-combat.mapper.js";
 import {
@@ -1007,6 +1011,160 @@ export class PostgresCombatSessionRepository
         return operation(transaction);
       }
     );
+  }
+
+
+  public async findActiveSession(
+    input: GetActiveCombatInput
+  ): Promise<CombatSessionSnapshot | null> {
+    const result =
+      await this.pool.query<
+        PostgreSqlCombatSessionRow
+      >(
+        `
+          SELECT
+            cs.combat_session_id,
+            cs.character_id,
+            cs.monster_id,
+            m.code AS monster_code,
+            cs.status,
+            cs.current_turn,
+            cs.character_health,
+            cs.character_maximum_health,
+            cs.character_attack,
+            cs.character_defense,
+            cs.monster_health,
+            cs.monster_maximum_health,
+            cs.monster_attack,
+            cs.monster_defense,
+            cs.defeat_reason,
+            cs.started_at,
+            cs.ended_at
+          FROM combat_sessions AS cs
+          INNER JOIN characters AS c
+            ON c.character_id =
+              cs.character_id
+          INNER JOIN monsters AS m
+            ON m.monster_id =
+              cs.monster_id
+          WHERE c.account_id = $1
+            AND c.character_id = $2
+            AND c.status = 'IsActive'
+            AND cs.status = 'Active'
+          LIMIT 1
+        `,
+        [
+          input.accountId,
+          input.characterId,
+        ]
+      );
+
+    const row = result.rows[0];
+
+    return row
+      ? mapPostgreSqlCombatSessionSnapshotRow(
+          row
+        )
+      : null;
+  }
+
+  public async findSession(
+    input: GetCombatSessionInput
+  ): Promise<CombatSessionSnapshot | null> {
+    const result =
+      await this.pool.query<
+        PostgreSqlCombatSessionRow
+      >(
+        `
+          SELECT
+            cs.combat_session_id,
+            cs.character_id,
+            cs.monster_id,
+            m.code AS monster_code,
+            cs.status,
+            cs.current_turn,
+            cs.character_health,
+            cs.character_maximum_health,
+            cs.character_attack,
+            cs.character_defense,
+            cs.monster_health,
+            cs.monster_maximum_health,
+            cs.monster_attack,
+            cs.monster_defense,
+            cs.defeat_reason,
+            cs.started_at,
+            cs.ended_at
+          FROM combat_sessions AS cs
+          INNER JOIN characters AS c
+            ON c.character_id =
+              cs.character_id
+          INNER JOIN monsters AS m
+            ON m.monster_id =
+              cs.monster_id
+          WHERE c.account_id = $1
+            AND c.character_id = $2
+            AND c.status = 'IsActive'
+            AND cs.combat_session_id = $3
+          LIMIT 1
+        `,
+        [
+          input.accountId,
+          input.characterId,
+          input.combatSessionId,
+        ]
+      );
+
+    const row = result.rows[0];
+
+    return row
+      ? mapPostgreSqlCombatSessionSnapshotRow(
+          row
+        )
+      : null;
+  }
+
+  public async findEventLog(
+    input: GetCombatSessionInput
+  ): Promise<CombatEventLog | null> {
+    const session =
+      await this.findSession(input);
+
+    if (session === null) {
+      return null;
+    }
+
+    const result =
+      await this.pool.query<
+        PostgreSqlCombatEventRow
+      >(
+        `
+          SELECT
+            cse.combat_session_event_id,
+            cse.combat_session_id,
+            cse.turn_number,
+            cse.event_order,
+            cse.event_type,
+            cse.event_data_json,
+            cse.created_at
+          FROM combat_session_events
+            AS cse
+          WHERE cse.combat_session_id = $1
+          ORDER BY
+            cse.turn_number ASC,
+            cse.event_order ASC
+        `,
+        [
+          input.combatSessionId,
+        ]
+      );
+
+    return {
+      combatSessionId:
+        session.combatSessionId,
+      events: result.rows.map(
+        mapPersistedEvent
+      ),
+    };
   }
 
 }
