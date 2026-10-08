@@ -160,6 +160,7 @@ async function createFixture(
           5,
           $3
         FROM monsters AS m
+        WHERE m.monster_type = 'Normal'
         ORDER BY m.monster_id
         LIMIT 1
         RETURNING combat_session_id

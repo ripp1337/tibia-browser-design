@@ -101,6 +101,7 @@ Promise<Fixture> {
       `
         SELECT monster_id
         FROM monsters
+        WHERE monster_type = 'Normal'
         ORDER BY monster_id
         LIMIT 1
       `
