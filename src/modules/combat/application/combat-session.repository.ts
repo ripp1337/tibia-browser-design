@@ -38,6 +38,7 @@ export type CombatStartMonster = {
 };
 
 export type CreateCombatSessionInput = {
+  characterId: string;
   monsterId: string;
   characterHealth: number;
   characterMana: number;
