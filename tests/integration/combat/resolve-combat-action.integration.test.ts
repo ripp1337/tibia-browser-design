@@ -677,6 +677,650 @@ describe(
     );
 
     it(
+      "retains ten newest final logs without deleting old sessions or events",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const historicalSessionIds:
+          string[] = [];
+
+        for (
+          let index = 0;
+          index < 10;
+          index += 1
+        ) {
+          const endedAt =
+            new Date(
+              observedAt.getTime() -
+              (10 - index) * 60_000
+            );
+
+          const startedAt =
+            new Date(
+              endedAt.getTime() -
+              30_000
+            );
+
+          const sessionInsert =
+            await testPool.query<{
+              combat_session_id: string;
+            }>(
+              `
+                INSERT INTO combat_sessions (
+                  character_id,
+                  monster_id,
+                  status,
+                  current_turn,
+                  character_health,
+                  character_mana,
+                  monster_health,
+                  started_at,
+                  ended_at,
+                  character_maximum_health,
+                  character_attack,
+                  character_defense,
+                  monster_maximum_health,
+                  monster_attack,
+                  monster_defense,
+                  defeat_reason,
+                  settled_at,
+                  monster_experience_reward,
+                  monster_gold_min,
+                  monster_gold_max
+                )
+                SELECT
+                  character_id,
+                  monster_id,
+                  'Victory',
+                  1,
+                  character_health,
+                  character_mana,
+                  0,
+                  $2,
+                  $3,
+                  character_maximum_health,
+                  character_attack,
+                  character_defense,
+                  monster_maximum_health,
+                  monster_attack,
+                  monster_defense,
+                  NULL,
+                  $3,
+                  monster_experience_reward,
+                  monster_gold_min,
+                  monster_gold_max
+                FROM combat_sessions
+                WHERE combat_session_id = $1
+                RETURNING
+                  combat_session_id
+              `,
+              [
+                fixture.combatSessionId,
+                startedAt,
+                endedAt,
+              ]
+            );
+
+          const historicalSessionId =
+            sessionInsert.rows[0]
+              ?.combat_session_id;
+
+          if (!historicalSessionId) {
+            throw new Error(
+              "Historical combat session was not created."
+            );
+          }
+
+          historicalSessionIds.push(
+            historicalSessionId
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO combat_logs (
+                combat_session_id,
+                character_id,
+                monster_id,
+                combat_result,
+                turn_count,
+                started_at,
+                ended_at,
+                combat_data_json,
+                created_at
+              )
+              SELECT
+                combat_session_id,
+                character_id,
+                monster_id,
+                'Victory',
+                1,
+                started_at,
+                ended_at,
+                jsonb_build_object(
+                  'version',
+                  1,
+                  'sequence',
+                  $2::integer
+                ),
+                ended_at
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              historicalSessionId,
+              index + 1,
+            ]
+          );
+        }
+
+        const oldestSessionId =
+          historicalSessionIds[0];
+
+        if (!oldestSessionId) {
+          throw new Error(
+            "Oldest historical session is missing."
+          );
+        }
+
+        await testPool.query(
+          `
+            INSERT INTO combat_session_events (
+              combat_session_id,
+              turn_number,
+              event_order,
+              event_type,
+              event_data_json,
+              created_at
+            )
+            VALUES (
+              $1,
+              1,
+              0,
+              'AttackResolved',
+              $2::jsonb,
+              $3
+            )
+          `,
+          [
+            oldestSessionId,
+            JSON.stringify({
+              type:
+                "AttackResolved",
+              attacker: "Player",
+              defender: "Monster",
+              hit: true,
+              critical: false,
+              damage: 1,
+            }),
+            new Date(
+              observedAt.getTime() -
+              10 * 60_000
+            ),
+          ]
+        );
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(
+          result.settlement
+        ).toMatchObject({
+          outcome: "Victory",
+          finalSummary: {
+            combatSessionId:
+              fixture.combatSessionId,
+            outcome: "Victory",
+            endedAt: observedAt,
+          },
+        });
+
+        const retainedLogs =
+          await testPool.query<{
+            combat_session_id: string;
+            created_at: Date;
+            combat_data_json: {
+              version?: number;
+              outcome?: string;
+              sequence?: number;
+            };
+          }>(
+            `
+              SELECT
+                combat_session_id,
+                created_at,
+                combat_data_json
+              FROM combat_logs
+              WHERE character_id = $1
+              ORDER BY
+                created_at DESC,
+                combat_log_id DESC
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+        expect(
+          retainedLogs.rows
+        ).toHaveLength(10);
+
+        expect(
+          retainedLogs.rows[0]
+            ?.combat_session_id
+        ).toBe(
+          fixture.combatSessionId
+        );
+
+        expect(
+          retainedLogs.rows[0]
+            ?.combat_data_json
+        ).toMatchObject({
+          version: 1,
+          outcome: "Victory",
+        });
+
+        expect(
+          retainedLogs.rows.some(
+            (row) =>
+              row.combat_session_id ===
+              oldestSessionId
+          )
+        ).toBe(false);
+
+        const preserved =
+          await testPool.query<{
+            session_count: string;
+            event_count: string;
+          }>(
+            `
+              SELECT
+                (
+                  SELECT COUNT(*)::text
+                  FROM combat_sessions
+                  WHERE combat_session_id = $1
+                ) AS session_count,
+                (
+                  SELECT COUNT(*)::text
+                  FROM combat_session_events
+                  WHERE combat_session_id = $1
+                ) AS event_count
+            `,
+            [
+              oldestSessionId,
+            ]
+          );
+
+        expect(
+          preserved.rows[0]
+        ).toEqual({
+          session_count: "1",
+          event_count: "1",
+        });
+
+        const totalSessions =
+          await testPool.query<{
+            count: string;
+          }>(
+            `
+              SELECT COUNT(*)::text
+                AS count
+              FROM combat_sessions
+              WHERE character_id = $1
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+        expect(
+          totalSessions.rows[0]?.count
+        ).toBe("11");
+      }
+    );
+
+    it(
+      "isolates retention per character and resolves timestamp ties by log id",
+      async () => {
+        const primary =
+          await createFixture(10);
+
+        const secondary =
+          await createFixture(100);
+
+        const tiedCreatedAt =
+          new Date(
+            observedAt.getTime() -
+            60_000
+          );
+
+        const primaryLogIds = [
+          "00000000-0000-0000-0000-000000000001",
+          "00000000-0000-0000-0000-000000000002",
+          "00000000-0000-0000-0000-000000000003",
+          "00000000-0000-0000-0000-000000000004",
+          "00000000-0000-0000-0000-000000000005",
+          "00000000-0000-0000-0000-000000000006",
+          "00000000-0000-0000-0000-000000000007",
+          "00000000-0000-0000-0000-000000000008",
+          "00000000-0000-0000-0000-000000000009",
+          "00000000-0000-0000-0000-00000000000a",
+        ] as const;
+
+        const secondaryLogIds = [
+          "00000000-0000-0000-0000-000000000011",
+          "00000000-0000-0000-0000-000000000012",
+          "00000000-0000-0000-0000-000000000013",
+          "00000000-0000-0000-0000-000000000014",
+          "00000000-0000-0000-0000-000000000015",
+          "00000000-0000-0000-0000-000000000016",
+          "00000000-0000-0000-0000-000000000017",
+          "00000000-0000-0000-0000-000000000018",
+          "00000000-0000-0000-0000-000000000019",
+          "00000000-0000-0000-0000-00000000001a",
+        ] as const;
+
+        const insertHistoricalLog =
+          async (
+            fixture: Fixture,
+            combatLogId: string,
+            sequence: number
+          ): Promise<string> => {
+            const startedAt =
+              new Date(
+                tiedCreatedAt.getTime() -
+                30_000
+              );
+
+            const sessionInsert =
+              await testPool.query<{
+                combat_session_id: string;
+              }>(
+                `
+                  INSERT INTO combat_sessions (
+                    character_id,
+                    monster_id,
+                    status,
+                    current_turn,
+                    character_health,
+                    character_mana,
+                    monster_health,
+                    started_at,
+                    ended_at,
+                    character_maximum_health,
+                    character_attack,
+                    character_defense,
+                    monster_maximum_health,
+                    monster_attack,
+                    monster_defense,
+                    defeat_reason,
+                    settled_at,
+                    monster_experience_reward,
+                    monster_gold_min,
+                    monster_gold_max
+                  )
+                  SELECT
+                    character_id,
+                    monster_id,
+                    'Victory',
+                    1,
+                    character_health,
+                    character_mana,
+                    0,
+                    $2,
+                    $3,
+                    character_maximum_health,
+                    character_attack,
+                    character_defense,
+                    monster_maximum_health,
+                    monster_attack,
+                    monster_defense,
+                    NULL,
+                    $3,
+                    monster_experience_reward,
+                    monster_gold_min,
+                    monster_gold_max
+                  FROM combat_sessions
+                  WHERE combat_session_id = $1
+                  RETURNING
+                    combat_session_id
+                `,
+                [
+                  fixture.combatSessionId,
+                  startedAt,
+                  tiedCreatedAt,
+                ]
+              );
+
+            const sessionId =
+              sessionInsert.rows[0]
+                ?.combat_session_id;
+
+            if (!sessionId) {
+              throw new Error(
+                "Historical session was not created."
+              );
+            }
+
+            await testPool.query(
+              `
+                INSERT INTO combat_logs (
+                  combat_log_id,
+                  combat_session_id,
+                  character_id,
+                  monster_id,
+                  combat_result,
+                  turn_count,
+                  started_at,
+                  ended_at,
+                  combat_data_json,
+                  created_at
+                )
+                SELECT
+                  $2::uuid,
+                  combat_session_id,
+                  character_id,
+                  monster_id,
+                  'Victory',
+                  1,
+                  started_at,
+                  ended_at,
+                  jsonb_build_object(
+                    'version',
+                    1,
+                    'sequence',
+                    $3::integer
+                  ),
+                  $4
+                FROM combat_sessions
+                WHERE combat_session_id = $1
+              `,
+              [
+                sessionId,
+                combatLogId,
+                sequence,
+                tiedCreatedAt,
+              ]
+            );
+
+            return sessionId;
+          };
+
+        const primarySessionIds:
+          string[] = [];
+
+        for (
+          let index = 0;
+          index < primaryLogIds.length;
+          index += 1
+        ) {
+          const logId =
+            primaryLogIds[index];
+
+          if (!logId) {
+            throw new Error(
+              "Primary log ID is missing."
+            );
+          }
+
+          primarySessionIds.push(
+            await insertHistoricalLog(
+              primary,
+              logId,
+              index + 1
+            )
+          );
+        }
+
+        for (
+          let index = 0;
+          index < secondaryLogIds.length;
+          index += 1
+        ) {
+          const logId =
+            secondaryLogIds[index];
+
+          if (!logId) {
+            throw new Error(
+              "Secondary log ID is missing."
+            );
+          }
+
+          await insertHistoricalLog(
+            secondary,
+            logId,
+            index + 1
+          );
+        }
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        await service.execute(
+          actionInput(primary)
+        );
+
+        const primaryLogs =
+          await testPool.query<{
+            combat_log_id: string;
+            combat_session_id: string;
+          }>(
+            `
+              SELECT
+                combat_log_id,
+                combat_session_id
+              FROM combat_logs
+              WHERE character_id = $1
+              ORDER BY
+                created_at DESC,
+                combat_log_id DESC
+            `,
+            [
+              primary.characterId,
+            ]
+          );
+
+        expect(
+          primaryLogs.rows
+        ).toHaveLength(10);
+
+        expect(
+          primaryLogs.rows[0]
+            ?.combat_session_id
+        ).toBe(
+          primary.combatSessionId
+        );
+
+        expect(
+          primaryLogs.rows.some(
+            (row) =>
+              row.combat_log_id ===
+              primaryLogIds[0]
+          )
+        ).toBe(false);
+
+        for (
+          const retainedId of
+          primaryLogIds.slice(1)
+        ) {
+          expect(
+            primaryLogs.rows.some(
+              (row) =>
+                row.combat_log_id ===
+                retainedId
+            )
+          ).toBe(true);
+        }
+
+        const secondaryLogs =
+          await testPool.query<{
+            combat_log_id: string;
+          }>(
+            `
+              SELECT combat_log_id
+              FROM combat_logs
+              WHERE character_id = $1
+              ORDER BY
+                created_at DESC,
+                combat_log_id DESC
+            `,
+            [
+              secondary.characterId,
+            ]
+          );
+
+        expect(
+          secondaryLogs.rows
+        ).toHaveLength(10);
+
+        expect(
+          secondaryLogs.rows.map(
+            (row) =>
+              row.combat_log_id
+          )
+        ).toEqual(
+          [...secondaryLogIds].reverse()
+        );
+
+        const deletedLogSession =
+          primarySessionIds[0];
+
+        if (!deletedLogSession) {
+          throw new Error(
+            "Deleted log session is missing."
+          );
+        }
+
+        const preservedSession =
+          await testPool.query<{
+            count: string;
+          }>(
+            `
+              SELECT COUNT(*)::text
+                AS count
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              deletedLogSession,
+            ]
+          );
+
+        expect(
+          preservedSession.rows[0]
+            ?.count
+        ).toBe("1");
+      }
+    );
+
+    it(
       "allows only one of two concurrent requests to resolve the turn",
       async () => {
         const fixture =
