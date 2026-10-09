@@ -194,6 +194,7 @@ function createFixture(
     withStartTransaction,
     findMonster,
     calculateCharacterStatistics,
+    consumeDailyBossAttempt,
     updateCharacterResources,
     createCombatSession,
   };
@@ -487,6 +488,134 @@ describe("StartCombatService", () => {
     await expect(
       fixture.service.execute(input)
     ).rejects.toBe(failure);
+
+    expect(
+      fixture.createCombatSession
+    ).not.toHaveBeenCalled();
+  });
+
+  it("consumes a Daily Boss attempt before persisting resources", async () => {
+    const fixture = createFixture();
+
+    fixture.findMonster.mockResolvedValueOnce({
+      monsterId: "daily-monster-1",
+      monsterCode: "daily_dragon",
+      monsterType:
+        MONSTER_TYPE.dailyBoss,
+      level: 10,
+      energyCost: 3,
+      experienceReward: 100n,
+      goldMinimum: 20n,
+      goldMaximum: 30n,
+      maximumHealth: 200,
+      attack: 25,
+      defense: 12,
+      eligibility: {
+        isEligible: true,
+        reasons: [],
+      },
+      dailyBossAttempt: {
+        dailyBossDefinitionId:
+          "daily-definition-1",
+        dailyBossRotationId:
+          "daily-rotation-1",
+        attemptsLimit: 1,
+      },
+    });
+
+    await fixture.service.execute({
+      ...input,
+      monsterCode: "daily_dragon",
+    });
+
+    expect(
+      fixture.consumeDailyBossAttempt
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      fixture.consumeDailyBossAttempt
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monsterId: "daily-monster-1",
+        monsterType: "DailyBoss",
+        dailyBossAttempt: {
+          dailyBossDefinitionId:
+            "daily-definition-1",
+          dailyBossRotationId:
+            "daily-rotation-1",
+          attemptsLimit: 1,
+        },
+      })
+    );
+
+    expect(
+      fixture.consumeDailyBossAttempt
+        .mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      fixture.updateCharacterResources
+        .mock.invocationCallOrder[0]
+    );
+
+    expect(
+      fixture.updateCharacterResources
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      fixture.createCombatSession
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("stops Daily Boss start when attempt consumption fails", async () => {
+    const fixture = createFixture();
+
+    fixture.findMonster.mockResolvedValueOnce({
+      monsterId: "daily-monster-1",
+      monsterCode: "daily_dragon",
+      monsterType:
+        MONSTER_TYPE.dailyBoss,
+      level: 10,
+      energyCost: 3,
+      experienceReward: 100n,
+      goldMinimum: 20n,
+      goldMaximum: 30n,
+      maximumHealth: 200,
+      attack: 25,
+      defense: 12,
+      eligibility: {
+        isEligible: true,
+        reasons: [],
+      },
+      dailyBossAttempt: {
+        dailyBossDefinitionId:
+          "daily-definition-1",
+        dailyBossRotationId:
+          "daily-rotation-1",
+        attemptsLimit: 1,
+      },
+    });
+
+    const failure =
+      new Error(
+        "Daily Boss attempt failed."
+      );
+
+    fixture.consumeDailyBossAttempt
+      .mockRejectedValueOnce(failure);
+
+    await expect(
+      fixture.service.execute({
+        ...input,
+        monsterCode: "daily_dragon",
+      })
+    ).rejects.toBe(failure);
+
+    expect(
+      fixture.consumeDailyBossAttempt
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      fixture.updateCharacterResources
+    ).not.toHaveBeenCalled();
 
     expect(
       fixture.createCombatSession
