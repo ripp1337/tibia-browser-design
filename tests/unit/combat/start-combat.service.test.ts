@@ -133,6 +133,9 @@ function createFixture(
       experienceBonusPercent: 0,
     }));
 
+  const consumeDailyBossAttempt =
+    vi.fn(async () => undefined);
+
   const updateCharacterResources =
     vi.fn(async () => undefined);
 
@@ -146,6 +149,7 @@ function createFixture(
       vi.fn(async () => false),
     findMonster,
     calculateCharacterStatistics,
+    consumeDailyBossAttempt,
     updateCharacterResources,
     createCombatSession,
   };

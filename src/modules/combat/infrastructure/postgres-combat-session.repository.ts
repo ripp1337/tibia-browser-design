@@ -211,6 +211,10 @@ type MonsterStartRow = {
   daily_boss_available: boolean;
   daily_attempts_used: number;
   daily_attempts_per_day: number | null;
+  daily_boss_definition_id:
+    string | null;
+  daily_boss_rotation_id:
+    string | null;
 };
 
 function mapSafeInteger(
@@ -537,7 +541,13 @@ class PostgresCombatStartTransaction
             ) AS daily_attempts_used,
 
             daily_definition.attempts_per_day
-              AS daily_attempts_per_day
+              AS daily_attempts_per_day,
+
+            daily_definition.daily_boss_definition_id
+              AS daily_boss_definition_id,
+
+            active_rotation.daily_boss_rotation_id
+              AS daily_boss_rotation_id
 
           FROM monsters AS m
 
@@ -687,6 +697,21 @@ class PostgresCombatStartTransaction
         "monster.defense"
       ),
       eligibility,
+
+      dailyBossAttempt:
+        monsterType === "DailyBoss" &&
+        row.daily_boss_definition_id !== null &&
+        row.daily_boss_rotation_id !== null &&
+        dailyAttemptsPerDay !== undefined
+          ? {
+              dailyBossDefinitionId:
+                row.daily_boss_definition_id,
+              dailyBossRotationId:
+                row.daily_boss_rotation_id,
+              attemptsLimit:
+                dailyAttemptsPerDay,
+            }
+          : undefined,
     };
   }
 
@@ -706,6 +731,85 @@ class PostgresCombatStartTransaction
         this.character.characterId,
       observedAt: this.observedAt,
     });
+  }
+
+  public async consumeDailyBossAttempt(
+    monster: CombatStartMonster
+  ): Promise<void> {
+    if (
+      monster.monsterType !==
+      "DailyBoss"
+    ) {
+      return;
+    }
+
+    const attempt =
+      monster.dailyBossAttempt;
+
+    if (attempt === undefined) {
+      throw new InvalidPersistentCombatStateError(
+        "Daily Boss start metadata is incomplete."
+      );
+    }
+
+    const result =
+      await this.client.query(
+        `
+          INSERT INTO character_daily_boss_progress (
+            character_id,
+            daily_boss_definition_id,
+            daily_boss_rotation_id,
+            attempts_used_in_rotation,
+            total_attempts,
+            last_attempt_at,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            1,
+            1,
+            $4,
+            $4,
+            $4
+          )
+          ON CONFLICT (
+            character_id,
+            daily_boss_definition_id,
+            daily_boss_rotation_id
+          )
+          DO UPDATE
+          SET
+            attempts_used_in_rotation =
+              character_daily_boss_progress
+                .attempts_used_in_rotation + 1,
+            total_attempts =
+              character_daily_boss_progress
+                .total_attempts + 1,
+            last_attempt_at = $4,
+            updated_at = $4
+          WHERE
+            character_daily_boss_progress
+              .attempts_used_in_rotation < $5
+          RETURNING
+            character_daily_boss_progress_id
+        `,
+        [
+          this.character.characterId,
+          attempt.dailyBossDefinitionId,
+          attempt.dailyBossRotationId,
+          this.observedAt,
+          attempt.attemptsLimit,
+        ]
+      );
+
+    if (result.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Daily Boss attempt could not be consumed."
+      );
+    }
   }
 
   public async updateCharacterResources(

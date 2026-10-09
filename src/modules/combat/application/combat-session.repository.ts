@@ -47,6 +47,12 @@ export type CombatStartMonster = {
   attack: number;
   defense: number;
   eligibility: MonsterEligibility;
+
+  dailyBossAttempt?: {
+    dailyBossDefinitionId: string;
+    dailyBossRotationId: string;
+    attemptsLimit: number;
+  };
 };
 
 export type CreateCombatSessionInput = {
@@ -78,6 +84,10 @@ export interface CombatStartTransaction {
 
   calculateCharacterStatistics():
     Promise<EffectiveCharacterStatistics>;
+
+  consumeDailyBossAttempt(
+    monster: CombatStartMonster
+  ): Promise<void>;
 
   updateCharacterResources(
     resources: CharacterResources

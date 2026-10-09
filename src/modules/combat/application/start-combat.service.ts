@@ -76,6 +76,16 @@ export class StartCombatService {
           await transaction
             .calculateCharacterStatistics();
 
+        if (
+          monster.monsterType ===
+          "DailyBoss"
+        ) {
+          await transaction
+            .consumeDailyBossAttempt(
+              monster
+            );
+        }
+
         const updatedResources = {
           ...resources,
           currentEnergy:
