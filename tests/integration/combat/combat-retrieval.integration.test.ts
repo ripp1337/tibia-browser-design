@@ -424,8 +424,11 @@ describe(
           `
             UPDATE combat_sessions
             SET
-              status = 'Abandoned',
-              ended_at = $2
+              status = 'Victory',
+              monster_health = 0,
+              defeat_reason = NULL,
+              ended_at = $2,
+              settled_at = $2
             WHERE combat_session_id = $1
           `,
           [
@@ -457,7 +460,8 @@ describe(
               fixture.combatSessionId,
           })
         ).resolves.toMatchObject({
-          status: "Abandoned",
+          status: "Victory",
+          defeatReason: null,
         });
       }
     );
