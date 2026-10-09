@@ -85,6 +85,27 @@ class MissRandomSource
   }
 }
 
+class DefeatRandomSource
+  implements RandomSource {
+  private floatCall = 0;
+
+  public nextFloat(): number {
+    this.floatCall += 1;
+
+    return this.floatCall === 1
+      ? 0.99
+      : 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    void maximum;
+    return minimum;
+  }
+}
+
 class VictoryRandomSource
   implements RandomSource {
   public nextFloat(): number {
@@ -498,6 +519,160 @@ describe(
         expect(
           stored.rows[0]?.current_health
         ).toBe("100");
+      }
+    );
+
+    it(
+      "persists Health-depletion Defeat and applies death progression",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              level = 3,
+              experience = 220,
+              current_health = 5,
+              max_health = 240,
+              current_mana = 60,
+              max_mana = 65,
+              current_energy = 90,
+              max_energy = 100
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET
+              character_health = 5,
+              character_maximum_health = 240
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const service = createService(
+          new DefeatRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(result).toMatchObject({
+          status: "Defeat",
+          defeatReason:
+            "PlayerHealthDepleted",
+          currentTurn: 1,
+          endedAt: observedAt,
+          settledAt: observedAt,
+
+          player: {
+            currentHealth: 0,
+          },
+
+          settlement: {
+            outcome: "Defeat",
+
+            experience: {
+              before: 220n,
+              awarded: 0n,
+              lost: 22n,
+              after: 198n,
+            },
+
+            gold: {
+              awarded: 0n,
+            },
+
+            level: {
+              before: 3,
+              after: 2,
+              levelsChanged: -1,
+            },
+
+            blessingConsumed: false,
+          },
+        });
+
+        const stored =
+          await testPool.query<{
+            status: string;
+            defeat_reason: string | null;
+            ended_at: Date | null;
+            settled_at: Date | null;
+            session_health: number;
+            character_health: string;
+            level: number;
+            experience: string;
+            total_deaths: string;
+            current_no_death_streak: string;
+            log_count: string;
+          }>(
+            `
+              SELECT
+                cs.status,
+                cs.defeat_reason,
+                cs.ended_at,
+                cs.settled_at,
+                cs.character_health
+                  AS session_health,
+                c.current_health
+                  AS character_health,
+                c.level,
+                c.experience,
+                statistics.total_deaths,
+                statistics.current_no_death_streak,
+                COUNT(logs.combat_log_id)::text
+                  AS log_count
+              FROM combat_sessions AS cs
+              INNER JOIN characters AS c
+                ON c.character_id =
+                  cs.character_id
+              INNER JOIN character_statistics
+                AS statistics
+                ON statistics.character_id =
+                  c.character_id
+              LEFT JOIN combat_logs AS logs
+                ON logs.combat_session_id =
+                  cs.combat_session_id
+              WHERE cs.combat_session_id = $1
+              GROUP BY
+                cs.combat_session_id,
+                c.character_id,
+                statistics.character_id,
+                statistics.total_deaths,
+                statistics.current_no_death_streak
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        expect(stored.rows[0]).toEqual({
+          status: "Defeat",
+          defeat_reason:
+            "PlayerHealthDepleted",
+          ended_at: observedAt,
+          settled_at: observedAt,
+          session_health: "0",
+          character_health: "0",
+          level: 2,
+          experience: "198",
+          total_deaths: "1",
+          current_no_death_streak: "0",
+          log_count: "1",
+        });
       }
     );
 

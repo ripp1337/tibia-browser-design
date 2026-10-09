@@ -48,6 +48,7 @@ import {
   type PersistedCombatEvent,
 } from "../application/combat-session.models.js";
 import type {
+  ApplyDefeatSettlementInput,
   ApplyVictorySettlementInput,
   CombatActionTransaction,
   CombatActionTransactionInput,
@@ -2654,6 +2655,606 @@ class PostgresCombatActionTransaction
           this.locked.session
             .combatSessionId,
         outcome: "Victory",
+        turnCount:
+          input.state.turn,
+        startedAt:
+          this.locked.session
+            .startedAt,
+        endedAt:
+          input.observedAt,
+      },
+    };
+  }
+
+  private async persistDefeatCore(
+    input: ApplyDefeatSettlementInput
+  ): Promise<void> {
+    if (
+      input.state.status !==
+      COMBAT_STATUS.playerDefeat
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat persistence requires a player Defeat state."
+      );
+    }
+
+    if (
+      input.state.defeatReason === null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat persistence requires a defeat reason."
+      );
+    }
+
+    if (
+      input.context.character.characterId !==
+      this.locked.session.characterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement character does not match the locked session."
+      );
+    }
+
+    if (
+      input.context.monster.monsterId !==
+      this.locked.session.monsterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement monster does not match the locked session."
+      );
+    }
+
+    if (
+      input.blessingConsumed !==
+      input.context.blessed
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat Blessing result does not match the locked settlement context."
+      );
+    }
+
+    await this.persistCombatEvents({
+      resolvedTurn:
+        input.resolvedTurn,
+      events: input.events,
+      observedAt: input.observedAt,
+    });
+
+    const characterUpdate =
+      await this.client.query(
+        `
+          UPDATE characters
+          SET
+            level = $2,
+            experience = $3,
+            gold = $4,
+            current_health = $5,
+            max_health = $6,
+            current_mana = $7,
+            max_mana = $8,
+            current_energy = $9,
+            max_energy = $10,
+            resources_updated_at = $11,
+            updated_at = $11
+          WHERE character_id = $1
+            AND status = 'IsActive'
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.levelAfter,
+          input.experienceAfter
+            .toString(),
+          input.goldAfter
+            .toString(),
+          input.resourcesAfter
+            .currentHealth,
+          input.resourcesAfter
+            .maximumHealth,
+          input.resourcesAfter
+            .currentMana,
+          input.resourcesAfter
+            .maximumMana,
+          input.resourcesAfter
+            .currentEnergy,
+          input.resourcesAfter
+            .maximumEnergy,
+          input.observedAt,
+        ]
+      );
+
+    if (
+      characterUpdate.rowCount !== 1
+    ) {
+      throw new CharacterNotFoundError();
+    }
+
+    const statisticsUpdate =
+      await this.client.query(
+        `
+          UPDATE character_statistics
+          SET
+            total_deaths = $2,
+            total_damage_dealt = $3,
+            total_damage_taken = $4,
+            highest_physical_hit = $5,
+            current_no_death_streak = $6,
+            longest_no_death_streak = $7,
+            updated_at = $8
+          WHERE character_id = $1
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.statisticsAfter
+            .totalDeaths
+            .toString(),
+          input.statisticsAfter
+            .totalDamageDealt
+            .toString(),
+          input.statisticsAfter
+            .totalDamageTaken
+            .toString(),
+          input.statisticsAfter
+            .highestPhysicalHit
+            .toString(),
+          input.statisticsAfter
+            .currentNoDeathStreak
+            .toString(),
+          input.statisticsAfter
+            .longestNoDeathStreak
+            .toString(),
+          input.observedAt,
+        ]
+      );
+
+    if (
+      statisticsUpdate.rowCount !== 1
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement could not update character statistics."
+      );
+    }
+
+    if (input.blessingConsumed) {
+      const blessingDeletion =
+        await this.client.query(
+          `
+            DELETE FROM character_blessings
+            WHERE character_id = $1
+          `,
+          [
+            this.locked.session
+              .characterId,
+          ]
+        );
+
+      if (
+        blessingDeletion.rowCount !== 1
+      ) {
+        throw new InvalidPersistentCombatStateError(
+          "Defeat Blessing could not be consumed."
+        );
+      }
+    }
+
+    for (
+      const buff of
+      input.context.fightBuffs
+    ) {
+      if (
+        buff.durationRemaining === 1
+      ) {
+        const deletion =
+          await this.client.query(
+            `
+              DELETE FROM character_buffs
+              WHERE character_buff_id = $1
+                AND character_id = $2
+                AND duration_type = 'Fights'
+                AND duration_remaining = 1
+            `,
+            [
+              buff.characterBuffId,
+              this.locked.session
+                .characterId,
+            ]
+          );
+
+        if (deletion.rowCount !== 1) {
+          throw new InvalidPersistentCombatStateError(
+            "Fight-based buff could not be consumed after Defeat."
+          );
+        }
+
+        continue;
+      }
+
+      const decrement =
+        await this.client.query(
+          `
+            UPDATE character_buffs
+            SET
+              duration_remaining =
+                duration_remaining - 1,
+              updated_at = $3
+            WHERE character_buff_id = $1
+              AND character_id = $2
+              AND duration_type = 'Fights'
+              AND duration_remaining > 1
+          `,
+          [
+            buff.characterBuffId,
+            this.locked.session
+              .characterId,
+            input.observedAt,
+          ]
+        );
+
+      if (decrement.rowCount !== 1) {
+        throw new InvalidPersistentCombatStateError(
+          "Fight-based buff duration could not be decremented after Defeat."
+        );
+      }
+    }
+  }
+
+  public async applyDefeatSettlement(
+    input: ApplyDefeatSettlementInput
+  ): Promise<CombatSettlement> {
+    if (
+      input.state.status !==
+      COMBAT_STATUS.playerDefeat
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement requires a player Defeat state."
+      );
+    }
+
+    if (
+      input.state.defeatReason === null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement requires a defeat reason."
+      );
+    }
+
+    if (
+      !(input.observedAt instanceof Date) ||
+      Number.isNaN(
+        input.observedAt.getTime()
+      )
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement time is invalid."
+      );
+    }
+
+    if (
+      input.observedAt.getTime() <
+      this.locked.session
+        .startedAt.getTime()
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement cannot predate combat start."
+      );
+    }
+
+    const persistent =
+      mapDomainStatusToPersistent(
+        input.state
+      );
+
+    if (
+      persistent.status !==
+        PERSISTENT_COMBAT_STATUS.defeat ||
+      persistent.defeatReason === null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement could not map the terminal state."
+      );
+    }
+
+    await this.persistDefeatCore(
+      input
+    );
+
+    const summary = {
+      version: 1,
+      outcome: "Defeat",
+      defeatReason:
+        persistent.defeatReason,
+
+      endingResources: {
+        health:
+          input.resourcesAfter
+            .currentHealth,
+        maximumHealth:
+          input.resourcesAfter
+            .maximumHealth,
+        mana:
+          input.resourcesAfter
+            .currentMana,
+        maximumMana:
+          input.resourcesAfter
+            .maximumMana,
+        energy:
+          input.resourcesAfter
+            .currentEnergy,
+        maximumEnergy:
+          input.resourcesAfter
+            .maximumEnergy,
+      },
+
+      turnCount:
+        input.state.turn,
+
+      damage: {
+        dealt:
+          input.damageDealt
+            .toString(),
+        taken:
+          input.damageTaken
+            .toString(),
+        highestPhysicalHit:
+          input.highestPhysicalHit
+            .toString(),
+      },
+
+      rewards: {
+        baseExperience: "0",
+        finalExperience: "0",
+        baseGold: "0",
+        finalGold: "0",
+        experienceBonusBasisPoints: "0",
+        goldBonusBasisPoints: "0",
+      },
+
+      progression: {
+        experienceBefore:
+          input.context.character
+            .experience
+            .toString(),
+        experienceAfter:
+          input.experienceAfter
+            .toString(),
+        experienceLost:
+          input.experienceLost
+            .toString(),
+        experienceLossPercent:
+          input.lossPercent,
+
+        goldBefore:
+          input.context.character
+            .gold
+            .toString(),
+        goldAfter:
+          input.goldAfter
+            .toString(),
+
+        levelBefore:
+          input.context.character
+            .level,
+        levelAfter:
+          input.levelAfter,
+      },
+
+      blessingConsumed:
+        input.blessingConsumed,
+
+      bestiary: {
+        discovered: false,
+        killCount: null,
+      },
+
+      taskBoss: {
+        progressed: false,
+        status:
+          input.context.task
+            ?.currentStatus ??
+          null,
+      },
+
+      cooldown: {
+        applied: false,
+        availableAt: null,
+      },
+
+      dailyBoss: {
+        updated: false,
+        victoryRecorded: false,
+      },
+
+      fightBuffsConsumed:
+        input.context.fightBuffs
+          .length,
+    };
+
+    const logInsert =
+      await this.client.query(
+        `
+          INSERT INTO combat_logs (
+            combat_session_id,
+            character_id,
+            monster_id,
+            combat_result,
+            turn_count,
+            started_at,
+            ended_at,
+            combat_data_json,
+            created_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            'Defeat',
+            $4,
+            $5,
+            $6,
+            $7::jsonb,
+            $6
+          )
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          input.state.turn,
+          this.locked.session
+            .startedAt,
+          input.observedAt,
+          JSON.stringify(
+            summary,
+            (_key, value) =>
+              typeof value === "bigint"
+                ? value.toString()
+                : value
+          ),
+        ]
+      );
+
+    if (logInsert.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat final combat log could not be created."
+      );
+    }
+
+    await this.client.query(
+      `
+        DELETE FROM combat_logs
+        WHERE combat_log_id IN (
+          SELECT combat_log_id
+          FROM combat_logs
+          WHERE character_id = $1
+          ORDER BY
+            created_at DESC,
+            combat_log_id DESC
+          OFFSET 10
+        )
+      `,
+      [
+        this.locked.session
+          .characterId,
+      ]
+    );
+
+    const finalSessionUpdate =
+      await this.client.query(
+        `
+          UPDATE combat_sessions
+          SET
+            status = 'Defeat',
+            current_turn = $2,
+            character_health = $3,
+            monster_health = $4,
+            defeat_reason = $5,
+            ended_at = $6,
+            settled_at = $6,
+            updated_at = $6
+          WHERE combat_session_id = $1
+            AND status = 'Active'
+            AND ended_at IS NULL
+            AND settled_at IS NULL
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+          input.state.turn,
+          input.state.player
+            .currentHealth,
+          input.state.monster
+            .currentHealth,
+          persistent.defeatReason,
+          input.observedAt,
+        ]
+      );
+
+    if (
+      finalSessionUpdate.rowCount !== 1
+    ) {
+      throw new CombatSessionNotFoundError();
+    }
+
+    return {
+      outcome: "Defeat",
+
+      experience: {
+        before:
+          input.context.character
+            .experience,
+        awarded: 0n,
+        lost:
+          input.experienceLost,
+        after:
+          input.experienceAfter,
+      },
+
+      gold: {
+        before:
+          input.context.character
+            .gold,
+        baseRolled: 0n,
+        awarded: 0n,
+        after:
+          input.goldAfter,
+      },
+
+      level: {
+        before:
+          input.context.character
+            .level,
+        after:
+          input.levelAfter,
+        levelsChanged:
+          input.levelAfter -
+          input.context.character
+            .level,
+      },
+
+      blessingConsumed:
+        input.blessingConsumed,
+
+      bestiary: {
+        discovered: false,
+        killCount: null,
+      },
+
+      taskBoss: {
+        progressed: false,
+        status:
+          input.context.task
+            ?.currentStatus ??
+          null,
+      },
+
+      cooldown: {
+        applied: false,
+        availableAt: null,
+      },
+
+      dailyBoss: {
+        updated: false,
+        victoryRecorded: false,
+      },
+
+      statistics: {
+        damageDealt:
+          input.damageDealt,
+        damageTaken:
+          input.damageTaken,
+        highestPhysicalHit:
+          input.highestPhysicalHit,
+      },
+
+      finalSummary: {
+        combatSessionId:
+          this.locked.session
+            .combatSessionId,
+        outcome: "Defeat",
         turnCount:
           input.state.turn,
         startedAt:

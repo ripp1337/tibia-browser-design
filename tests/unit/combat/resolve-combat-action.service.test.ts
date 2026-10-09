@@ -266,6 +266,89 @@ function createFixture(
         },
       })),
 
+    applyDefeatSettlement:
+      vi.fn(async (input) => ({
+        outcome: "Defeat" as const,
+
+        experience: {
+          before:
+            input.context.character
+              .experience,
+          awarded: 0n,
+          lost:
+            input.experienceLost,
+          after:
+            input.experienceAfter,
+        },
+
+        gold: {
+          before:
+            input.context.character
+              .gold,
+          baseRolled: 0n,
+          awarded: 0n,
+          after:
+            input.goldAfter,
+        },
+
+        level: {
+          before:
+            input.context.character
+              .level,
+          after:
+            input.levelAfter,
+          levelsChanged:
+            input.levelAfter -
+            input.context.character
+              .level,
+        },
+
+        blessingConsumed:
+          input.blessingConsumed,
+
+        bestiary: {
+          discovered: false,
+          killCount: null,
+        },
+
+        taskBoss: {
+          progressed: false,
+          status: null,
+        },
+
+        cooldown: {
+          applied: false,
+          availableAt: null,
+        },
+
+        dailyBoss: {
+          updated: false,
+          victoryRecorded: false,
+        },
+
+        statistics: {
+          damageDealt:
+            input.damageDealt,
+          damageTaken:
+            input.damageTaken,
+          highestPhysicalHit:
+            input.highestPhysicalHit,
+        },
+
+        finalSummary: {
+          combatSessionId:
+            "session-1",
+          outcome: "Defeat" as const,
+          turnCount:
+            input.state.turn,
+          startedAt:
+            new Date(
+              "2026-10-07T19:59:00.000Z"
+            ),
+          endedAt:
+            input.observedAt,
+        },
+      })),
     persistAction,
   };
 

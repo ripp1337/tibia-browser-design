@@ -5,6 +5,9 @@ import type {
   RandomSource,
 } from "../ports/random-source.js";
 import {
+  planDefeatSettlement,
+} from "../../progression/domain/defeat-settlement.js";
+import {
   planVictorySettlement,
 } from "../../progression/domain/victory-settlement.js";
 import {
@@ -160,6 +163,99 @@ export class ResolveCombatActionService {
 
                 statisticsAfter:
                   victoryPlan
+                    .statisticsAfter,
+              });
+        } else if (
+          resolution.state.status ===
+          COMBAT_STATUS.playerDefeat
+        ) {
+          if (
+            resolution.state.defeatReason ===
+            null
+          ) {
+            throw new Error(
+              "Terminal Defeat state requires a defeat reason."
+            );
+          }
+
+          const defeatContext =
+            await transaction
+              .loadSettlementContext();
+
+          const completeEvents = [
+            ...defeatContext.events.map(
+              (event) => event.event
+            ),
+            ...resolution.events,
+          ];
+
+          const defeatPlan =
+            planDefeatSettlement(
+              defeatContext,
+              resolution.state.player
+                .currentHealth,
+              resolution.state.defeatReason,
+              completeEvents
+            );
+
+          settlement =
+            await transaction
+              .applyDefeatSettlement({
+                context:
+                  defeatContext,
+
+                state:
+                  resolution.state,
+
+                resolvedTurn:
+                  currentTurn,
+
+                events:
+                  resolution.events,
+
+                observedAt,
+
+                lossPercent:
+                  defeatPlan.lossPercent,
+
+                experienceLost:
+                  defeatPlan
+                    .experienceLost,
+
+                experienceAfter:
+                  defeatPlan
+                    .experienceAfter,
+
+                goldAfter:
+                  defeatPlan.goldAfter,
+
+                levelAfter:
+                  defeatPlan.levelAfter,
+
+                resourcesAfter: {
+                  ...defeatPlan
+                    .resourcesAfter,
+
+                  resourcesUpdatedAt:
+                    observedAt,
+                },
+
+                blessingConsumed:
+                  defeatPlan
+                    .blessingConsumed,
+
+                damageDealt:
+                  defeatPlan.damageDealt,
+
+                damageTaken:
+                  defeatPlan.damageTaken,
+
+                highestPhysicalHit:
+                  defeatPlan
+                    .highestPhysicalHit,
+
+                statisticsAfter:
+                  defeatPlan
                     .statisticsAfter,
               });
         } else {

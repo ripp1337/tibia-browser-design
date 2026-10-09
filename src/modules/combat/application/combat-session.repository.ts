@@ -252,6 +252,41 @@ export type ApplyVictorySettlementInput = {
   };
 };
 
+export type ApplyDefeatSettlementInput = {
+  context: CombatSettlementContext;
+
+  state: CombatState;
+  resolvedTurn: number;
+  events: readonly CombatEvent[];
+  observedAt: Date;
+
+  lossPercent: 10 | 8 | 6 | 4;
+
+  experienceLost: bigint;
+  experienceAfter: bigint;
+
+  goldAfter: bigint;
+  levelAfter: number;
+
+  resourcesAfter:
+    CharacterResources;
+
+  blessingConsumed: boolean;
+
+  damageDealt: bigint;
+  damageTaken: bigint;
+  highestPhysicalHit: bigint;
+
+  statisticsAfter: {
+    totalDeaths: bigint;
+    totalDamageDealt: bigint;
+    totalDamageTaken: bigint;
+    highestPhysicalHit: bigint;
+    currentNoDeathStreak: bigint;
+    longestNoDeathStreak: bigint;
+  };
+};
+
 export interface CombatActionTransaction {
   readonly locked:
     LockedCombatSession;
@@ -261,6 +296,10 @@ export interface CombatActionTransaction {
 
   applyVictorySettlement(
     input: ApplyVictorySettlementInput
+  ): Promise<CombatSettlement>;
+
+  applyDefeatSettlement(
+    input: ApplyDefeatSettlementInput
   ): Promise<CombatSettlement>;
 
   persistAction(
