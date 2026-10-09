@@ -14,6 +14,7 @@ import { ResolveCombatActionService } from "./modules/combat/application/resolve
 import { StartCombatService } from "./modules/combat/application/start-combat.service.js";
 import { CryptoRandomSource } from "./modules/combat/infrastructure/crypto-random-source.js";
 import { PostgresCombatSessionRepository } from "./modules/combat/infrastructure/postgres-combat-session.repository.js";
+import type { RandomSource } from "./modules/combat/ports/random-source.js";
 import { createCombatHttpHandler } from "./modules/combat/http/combat-http.handler.js";
 
 import { ArchiveCharacterService } from "./modules/characters/application/archive-character.service.js";
@@ -56,7 +57,14 @@ function isMonsterRoute(
   );
 }
 
-export function createApplicationServer(): Server {
+export type ApplicationServerDependencies = {
+  randomSource?: RandomSource;
+};
+
+export function createApplicationServer(
+  dependencies:
+    ApplicationServerDependencies = {}
+): Server {
   const characterRepository =
     new PostgresCharacterRepository(
       databasePool
@@ -89,6 +97,7 @@ export function createApplicationServer(): Server {
 
   const clock = new SystemClock();
   const randomSource =
+    dependencies.randomSource ??
     new CryptoRandomSource();
 
   const createCharacterService =

@@ -3693,6 +3693,9 @@ export class PostgresCombatSessionRepository
             cs.monster_attack,
             cs.monster_defense,
             cs.defeat_reason,
+            cs.monster_experience_reward,
+            cs.monster_gold_min,
+            cs.monster_gold_max,
             cs.started_at,
             cs.ended_at,
             cs.settled_at
@@ -3748,6 +3751,9 @@ export class PostgresCombatSessionRepository
             cs.monster_attack,
             cs.monster_defense,
             cs.defeat_reason,
+            cs.monster_experience_reward,
+            cs.monster_gold_min,
+            cs.monster_gold_max,
             cs.started_at,
             cs.ended_at,
             cs.settled_at

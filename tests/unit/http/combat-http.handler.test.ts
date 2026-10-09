@@ -68,6 +68,7 @@ function createCombatView() {
     endedAt: null,
     settledAt: null,
     events: [],
+    settlement: null,
   };
 }
 
@@ -296,6 +297,229 @@ describe("combat HTTP handler", () => {
     expect(
       fixture.sessionExecute
     ).not.toHaveBeenCalled();
+  });
+
+  it("returns settlement null for a continuing action", async () => {
+    const fixture =
+      createDependencies();
+
+    const response =
+      await requestHandler(
+        fixture.dependencies,
+        "/characters/character-1/combat/actions",
+        jsonRequest("POST", {
+          expectedTurn: 1,
+          action: {
+            type: "basic_attack",
+          },
+        })
+      );
+
+    expect(response.status).toBe(200);
+
+    const body =
+      await response.json() as {
+        data: {
+          settlement:
+            unknown | null;
+        };
+      };
+
+    expect(
+      body.data.settlement
+    ).toBeNull();
+  });
+
+  it("serializes a terminal settlement with bigint amounts", async () => {
+    const fixture =
+      createDependencies();
+
+    const startedAt =
+      new Date(
+        "2026-10-07T20:00:00.000Z"
+      );
+
+    const endedAt =
+      new Date(
+        "2026-10-07T20:01:00.000Z"
+      );
+
+    const cooldownAt =
+      new Date(
+        "2026-10-07T20:06:00.000Z"
+      );
+
+    fixture.actionExecute
+      .mockResolvedValueOnce({
+        ...createCombatView(),
+        status: "Victory",
+        endedAt,
+        settledAt: endedAt,
+        settlement: {
+          outcome: "Victory",
+
+          experience: {
+            before:
+              9223372036854775000n,
+            awarded:
+              700n,
+            lost: 0n,
+            after:
+              9223372036854775700n,
+          },
+
+          gold: {
+            before:
+              9007199254740992n,
+            baseRolled: 25n,
+            awarded: 30n,
+            after:
+              9007199254741022n,
+          },
+
+          level: {
+            before: 99,
+            after: 100,
+            levelsChanged: 1,
+          },
+
+          blessingConsumed: false,
+
+          bestiary: {
+            discovered: true,
+            killCount:
+              9007199254740993n,
+          },
+
+          taskBoss: {
+            progressed: false,
+            status: null,
+          },
+
+          cooldown: {
+            applied: true,
+            availableAt: cooldownAt,
+          },
+
+          dailyBoss: {
+            updated: false,
+            victoryRecorded: false,
+          },
+
+          statistics: {
+            damageDealt:
+              9007199254740994n,
+            damageTaken:
+              9007199254740995n,
+            highestPhysicalHit:
+              9007199254740996n,
+          },
+
+          finalSummary: {
+            combatSessionId:
+              "session-1",
+            outcome: "Victory",
+            turnCount: 1,
+            startedAt,
+            endedAt,
+          },
+        },
+      });
+
+    const response =
+      await requestHandler(
+        fixture.dependencies,
+        "/characters/character-1/combat/actions",
+        jsonRequest("POST", {
+          expectedTurn: 1,
+          action: {
+            type: "basic_attack",
+          },
+        })
+      );
+
+    expect(response.status).toBe(200);
+
+    const body =
+      await response.json() as {
+        data: {
+          settlement: unknown;
+        };
+      };
+
+    expect(
+      body.data.settlement
+    ).toEqual({
+      outcome: "Victory",
+
+      experience: {
+        before:
+          "9223372036854775000",
+        awarded: "700",
+        lost: "0",
+        after:
+          "9223372036854775700",
+      },
+
+      gold: {
+        before:
+          "9007199254740992",
+        baseRolled: "25",
+        awarded: "30",
+        after:
+          "9007199254741022",
+      },
+
+      level: {
+        before: 99,
+        after: 100,
+        levelsChanged: 1,
+      },
+
+      blessingConsumed: false,
+
+      bestiary: {
+        discovered: true,
+        killCount:
+          "9007199254740993",
+      },
+
+      taskBoss: {
+        progressed: false,
+        status: null,
+      },
+
+      cooldown: {
+        applied: true,
+        availableAt:
+          cooldownAt.toISOString(),
+      },
+
+      dailyBoss: {
+        updated: false,
+        victoryRecorded: false,
+      },
+
+      statistics: {
+        damageDealt:
+          "9007199254740994",
+        damageTaken:
+          "9007199254740995",
+        highestPhysicalHit:
+          "9007199254740996",
+      },
+
+      finalSummary: {
+        combatSessionId:
+          "session-1",
+        outcome: "Victory",
+        turnCount: 1,
+        startedAt:
+          startedAt.toISOString(),
+        endedAt:
+          endedAt.toISOString(),
+      },
+    });
   });
 
   it("retrieves a specific session", async () => {

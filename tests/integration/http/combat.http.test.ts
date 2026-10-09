@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -22,6 +22,9 @@ import {
 import {
   PostgresCharacterRepository,
 } from "../../../src/modules/characters/infrastructure/postgres-character.repository.js";
+import type {
+  RandomSource,
+} from "../../../src/modules/combat/ports/random-source.js";
 import {
   createTestAccount,
   deleteTestAccount,
@@ -106,7 +109,10 @@ async function createCombatMonster() {
         health,
         attack,
         defense,
-        energy_cost
+        energy_cost,
+        experience_reward,
+        gold_min,
+        gold_max
       )
       SELECT
         monster_family_id,
@@ -118,7 +124,10 @@ async function createCombatMonster() {
         100,
         5,
         2,
-        5
+        5,
+        75,
+        11,
+        22
       FROM monster_families
       ORDER BY monster_family_id
       LIMIT 1
@@ -148,9 +157,61 @@ async function createCombatMonster() {
   return monster;
 }
 
-async function startServer() {
+class DefeatRandomSource
+  implements RandomSource {
+  private floatCall = 0;
+
+  public nextFloat(): number {
+    this.floatCall += 1;
+
+    return this.floatCall === 1
+      ? 0.99
+      : 0;
+  }
+
+  public nextInt(
+    _minimum: number,
+    maximum: number
+  ): number {
+    return maximum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+class VictoryRandomSource
+  implements RandomSource {
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    _minimum: number,
+    maximum: number
+  ): number {
+    return maximum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+async function startServer(
+  randomSource?: RandomSource
+) {
   const server =
-    createApplicationServer();
+    createApplicationServer({
+      randomSource,
+    });
 
   openedServers.push(server);
 
@@ -447,6 +508,470 @@ describe(
         expect(
           logBody.data.events.length
         ).toBeGreaterThan(0);
+      }
+    );
+
+    it(
+      "returns a terminal Victory settlement with string amounts",
+      async () => {
+        const account =
+          await createTestAccount(
+            testPool
+          );
+
+        createdAccountIds.push(
+          account.accountId
+        );
+
+        const character =
+          await characterRepository
+            .createCharacterGraph({
+              accountId:
+                account.accountId,
+              seasonId: null,
+              name:
+                `Http-Victory-${randomUUID()
+                  .slice(0, 8)}`,
+              spellLoadoutName:
+                "Default Spells",
+              equipmentLoadoutName:
+                "Default Equipment",
+            });
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              current_health = 100,
+              current_energy = 50,
+              resources_updated_at = NOW()
+            WHERE character_id = $1
+          `,
+          [
+            character.characterId,
+          ]
+        );
+
+        const monster =
+          await createCombatMonster();
+
+        await testPool.query(
+          `
+            UPDATE monsters
+            SET
+              health = 1,
+              defense = 0,
+              attack = 0,
+              experience_reward =
+                9007199254740993,
+              gold_min =
+                9007199254740994,
+              gold_max =
+                9007199254740994
+            WHERE monster_id = $1
+          `,
+          [
+            monster.monster_id,
+          ]
+        );
+
+        const token =
+          await createAuthorizationSession(
+            account.accountId
+          );
+
+        const { baseUrl } =
+          await startServer(
+            new VictoryRandomSource()
+          );
+
+        const combatUrl =
+          `${baseUrl}/characters/${character.characterId}/combat`;
+
+        const startResponse =
+          await fetch(
+            combatUrl,
+            jsonRequest(token, {
+              monsterCode:
+                monster.code,
+            })
+          );
+
+        expect(
+          startResponse.status
+        ).toBe(201);
+
+        const startBody =
+          await startResponse.json() as {
+            data: {
+              combatSessionId:
+                string;
+            };
+          };
+
+        const actionResponse =
+          await fetch(
+            `${combatUrl}/actions`,
+            jsonRequest(token, {
+              expectedTurn: 1,
+              action: {
+                type:
+                  "basic_attack",
+              },
+            })
+          );
+
+        expect(
+          actionResponse.status
+        ).toBe(200);
+
+        const body =
+          await actionResponse.json() as {
+            data: {
+              status: string;
+              settlement: {
+                outcome: string;
+                experience: {
+                  before: string;
+                  awarded: string;
+                  lost: string;
+                  after: string;
+                };
+                gold: {
+                  before: string;
+                  baseRolled: string;
+                  awarded: string;
+                  after: string;
+                };
+                bestiary: {
+                  killCount:
+                    string | null;
+                };
+                statistics: {
+                  damageDealt: string;
+                  damageTaken: string;
+                  highestPhysicalHit:
+                    string;
+                };
+                finalSummary: {
+                  combatSessionId:
+                    string;
+                  outcome: string;
+                  startedAt: string;
+                  endedAt: string;
+                };
+              };
+            };
+          };
+
+        expect(
+          body.data.status
+        ).toBe("Victory");
+
+        expect(
+          body.data.settlement
+        ).toMatchObject({
+          outcome: "Victory",
+
+          experience: {
+            before: "0",
+            awarded:
+              "9007199254740993",
+            lost: "0",
+            after:
+              "9007199254740993",
+          },
+
+          gold: {
+            before: "0",
+            baseRolled:
+              "9007199254740994",
+            awarded:
+              "9007199254740994",
+            after:
+              "9007199254740994",
+          },
+
+          bestiary: {
+            killCount: "1",
+          },
+
+          finalSummary: {
+            combatSessionId:
+              startBody.data
+                .combatSessionId,
+            outcome: "Victory",
+          },
+        });
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageDealt
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageTaken
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics
+            .highestPhysicalHit
+        ).toBe("string");
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.startedAt
+            )
+          )
+        ).toBe(false);
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.endedAt
+            )
+          )
+        ).toBe(false);
+      }
+    );
+
+    it(
+      "returns a terminal Defeat settlement with string amounts",
+      async () => {
+        const account =
+          await createTestAccount(
+            testPool
+          );
+
+        createdAccountIds.push(
+          account.accountId
+        );
+
+        const character =
+          await characterRepository
+            .createCharacterGraph({
+              accountId:
+                account.accountId,
+              seasonId: null,
+              name:
+                `Http-Defeat-${randomUUID()
+                  .slice(0, 8)}`,
+              spellLoadoutName:
+                "Default Spells",
+              equipmentLoadoutName:
+                "Default Equipment",
+            });
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              experience = 0,
+              gold =
+                9007199254740994,
+              current_health = 1,
+              current_energy = 50,
+              resources_updated_at =
+                NOW()
+            WHERE character_id = $1
+          `,
+          [
+            character.characterId,
+          ]
+        );
+
+        const monster =
+          await createCombatMonster();
+
+        await testPool.query(
+          `
+            UPDATE monsters
+            SET
+              health = 100,
+              attack = 1000,
+              defense = 1000,
+              experience_reward = 75,
+              gold_min = 11,
+              gold_max = 22
+            WHERE monster_id = $1
+          `,
+          [
+            monster.monster_id,
+          ]
+        );
+
+        const token =
+          await createAuthorizationSession(
+            account.accountId
+          );
+
+        const { baseUrl } =
+          await startServer(
+            new DefeatRandomSource()
+          );
+
+        const combatUrl =
+          `${baseUrl}/characters/${character.characterId}/combat`;
+
+        const startResponse =
+          await fetch(
+            combatUrl,
+            jsonRequest(token, {
+              monsterCode:
+                monster.code,
+            })
+          );
+
+        expect(
+          startResponse.status
+        ).toBe(201);
+
+        const startBody =
+          await startResponse.json() as {
+            data: {
+              combatSessionId:
+                string;
+            };
+          };
+
+        const actionResponse =
+          await fetch(
+            `${combatUrl}/actions`,
+            jsonRequest(token, {
+              expectedTurn: 1,
+              action: {
+                type:
+                  "basic_attack",
+              },
+            })
+          );
+
+        expect(
+          actionResponse.status
+        ).toBe(200);
+
+        const body =
+          await actionResponse.json() as {
+            data: {
+              status: string;
+              defeatReason:
+                string | null;
+              settlement: {
+                outcome: string;
+                experience: {
+                  before: string;
+                  awarded: string;
+                  lost: string;
+                  after: string;
+                };
+                gold: {
+                  before: string;
+                  baseRolled: string;
+                  awarded: string;
+                  after: string;
+                };
+                statistics: {
+                  damageDealt: string;
+                  damageTaken: string;
+                  highestPhysicalHit:
+                    string;
+                };
+                finalSummary: {
+                  combatSessionId:
+                    string;
+                  outcome: string;
+                  startedAt: string;
+                  endedAt: string;
+                };
+              };
+            };
+          };
+
+        expect(
+          body.data.status
+        ).toBe("Defeat");
+
+        expect(
+          body.data.defeatReason
+        ).toBe("PlayerHealthDepleted");
+
+        expect(
+          body.data.settlement
+        ).toMatchObject({
+          outcome: "Defeat",
+
+          experience: {
+            before: "0",
+            awarded: "0",
+            lost: "0",
+            after: "0",
+          },
+
+          gold: {
+            before:
+              "9007199254740994",
+            baseRolled: "0",
+            awarded: "0",
+            after:
+              "9007199254740994",
+          },
+
+          finalSummary: {
+            combatSessionId:
+              startBody.data
+                .combatSessionId,
+            outcome: "Defeat",
+          },
+        });
+
+        expect(
+          typeof body.data.settlement
+            .experience.lost
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .experience.after
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageDealt
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageTaken
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics
+            .highestPhysicalHit
+        ).toBe("string");
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.startedAt
+            )
+          )
+        ).toBe(false);
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.endedAt
+            )
+          )
+        ).toBe(false);
       }
     );
 
