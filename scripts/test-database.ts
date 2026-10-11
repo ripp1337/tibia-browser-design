@@ -1,4 +1,4 @@
-import { databasePool } from "../src/database/pool.js";
+﻿import { databasePool } from "../src/database/pool.js";
 
 async function testDatabaseConnection(): Promise<void> {
   try {
@@ -28,9 +28,9 @@ async function testDatabaseConnection(): Promise<void> {
 
     const tableCount = Number.parseInt(result.table_count, 10);
 
-    if (tableCount !== 80) {
+    if (tableCount !== 81) {
       throw new Error(
-        `Expected 80 database tables, but PostgreSQL returned ${tableCount}.`
+        `Expected 81 database tables, but PostgreSQL returned ${tableCount}.`
       );
     }
 
