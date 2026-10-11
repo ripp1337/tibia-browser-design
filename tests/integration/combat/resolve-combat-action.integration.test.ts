@@ -25,6 +25,7 @@ import {
 } from "../../../src/modules/combat/domain/combat.constants.js";
 import {
   PostgresCombatSessionRepository,
+  type CombatSettlementFailurePoint,
 } from "../../../src/modules/combat/infrastructure/postgres-combat-session.repository.js";
 import type {
   RandomSource,
@@ -211,6 +212,148 @@ async function createFixture(
     combatSessionId:
       session.combat_session_id,
   };
+}
+
+type RollbackState = {
+  status: string;
+  current_turn: number;
+  session_health: number;
+  monster_health: number;
+  defeat_reason: string | null;
+  ended_at: Date | null;
+  settled_at: Date | null;
+  level: number;
+  experience: string;
+  gold: string;
+  character_health: string;
+  total_gold_earned: string;
+  total_monsters_killed: string;
+  total_deaths: string;
+  total_damage_dealt: string;
+  total_damage_taken: string;
+  highest_physical_hit: string;
+  event_count: string;
+  log_count: string;
+  bestiary_entry_count: string;
+  bestiary_statistics_count: string;
+  cooldown_count: string;
+  blessing_count: string;
+  fight_buff_count: string;
+  fight_buff_duration: string | null;
+};
+
+async function readRollbackState(
+  fixture: Fixture
+): Promise<RollbackState> {
+  const result =
+    await testPool.query<RollbackState>(
+      `
+        SELECT
+          cs.status,
+          cs.current_turn,
+          cs.character_health
+            AS session_health,
+          cs.monster_health,
+          cs.defeat_reason,
+          cs.ended_at,
+          cs.settled_at,
+          character.level,
+          character.experience,
+          character.gold,
+          character.current_health
+            AS character_health,
+          statistics.total_gold_earned,
+          statistics.total_monsters_killed,
+          statistics.total_deaths,
+          statistics.total_damage_dealt,
+          statistics.total_damage_taken,
+          statistics.highest_physical_hit,
+          (
+            SELECT COUNT(*)::text
+            FROM combat_session_events
+            WHERE combat_session_id =
+              cs.combat_session_id
+          ) AS event_count,
+          (
+            SELECT COUNT(*)::text
+            FROM combat_logs
+            WHERE combat_session_id =
+              cs.combat_session_id
+          ) AS log_count,
+          (
+            SELECT COUNT(*)::text
+            FROM bestiary_entries
+            WHERE character_id =
+              cs.character_id
+              AND monster_id =
+                cs.monster_id
+          ) AS bestiary_entry_count,
+          (
+            SELECT COUNT(*)::text
+            FROM bestiary_statistics
+            WHERE character_id =
+              cs.character_id
+              AND monster_id =
+                cs.monster_id
+          ) AS bestiary_statistics_count,
+          (
+            SELECT COUNT(*)::text
+            FROM character_cooldowns
+            WHERE character_id =
+              cs.character_id
+              AND target_id =
+                cs.monster_id
+          ) AS cooldown_count,
+          (
+            SELECT COUNT(*)::text
+            FROM character_blessings
+            WHERE character_id =
+              cs.character_id
+          ) AS blessing_count,
+          (
+            SELECT COUNT(*)::text
+            FROM character_buffs
+            WHERE character_id =
+              cs.character_id
+              AND duration_type =
+                'Fights'
+          ) AS fight_buff_count,
+          (
+            SELECT
+              MAX(
+                duration_remaining
+              )::text
+            FROM character_buffs
+            WHERE character_id =
+              cs.character_id
+              AND duration_type =
+                'Fights'
+          ) AS fight_buff_duration
+        FROM combat_sessions AS cs
+        INNER JOIN characters
+          AS character
+          ON character.character_id =
+            cs.character_id
+        INNER JOIN character_statistics
+          AS statistics
+          ON statistics.character_id =
+            cs.character_id
+        WHERE cs.combat_session_id = $1
+      `,
+      [
+        fixture.combatSessionId,
+      ]
+    );
+
+  const state = result.rows[0];
+
+  if (!state) {
+    throw new Error(
+      "Rollback state was not found."
+    );
+  }
+
+  return state;
 }
 
 function createService(
@@ -1317,6 +1460,1374 @@ describe(
           preservedSession.rows[0]
             ?.count
         ).toBe("1");
+      }
+    );
+
+    it(
+      "rolls back every main Victory settlement phase",
+      async () => {
+        const points:
+          CombatSettlementFailurePoint[] = [
+            "victory.character",
+            "victory.statistics",
+            "victory.core",
+            "victory.bestiary",
+            "victory.consequences",
+            "victory.finalLog",
+            "victory.retention",
+            "victory.terminalSession",
+          ];
+
+        for (const point of points) {
+          const fixture =
+            await createFixture(10);
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          const failure =
+            new Error(
+              `Injected failure at ${point}.`
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (currentPoint) => {
+                    if (
+                      currentPoint === point
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new VictoryRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            after,
+            `Rollback mismatch at ${point}`
+          ).toEqual(before);
+        }
+      }
+    );
+
+    it(
+      "rolls back every main Defeat settlement phase",
+      async () => {
+        const points:
+          CombatSettlementFailurePoint[] = [
+            "defeat.character",
+            "defeat.statistics",
+            "defeat.core",
+            "defeat.finalLog",
+            "defeat.retention",
+            "defeat.terminalSession",
+          ];
+
+        for (const point of points) {
+          const fixture =
+            await createFixture();
+
+          await testPool.query(
+            `
+              UPDATE characters
+              SET
+                level = 3,
+                experience = 220,
+                current_health = 5,
+                max_health = 240,
+                current_mana = 60,
+                max_mana = 65,
+                current_energy = 90,
+                max_energy = 100
+              WHERE character_id = $1
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET
+                character_health = 5,
+                character_maximum_health =
+                  240
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          const failure =
+            new Error(
+              `Injected failure at ${point}.`
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (currentPoint) => {
+                    if (
+                      currentPoint === point
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new DefeatRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            after,
+            `Rollback mismatch at ${point}`
+          ).toEqual(before);
+        }
+      }
+    );
+
+    it(
+      "rolls back Victory when cooldown persistence is followed by failure",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions
+                AS session
+              INNER JOIN monsters
+                AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE
+                session.combat_session_id =
+                  $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown rollback monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            before.cooldown_count
+          ).toBe("0");
+
+          const failure =
+            new Error(
+              "Injected failure at victory.cooldown."
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (point) => {
+                    if (
+                      point ===
+                      "victory.cooldown"
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new VictoryRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(after).toEqual(before);
+          expect(
+            after.cooldown_count
+          ).toBe("0");
+          expect(after.status).toBe(
+            "Active"
+          );
+          expect(after.log_count).toBe(
+            "0"
+          );
+          expect(after.event_count).toBe(
+            "0"
+          );
+        }
+        finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+
+    it(
+      "rolls back Victory fight-buff consumption",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        await testPool.query(
+          `
+            INSERT INTO character_buffs (
+              character_id,
+              buff_type,
+              buff_source_type,
+              value,
+              duration_type,
+              duration_remaining,
+              is_positive,
+              applied_at,
+              expires_at
+            )
+            VALUES (
+              $1,
+              'ExperienceBoost',
+              'System',
+              4.5,
+              'Fights',
+              1,
+              TRUE,
+              $2,
+              NULL
+            )
+          `,
+          [
+            fixture.characterId,
+            new Date(
+              observedAt.getTime() -
+              60_000
+            ),
+          ]
+        );
+
+        const before =
+          await readRollbackState(
+            fixture
+          );
+
+        expect(
+          before.fight_buff_count
+        ).toBe("1");
+
+        expect(
+          before.fight_buff_duration
+        ).toBe("1");
+
+        const failure =
+          new Error(
+            "Injected failure at victory.fightBuff."
+          );
+
+        const repository =
+          new PostgresCombatSessionRepository(
+            testPool,
+            {
+              settlementFailureInjector:
+                async (point) => {
+                  if (
+                    point ===
+                    "victory.fightBuff"
+                  ) {
+                    throw failure;
+                  }
+                },
+            }
+          );
+
+        const service =
+          new ResolveCombatActionService(
+            repository,
+            new VictoryRandomSource(),
+            clock
+          );
+
+        await expect(
+          service.execute(
+            actionInput(fixture)
+          )
+        ).rejects.toBe(failure);
+
+        const after =
+          await readRollbackState(
+            fixture
+          );
+
+        expect(after).toEqual(before);
+
+        expect(
+          after.fight_buff_duration
+        ).toBe("1");
+
+        expect(after.status).toBe(
+          "Active"
+        );
+
+        expect(after.log_count).toBe(
+          "0"
+        );
+
+        expect(after.event_count).toBe(
+          "0"
+        );
+      }
+    );
+
+    it(
+      "rolls back conditional Defeat Blessing and fight-buff phases",
+      async () => {
+        const points:
+          CombatSettlementFailurePoint[] = [
+            "defeat.blessing",
+            "defeat.fightBuff",
+          ];
+
+        for (const point of points) {
+          const fixture =
+            await createFixture();
+
+          await testPool.query(
+            `
+              UPDATE characters
+              SET
+                level = 3,
+                experience = 220,
+                current_health = 5,
+                max_health = 240,
+                current_mana = 60,
+                max_mana = 65,
+                current_energy = 90,
+                max_energy = 100
+              WHERE character_id = $1
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET
+                character_health = 5,
+                character_maximum_health =
+                  240
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO character_blessings (
+                character_id,
+                activated_at
+              )
+              VALUES ($1, $2)
+            `,
+            [
+              fixture.characterId,
+              new Date(
+                observedAt.getTime() -
+                60_000
+              ),
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO character_buffs (
+                character_id,
+                buff_type,
+                buff_source_type,
+                value,
+                duration_type,
+                duration_remaining,
+                is_positive,
+                applied_at,
+                expires_at
+              )
+              VALUES (
+                $1,
+                'GoldBoost',
+                'System',
+                3.5,
+                'Fights',
+                1,
+                TRUE,
+                $2,
+                NULL
+              )
+            `,
+            [
+              fixture.characterId,
+              new Date(
+                observedAt.getTime() -
+                60_000
+              ),
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            before.blessing_count
+          ).toBe("1");
+
+          expect(
+            before.fight_buff_count
+          ).toBe("1");
+
+          expect(
+            before.fight_buff_duration
+        ).toBe("1");
+
+          const failure =
+            new Error(
+              `Injected failure at ${point}.`
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (currentPoint) => {
+                    if (
+                      currentPoint === point
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new DefeatRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            after,
+            `Rollback mismatch at ${point}`
+          ).toEqual(before);
+
+          expect(
+            after.blessing_count
+          ).toBe("1");
+
+          expect(
+            after.fight_buff_duration
+        ).toBe("1");
+
+          expect(after.status).toBe(
+            "Active"
+          );
+
+          expect(after.log_count).toBe(
+            "0"
+          );
+
+          expect(after.event_count).toBe(
+            "0"
+          );
+        }
+      }
+    );
+
+    it(
+      "rolls back Task Boss progression after Victory failure",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const task =
+          await testPool.query<{
+            progress_monster_id: string;
+            boss_monster_id: string;
+          }>(
+            `
+              SELECT
+                task.monster_id
+                  AS progress_monster_id,
+                boss.monster_id
+                  AS boss_monster_id
+              FROM monster_tasks AS task
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  task.boss_id
+              WHERE boss.boss_type =
+                'TaskBoss'
+              ORDER BY
+                task.monster_task_id
+              LIMIT 1
+            `
+          );
+
+        const taskRow =
+          task.rows[0];
+
+        if (!taskRow) {
+          throw new Error(
+            "Task Boss rollback fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            taskRow.boss_monster_id,
+          ]
+        );
+
+        await testPool.query(
+          `
+            INSERT INTO bestiary_statistics (
+              character_id,
+              monster_id,
+              kill_count,
+              first_kill_at,
+              last_kill_at,
+              task_progress,
+              task_status,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              $1,
+              $2,
+              10,
+              $3,
+              $3,
+              10,
+              'UNLOCKED',
+              $3,
+              $3
+            )
+            ON CONFLICT (
+              character_id,
+              monster_id
+            )
+            DO UPDATE
+            SET
+              task_progress = 10,
+              task_status = 'UNLOCKED',
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            fixture.characterId,
+            taskRow.progress_monster_id,
+            new Date(
+              observedAt.getTime() -
+              60_000
+            ),
+          ]
+        );
+
+        const readTaskState =
+          async (): Promise<{
+            task_progress: string;
+            task_status: string;
+          }> => {
+            const result =
+              await testPool.query<{
+                task_progress: string;
+                task_status: string;
+              }>(
+                `
+                  SELECT
+                    task_progress,
+                    task_status
+                  FROM bestiary_statistics
+                  WHERE character_id = $1
+                    AND monster_id = $2
+                `,
+                [
+                  fixture.characterId,
+                  taskRow.progress_monster_id,
+                ]
+              );
+
+            const row = result.rows[0];
+
+            if (!row) {
+              throw new Error(
+                "Task Boss progress state was not found."
+              );
+            }
+
+            return row;
+          };
+
+        const beforeSession =
+          await readRollbackState(
+            fixture
+          );
+
+        const beforeTask =
+          await readTaskState();
+
+        expect(beforeTask).toEqual({
+          task_progress: "10",
+          task_status: "UNLOCKED",
+        });
+
+        const failure =
+          new Error(
+            "Injected failure at victory.task."
+          );
+
+        const repository =
+          new PostgresCombatSessionRepository(
+            testPool,
+            {
+              settlementFailureInjector:
+                async (point) => {
+                  if (
+                    point ===
+                    "victory.task"
+                  ) {
+                    throw failure;
+                  }
+                },
+            }
+          );
+
+        const service =
+          new ResolveCombatActionService(
+            repository,
+            new VictoryRandomSource(),
+            clock
+          );
+
+        await expect(
+          service.execute(
+            actionInput(fixture)
+          )
+        ).rejects.toBe(failure);
+
+        const afterSession =
+          await readRollbackState(
+            fixture
+          );
+
+        const afterTask =
+          await readTaskState();
+
+        expect(afterSession).toEqual(
+          beforeSession
+        );
+
+        expect(afterTask).toEqual(
+          beforeTask
+        );
+
+        expect(
+          afterTask.task_status
+        ).toBe("UNLOCKED");
+
+        expect(afterSession.status).toBe(
+          "Active"
+        );
+
+        expect(
+          afterSession.log_count
+        ).toBe("0");
+
+        expect(
+          afterSession.event_count
+        ).toBe("0");
+      }
+    );
+
+    it(
+      "rolls back Daily Boss Victory progress",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const temporaryMonsterIds:
+          string[] = [];
+
+        const temporaryBossIds:
+          string[] = [];
+
+        const temporaryDefinitionIds:
+          string[] = [];
+
+        const createSupportDefinition =
+          async (
+            tier: number
+          ): Promise<{
+            daily_boss_definition_id:
+              string;
+            monster_id: string;
+            tier: number;
+          }> => {
+            const suffix =
+              randomUUID().replaceAll(
+                "-",
+                ""
+              );
+
+            const monster =
+              await testPool.query<{
+                monster_id: string;
+              }>(
+                `
+                  INSERT INTO monsters (
+                    monster_family_id,
+                    name,
+                    description,
+                    artwork,
+                    monster_type,
+                    level,
+                    health,
+                    attack,
+                    defense,
+                    spell_power_percent,
+                    cooldown_seconds,
+                    ability_chance_percent,
+                    gold_min,
+                    gold_max,
+                    loot_level_modifier,
+                    power_score,
+                    code,
+                    energy_cost,
+                    experience_reward
+                  )
+                  SELECT
+                    monster_family_id,
+                    $1,
+                    description,
+                    artwork,
+                    'DailyBoss',
+                    level,
+                    health,
+                    attack,
+                    defense,
+                    spell_power_percent,
+                    0,
+                    ability_chance_percent,
+                    gold_min,
+                    gold_max,
+                    loot_level_modifier,
+                    power_score,
+                    $2,
+                    energy_cost,
+                    experience_reward
+                  FROM monsters
+                  WHERE code =
+                    'dev_monster_10'
+                  RETURNING monster_id
+                `,
+                [
+                  `P14 Daily Support ${tier} ${suffix}`,
+                  `p14_daily_${tier}_${suffix}`,
+                ]
+              );
+
+            const monsterId =
+              monster.rows[0]
+                ?.monster_id;
+
+            if (!monsterId) {
+              throw new Error(
+                "Temporary Daily Boss monster was not created."
+              );
+            }
+
+            temporaryMonsterIds.push(
+              monsterId
+            );
+
+            const boss =
+              await testPool.query<{
+                boss_id: string;
+              }>(
+                `
+                  INSERT INTO bosses (
+                    monster_id,
+                    boss_type
+                  )
+                  VALUES (
+                    $1,
+                    'DailyBoss'
+                  )
+                  RETURNING boss_id
+                `,
+                [
+                  monsterId,
+                ]
+              );
+
+            const bossId =
+              boss.rows[0]?.boss_id;
+
+            if (!bossId) {
+              throw new Error(
+                "Temporary Daily Boss record was not created."
+              );
+            }
+
+            temporaryBossIds.push(
+              bossId
+            );
+
+            const definition =
+              await testPool.query<{
+                daily_boss_definition_id:
+                  string;
+              }>(
+                `
+                  INSERT INTO
+                    daily_boss_definitions (
+                      boss_id,
+                      tier,
+                      recommended_level,
+                      attempts_per_day
+                    )
+                  VALUES (
+                    $1,
+                    $2,
+                    1,
+                    3
+                  )
+                  RETURNING
+                    daily_boss_definition_id
+                `,
+                [
+                  bossId,
+                  tier,
+                ]
+              );
+
+            const definitionId =
+              definition.rows[0]
+                ?.daily_boss_definition_id;
+
+            if (!definitionId) {
+              throw new Error(
+                "Temporary Daily Boss definition was not created."
+              );
+            }
+
+            temporaryDefinitionIds.push(
+              definitionId
+            );
+
+            return {
+              daily_boss_definition_id:
+                definitionId,
+              monster_id: monsterId,
+              tier,
+            };
+          };
+
+        const existingDefinition =
+          await testPool.query<{
+            daily_boss_definition_id:
+              string;
+            monster_id: string;
+            tier: number;
+          }>(
+            `
+              SELECT
+                definition
+                  .daily_boss_definition_id,
+                boss.monster_id,
+                definition.tier
+              FROM daily_boss_definitions
+                AS definition
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  definition.boss_id
+              WHERE boss.boss_type =
+                'DailyBoss'
+              ORDER BY
+                definition
+                  .daily_boss_definition_id
+              LIMIT 1
+            `
+          );
+
+        const target =
+          existingDefinition.rows[0];
+
+        if (!target) {
+          throw new Error(
+            "Seeded Daily Boss definition was not found."
+          );
+        }
+
+        const tierTwo =
+          await createSupportDefinition(
+            2
+          );
+
+        const tierThree =
+          await createSupportDefinition(
+            3
+          );
+
+        const rotation =
+          await testPool.query<{
+            daily_boss_rotation_id: string;
+          }>(
+            `
+              INSERT INTO daily_boss_rotation (
+                tier_1_boss_id,
+                tier_2_boss_id,
+                tier_3_boss_id,
+                reset_timestamp,
+                created_at
+              )
+              VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5
+              )
+              RETURNING
+                daily_boss_rotation_id
+            `,
+            [
+              target
+                .daily_boss_definition_id,
+              tierTwo
+                .daily_boss_definition_id,
+              tierThree
+                .daily_boss_definition_id,
+              new Date(
+                observedAt.getTime() +
+                60 * 60 * 1000
+              ),
+              new Date(
+                observedAt.getTime() -
+                60 * 60 * 1000
+              ),
+            ]
+          );
+
+        const rotationId =
+          rotation.rows[0]
+            ?.daily_boss_rotation_id;
+
+        if (!rotationId) {
+          throw new Error(
+            "Daily Boss rollback rotation was not created."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET monster_id = $2
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+              target.monster_id,
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO
+                character_daily_boss_progress (
+                  character_id,
+                  daily_boss_definition_id,
+                  daily_boss_rotation_id,
+                  attempts_used_in_rotation,
+                  total_attempts,
+                  total_victories,
+                  last_attempt_at,
+                  last_victory_at,
+                  highest_tier_defeated
+                )
+              VALUES (
+                $1,
+                $2,
+                $3,
+                1,
+                1,
+                0,
+                $4,
+                NULL,
+                NULL
+              )
+            `,
+            [
+              fixture.characterId,
+              target
+                .daily_boss_definition_id,
+              rotationId,
+              observedAt,
+            ]
+          );
+
+          const readDailyState =
+            async (): Promise<{
+              attempts_used_in_rotation:
+                number;
+              total_attempts: string;
+              total_victories: string;
+              last_attempt_at:
+                Date | null;
+              last_victory_at:
+                Date | null;
+              highest_tier_defeated:
+                number | null;
+            }> => {
+              const result =
+                await testPool.query<{
+                  attempts_used_in_rotation:
+                    number;
+                  total_attempts: string;
+                  total_victories: string;
+                  last_attempt_at:
+                    Date | null;
+                  last_victory_at:
+                    Date | null;
+                  highest_tier_defeated:
+                    number | null;
+                }>(
+                  `
+                    SELECT
+                      attempts_used_in_rotation,
+                      total_attempts,
+                      total_victories,
+                      last_attempt_at,
+                      last_victory_at,
+                      highest_tier_defeated
+                    FROM
+                      character_daily_boss_progress
+                    WHERE character_id = $1
+                      AND
+                        daily_boss_definition_id =
+                          $2
+                      AND
+                        daily_boss_rotation_id =
+                          $3
+                  `,
+                  [
+                    fixture.characterId,
+                    target
+                      .daily_boss_definition_id,
+                    rotationId,
+                  ]
+                );
+
+              const row =
+                result.rows[0];
+
+              if (!row) {
+                throw new Error(
+                  "Daily Boss progress state was not found."
+                );
+              }
+
+              return row;
+            };
+
+          const beforeSession =
+            await readRollbackState(
+              fixture
+            );
+
+          const beforeDaily =
+            await readDailyState();
+
+          expect(
+            beforeDaily.total_victories
+          ).toBe("0");
+
+          expect(
+            beforeDaily
+              .highest_tier_defeated
+          ).toBeNull();
+
+          const failure =
+            new Error(
+              "Injected failure at victory.dailyBoss."
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (point) => {
+                    if (
+                      point ===
+                      "victory.dailyBoss"
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new VictoryRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const afterSession =
+            await readRollbackState(
+              fixture
+            );
+
+          const afterDaily =
+            await readDailyState();
+
+          expect(afterSession).toEqual(
+            beforeSession
+          );
+
+          expect(afterDaily).toEqual(
+            beforeDaily
+          );
+
+          expect(
+            afterDaily.total_victories
+          ).toBe("0");
+
+          expect(
+            afterDaily
+              .last_victory_at
+          ).toBeNull();
+
+          expect(afterSession.status).toBe(
+            "Active"
+          );
+
+          expect(
+            afterSession.log_count
+          ).toBe("0");
+
+          expect(
+            afterSession.event_count
+          ).toBe("0");
+        }
+        finally {
+          await testPool.query(
+            `
+              DELETE FROM
+                character_daily_boss_progress
+              WHERE character_id = $1
+                AND
+                  daily_boss_definition_id =
+                    $2
+                AND
+                  daily_boss_rotation_id =
+                    $3
+            `,
+            [
+              fixture.characterId,
+              target
+                .daily_boss_definition_id,
+              rotationId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              DELETE FROM
+                daily_boss_rotation
+              WHERE
+                daily_boss_rotation_id =
+                  $1
+            `,
+            [
+              rotationId,
+            ]
+          );
+
+          if (
+            temporaryDefinitionIds
+              .length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM
+                  daily_boss_definitions
+                WHERE
+                  daily_boss_definition_id =
+                    ANY($1::uuid[])
+              `,
+              [
+                temporaryDefinitionIds,
+              ]
+            );
+          }
+
+          if (
+            temporaryBossIds.length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM bosses
+                WHERE boss_id =
+                  ANY($1::uuid[])
+              `,
+              [
+                temporaryBossIds,
+              ]
+            );
+          }
+
+          if (
+            temporaryMonsterIds
+              .length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM monsters
+                WHERE monster_id =
+                  ANY($1::uuid[])
+              `,
+              [
+                temporaryMonsterIds,
+              ]
+            );
+          }
+        }
       }
     );
 

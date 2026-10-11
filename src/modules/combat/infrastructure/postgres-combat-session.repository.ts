@@ -971,14 +971,55 @@ class PostgresCombatStartTransaction
 
 
 
+export type CombatSettlementFailurePoint =
+  | "victory.character"
+  | "victory.statistics"
+  | "victory.core"
+  | "victory.bestiary"
+  | "victory.task"
+  | "victory.dailyBoss"
+  | "victory.cooldown"
+  | "victory.fightBuff"
+  | "victory.consequences"
+  | "victory.finalLog"
+  | "victory.retention"
+  | "victory.terminalSession"
+  | "defeat.character"
+  | "defeat.statistics"
+  | "defeat.blessing"
+  | "defeat.fightBuff"
+  | "defeat.core"
+  | "defeat.finalLog"
+  | "defeat.retention"
+  | "defeat.terminalSession";
+
+export type CombatSettlementFailureInjector = (
+  point: CombatSettlementFailurePoint
+) => void | Promise<void>;
+
+export type PostgresCombatSessionRepositoryOptions = {
+  settlementFailureInjector?:
+    CombatSettlementFailureInjector;
+};
+
 class PostgresCombatActionTransaction
   implements CombatActionTransaction {
   public constructor(
     private readonly client: PoolClient,
     public readonly locked:
       LockedCombatSession,
-    private readonly observedAt: Date
+    private readonly observedAt: Date,
+    private readonly settlementFailureInjector?:
+      CombatSettlementFailureInjector
   ) {}
+
+  private async injectSettlementFailure(
+    point: CombatSettlementFailurePoint
+  ): Promise<void> {
+    await this.settlementFailureInjector?.(
+      point
+    );
+  }
 
   public async loadSettlementContext():
   Promise<CombatSettlementContext> {
@@ -1900,6 +1941,10 @@ class PostgresCombatActionTransaction
       throw new CharacterNotFoundError();
     }
 
+    await this.injectSettlementFailure(
+      "victory.character"
+    );
+
     const statisticsUpdate =
       await this.client.query(
         `
@@ -1966,6 +2011,10 @@ class PostgresCombatActionTransaction
         "Victory settlement could not update character statistics."
       );
     }
+
+    await this.injectSettlementFailure(
+      "victory.statistics"
+    );
   }
 
   private async persistVictoryConsequences(
@@ -2081,6 +2130,10 @@ class PostgresCombatActionTransaction
       );
     }
 
+    await this.injectSettlementFailure(
+      "victory.bestiary"
+    );
+
     let taskProgressed = false;
     let taskStatus: string | null =
       input.context.task
@@ -2180,6 +2233,10 @@ class PostgresCombatActionTransaction
         taskStatus =
           bossRow.task_status;
       }
+
+      await this.injectSettlementFailure(
+        "victory.task"
+      );
     }
 
     let dailyBossUpdated = false;
@@ -2230,6 +2287,10 @@ class PostgresCombatActionTransaction
 
       dailyBossUpdated = true;
       dailyBossVictoryRecorded = true;
+
+      await this.injectSettlementFailure(
+        "victory.dailyBoss"
+      );
     }
 
     let cooldownApplied = false;
@@ -2334,6 +2395,10 @@ class PostgresCombatActionTransaction
         }
 
         cooldownApplied = true;
+
+        await this.injectSettlementFailure(
+          "victory.cooldown"
+        );
       }
     }
 
@@ -2365,6 +2430,10 @@ class PostgresCombatActionTransaction
             "Fight-based buff could not be consumed."
           );
         }
+
+        await this.injectSettlementFailure(
+          "victory.fightBuff"
+        );
 
         continue;
       }
@@ -2471,10 +2540,18 @@ class PostgresCombatActionTransaction
       input
     );
 
+    await this.injectSettlementFailure(
+      "victory.core"
+    );
+
     const consequences =
       await this.persistVictoryConsequences(
         input
       );
+
+    await this.injectSettlementFailure(
+      "victory.consequences"
+    );
 
     const summary = {
       version: 1,
@@ -2638,6 +2715,10 @@ class PostgresCombatActionTransaction
       );
     }
 
+    await this.injectSettlementFailure(
+      "victory.finalLog"
+    );
+
     await this.client.query(
       `
         DELETE FROM combat_logs
@@ -2655,6 +2736,10 @@ class PostgresCombatActionTransaction
         this.locked.session
           .characterId,
       ]
+    );
+
+    await this.injectSettlementFailure(
+      "victory.retention"
     );
 
     const finalSessionUpdate =
@@ -2692,6 +2777,10 @@ class PostgresCombatActionTransaction
     ) {
       throw new CombatSessionNotFoundError();
     }
+
+    await this.injectSettlementFailure(
+      "victory.terminalSession"
+    );
 
     return {
       outcome: "Victory",
@@ -2873,6 +2962,10 @@ class PostgresCombatActionTransaction
       throw new CharacterNotFoundError();
     }
 
+    await this.injectSettlementFailure(
+      "defeat.character"
+    );
+
     const statisticsUpdate =
       await this.client.query(
         `
@@ -2920,6 +3013,10 @@ class PostgresCombatActionTransaction
       );
     }
 
+    await this.injectSettlementFailure(
+      "defeat.statistics"
+    );
+
     if (input.blessingConsumed) {
       const blessingDeletion =
         await this.client.query(
@@ -2940,6 +3037,10 @@ class PostgresCombatActionTransaction
           "Defeat Blessing could not be consumed."
         );
       }
+
+      await this.injectSettlementFailure(
+        "defeat.blessing"
+      );
     }
 
     for (
@@ -2970,6 +3071,10 @@ class PostgresCombatActionTransaction
             "Fight-based buff could not be consumed after Defeat."
           );
         }
+
+        await this.injectSettlementFailure(
+          "defeat.fightBuff"
+        );
 
         continue;
       }
@@ -3061,6 +3166,10 @@ class PostgresCombatActionTransaction
 
     await this.persistDefeatCore(
       input
+    );
+
+    await this.injectSettlementFailure(
+      "defeat.core"
     );
 
     const summary = {
@@ -3227,6 +3336,10 @@ class PostgresCombatActionTransaction
       );
     }
 
+    await this.injectSettlementFailure(
+      "defeat.finalLog"
+    );
+
     await this.client.query(
       `
         DELETE FROM combat_logs
@@ -3244,6 +3357,10 @@ class PostgresCombatActionTransaction
         this.locked.session
           .characterId,
       ]
+    );
+
+    await this.injectSettlementFailure(
+      "defeat.retention"
     );
 
     const finalSessionUpdate =
@@ -3282,6 +3399,10 @@ class PostgresCombatActionTransaction
     ) {
       throw new CombatSessionNotFoundError();
     }
+
+    await this.injectSettlementFailure(
+      "defeat.terminalSession"
+    );
 
     return {
       outcome: "Defeat",
@@ -3528,7 +3649,9 @@ class PostgresCombatActionTransaction
 export class PostgresCombatSessionRepository
   implements CombatSessionRepository {
   public constructor(
-    private readonly pool: Pool
+    private readonly pool: Pool,
+    private readonly options:
+      PostgresCombatSessionRepositoryOptions = {}
   ) {}
 
   public async withStartTransaction<TResult>(
@@ -3660,7 +3783,9 @@ export class PostgresCombatSessionRepository
               combatState:
                 mapped.combatState,
             },
-            input.observedAt
+            input.observedAt,
+            this.options
+              .settlementFailureInjector
           );
 
         return operation(transaction);
