@@ -1464,6 +1464,551 @@ describe(
     );
 
     it(
+      "persists turn-limit Defeat for a Normal Monster",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET current_turn = 100
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const service = createService(
+          new MissRandomSource()
+        );
+
+        const result =
+          await service.execute({
+            ...actionInput(fixture),
+            expectedTurn: 100,
+          });
+
+        expect(result).toMatchObject({
+          status: "Defeat",
+          currentTurn: 100,
+          defeatReason:
+            "TurnLimitExceeded",
+          endedAt: observedAt,
+        });
+
+        expect(result.settlement).toMatchObject({
+          outcome: "Defeat",
+        });
+
+        const stored =
+          await testPool.query<{
+            status: string;
+            current_turn: number;
+            defeat_reason:
+              string | null;
+            ended_at:
+              Date | null;
+          }>(
+            `
+              SELECT
+                status,
+                current_turn,
+                defeat_reason,
+                ended_at
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        expect(stored.rows[0]).toMatchObject({
+          status: "Defeat",
+          current_turn: 100,
+          defeat_reason:
+            "TurnLimitExceeded",
+          ended_at: observedAt,
+        });
+      }
+    );
+
+    it(
+      "persists Mini Boss Victory",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const miniBoss =
+          await testPool.query<{
+            monster_id: string;
+          }>(
+            `
+              SELECT boss.monster_id
+              FROM bosses AS boss
+              WHERE boss.boss_type =
+                'MiniBoss'
+              ORDER BY boss.boss_id
+              LIMIT 1
+            `
+          );
+
+        const miniBossId =
+          miniBoss.rows[0]
+            ?.monster_id;
+
+        if (!miniBossId) {
+          throw new Error(
+            "Mini Boss fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            miniBossId,
+          ]
+        );
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(result).toMatchObject({
+          status: "Victory",
+          monsterId: miniBossId,
+          monster: {
+            currentHealth: 0,
+          },
+          settlement: {
+            outcome: "Victory",
+          },
+        });
+
+        const stored =
+          await testPool.query<{
+            status: string;
+            monster_id: string;
+          }>(
+            `
+              SELECT
+                status,
+                monster_id
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        expect(stored.rows[0]).toEqual({
+          status: "Victory",
+          monster_id: miniBossId,
+        });
+      }
+    );
+
+    it(
+      "persists Mini Boss Defeat",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        const miniBoss =
+          await testPool.query<{
+            monster_id: string;
+          }>(
+            `
+              SELECT boss.monster_id
+              FROM bosses AS boss
+              WHERE boss.boss_type =
+                'MiniBoss'
+              ORDER BY boss.boss_id
+              LIMIT 1
+            `
+          );
+
+        const miniBossId =
+          miniBoss.rows[0]
+            ?.monster_id;
+
+        if (!miniBossId) {
+          throw new Error(
+            "Mini Boss fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET current_health = 5
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET
+              monster_id = $2,
+              character_health = 5
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            miniBossId,
+          ]
+        );
+
+        const service = createService(
+          new DefeatRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(result).toMatchObject({
+          status: "Defeat",
+          monsterId: miniBossId,
+          defeatReason:
+            "PlayerHealthDepleted",
+          player: {
+            currentHealth: 0,
+          },
+          settlement: {
+            outcome: "Defeat",
+          },
+        });
+
+        const stored =
+          await testPool.query<{
+            status: string;
+            monster_id: string;
+            defeat_reason:
+              string | null;
+          }>(
+            `
+              SELECT
+                status,
+                monster_id,
+                defeat_reason
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        expect(stored.rows[0]).toEqual({
+          status: "Defeat",
+          monster_id: miniBossId,
+          defeat_reason:
+            "PlayerHealthDepleted",
+        });
+      }
+    );
+
+    it(
+      "persists Task progress monster Victory",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const task =
+          await testPool.query<{
+            progress_monster_id: string;
+            required_kills: string;
+          }>(
+            `
+              SELECT
+                task.monster_id
+                  AS progress_monster_id,
+                task.required_kills::text
+                  AS required_kills
+              FROM monster_tasks AS task
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  task.boss_id
+              WHERE boss.boss_type =
+                'TaskBoss'
+              ORDER BY
+                task.monster_task_id
+              LIMIT 1
+            `
+          );
+
+        const taskRow =
+          task.rows[0];
+
+        if (!taskRow) {
+          throw new Error(
+            "Task progress fixture was not found."
+          );
+        }
+
+        const requiredKills =
+          BigInt(taskRow.required_kills);
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            taskRow.progress_monster_id,
+          ]
+        );
+
+        await testPool.query(
+          `
+            INSERT INTO bestiary_statistics (
+              character_id,
+              monster_id,
+              kill_count,
+              first_kill_at,
+              last_kill_at,
+              task_progress,
+              task_status,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              $1,
+              $2,
+              1,
+              $3,
+              $3,
+              $4,
+              'ACTIVE',
+              $3,
+              $3
+            )
+          `,
+          [
+            fixture.characterId,
+            taskRow.progress_monster_id,
+            new Date(
+              observedAt.getTime() -
+              60_000
+            ),
+            (
+              requiredKills -
+              1n
+            ).toString(),
+          ]
+        );
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(result).toMatchObject({
+          status: "Victory",
+          monsterId:
+            taskRow.progress_monster_id,
+          settlement: {
+            outcome: "Victory",
+            taskBoss: {
+              progressed: true,
+              status: "UNLOCKED",
+            },
+          },
+        });
+
+        const progress =
+          await testPool.query<{
+            task_progress: string;
+            task_status: string;
+          }>(
+            `
+              SELECT
+                task_progress,
+                task_status
+              FROM bestiary_statistics
+              WHERE character_id = $1
+                AND monster_id = $2
+            `,
+            [
+              fixture.characterId,
+              taskRow.progress_monster_id,
+            ]
+          );
+
+        expect(progress.rows[0]).toEqual({
+          task_progress:
+            requiredKills.toString(),
+          task_status: "UNLOCKED",
+        });
+      }
+    );
+
+    it(
+      "persists Task Boss Victory",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const task =
+          await testPool.query<{
+            progress_monster_id: string;
+            boss_monster_id: string;
+            required_kills: string;
+          }>(
+            `
+              SELECT
+                task.monster_id
+                  AS progress_monster_id,
+                boss.monster_id
+                  AS boss_monster_id,
+                task.required_kills::text
+                  AS required_kills
+              FROM monster_tasks AS task
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  task.boss_id
+              WHERE boss.boss_type =
+                'TaskBoss'
+              ORDER BY
+                task.monster_task_id
+              LIMIT 1
+            `
+          );
+
+        const taskRow =
+          task.rows[0];
+
+        if (!taskRow) {
+          throw new Error(
+            "Task Boss fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            taskRow.boss_monster_id,
+          ]
+        );
+
+        await testPool.query(
+          `
+            INSERT INTO bestiary_statistics (
+              character_id,
+              monster_id,
+              kill_count,
+              first_kill_at,
+              last_kill_at,
+              task_progress,
+              task_status,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              $1,
+              $2,
+              10,
+              $3,
+              $3,
+              $4,
+              'UNLOCKED',
+              $3,
+              $3
+            )
+          `,
+          [
+            fixture.characterId,
+            taskRow.progress_monster_id,
+            new Date(
+              observedAt.getTime() -
+              60_000
+            ),
+            taskRow.required_kills,
+          ]
+        );
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(result).toMatchObject({
+          status: "Victory",
+          monsterId:
+            taskRow.boss_monster_id,
+          settlement: {
+            outcome: "Victory",
+            taskBoss: {
+              progressed: true,
+              status:
+                "WAITING_FOR_REUNLOCK",
+            },
+          },
+        });
+
+        const progress =
+          await testPool.query<{
+            task_progress: string;
+            task_status: string;
+          }>(
+            `
+              SELECT
+                task_progress,
+                task_status
+              FROM bestiary_statistics
+              WHERE character_id = $1
+                AND monster_id = $2
+            `,
+            [
+              fixture.characterId,
+              taskRow.progress_monster_id,
+            ]
+          );
+
+        expect(progress.rows[0]).toEqual({
+          task_progress:
+            taskRow.required_kills,
+          task_status:
+            "WAITING_FOR_REUNLOCK",
+        });
+      }
+    );
+
+    it(
       "rolls back every main Victory settlement phase",
       async () => {
         const points:
@@ -2262,6 +2807,581 @@ describe(
         expect(
           afterSession.event_count
         ).toBe("0");
+      }
+    );
+
+    it(
+      "persists Daily Boss Victory",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const temporaryMonsterIds:
+          string[] = [];
+
+        const temporaryBossIds:
+          string[] = [];
+
+        const temporaryDefinitionIds:
+          string[] = [];
+
+        const createSupportDefinition =
+          async (
+            tier: number
+          ): Promise<{
+            daily_boss_definition_id:
+              string;
+            monster_id: string;
+            tier: number;
+          }> => {
+            const suffix =
+              randomUUID().replaceAll(
+                "-",
+                ""
+              );
+
+            const monster =
+              await testPool.query<{
+                monster_id: string;
+              }>(
+                `
+                  INSERT INTO monsters (
+                    monster_family_id,
+                    name,
+                    description,
+                    artwork,
+                    monster_type,
+                    level,
+                    health,
+                    attack,
+                    defense,
+                    spell_power_percent,
+                    cooldown_seconds,
+                    ability_chance_percent,
+                    gold_min,
+                    gold_max,
+                    loot_level_modifier,
+                    power_score,
+                    code,
+                    energy_cost,
+                    experience_reward
+                  )
+                  SELECT
+                    monster_family_id,
+                    $1,
+                    description,
+                    artwork,
+                    'DailyBoss',
+                    level,
+                    health,
+                    attack,
+                    defense,
+                    spell_power_percent,
+                    0,
+                    ability_chance_percent,
+                    gold_min,
+                    gold_max,
+                    loot_level_modifier,
+                    power_score,
+                    $2,
+                    energy_cost,
+                    experience_reward
+                  FROM monsters
+                  WHERE code =
+                    'dev_monster_10'
+                  RETURNING monster_id
+                `,
+                [
+                  `P14 Daily Support ${tier} ${suffix}`,
+                  `p14_daily_${tier}_${suffix}`,
+                ]
+              );
+
+            const monsterId =
+              monster.rows[0]
+                ?.monster_id;
+
+            if (!monsterId) {
+              throw new Error(
+                "Temporary Daily Boss monster was not created."
+              );
+            }
+
+            temporaryMonsterIds.push(
+              monsterId
+            );
+
+            const boss =
+              await testPool.query<{
+                boss_id: string;
+              }>(
+                `
+                  INSERT INTO bosses (
+                    monster_id,
+                    boss_type
+                  )
+                  VALUES (
+                    $1,
+                    'DailyBoss'
+                  )
+                  RETURNING boss_id
+                `,
+                [
+                  monsterId,
+                ]
+              );
+
+            const bossId =
+              boss.rows[0]?.boss_id;
+
+            if (!bossId) {
+              throw new Error(
+                "Temporary Daily Boss record was not created."
+              );
+            }
+
+            temporaryBossIds.push(
+              bossId
+            );
+
+            const definition =
+              await testPool.query<{
+                daily_boss_definition_id:
+                  string;
+              }>(
+                `
+                  INSERT INTO
+                    daily_boss_definitions (
+                      boss_id,
+                      tier,
+                      recommended_level,
+                      attempts_per_day
+                    )
+                  VALUES (
+                    $1,
+                    $2,
+                    1,
+                    3
+                  )
+                  RETURNING
+                    daily_boss_definition_id
+                `,
+                [
+                  bossId,
+                  tier,
+                ]
+              );
+
+            const definitionId =
+              definition.rows[0]
+                ?.daily_boss_definition_id;
+
+            if (!definitionId) {
+              throw new Error(
+                "Temporary Daily Boss definition was not created."
+              );
+            }
+
+            temporaryDefinitionIds.push(
+              definitionId
+            );
+
+            return {
+              daily_boss_definition_id:
+                definitionId,
+              monster_id: monsterId,
+              tier,
+            };
+          };
+
+        const existingDefinition =
+          await testPool.query<{
+            daily_boss_definition_id:
+              string;
+            monster_id: string;
+            tier: number;
+          }>(
+            `
+              SELECT
+                definition
+                  .daily_boss_definition_id,
+                boss.monster_id,
+                definition.tier
+              FROM daily_boss_definitions
+                AS definition
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  definition.boss_id
+              WHERE boss.boss_type =
+                'DailyBoss'
+              ORDER BY
+                definition
+                  .daily_boss_definition_id
+              LIMIT 1
+            `
+          );
+
+        const target =
+          existingDefinition.rows[0];
+
+        if (!target) {
+          throw new Error(
+            "Seeded Daily Boss definition was not found."
+          );
+        }
+
+        const tierTwo =
+          await createSupportDefinition(
+            2
+          );
+
+        const tierThree =
+          await createSupportDefinition(
+            3
+          );
+
+        const rotation =
+          await testPool.query<{
+            daily_boss_rotation_id: string;
+          }>(
+            `
+              INSERT INTO daily_boss_rotation (
+                tier_1_boss_id,
+                tier_2_boss_id,
+                tier_3_boss_id,
+                reset_timestamp,
+                created_at
+              )
+              VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5
+              )
+              RETURNING
+                daily_boss_rotation_id
+            `,
+            [
+              target
+                .daily_boss_definition_id,
+              tierTwo
+                .daily_boss_definition_id,
+              tierThree
+                .daily_boss_definition_id,
+              new Date(
+                observedAt.getTime() +
+                60 * 60 * 1000
+              ),
+              new Date(
+                observedAt.getTime() -
+                60 * 60 * 1000
+              ),
+            ]
+          );
+
+        const rotationId =
+          rotation.rows[0]
+            ?.daily_boss_rotation_id;
+
+        if (!rotationId) {
+          throw new Error(
+            "Daily Boss rollback rotation was not created."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET monster_id = $2
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+              target.monster_id,
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO
+                character_daily_boss_progress (
+                  character_id,
+                  daily_boss_definition_id,
+                  daily_boss_rotation_id,
+                  attempts_used_in_rotation,
+                  total_attempts,
+                  total_victories,
+                  last_attempt_at,
+                  last_victory_at,
+                  highest_tier_defeated
+                )
+              VALUES (
+                $1,
+                $2,
+                $3,
+                1,
+                1,
+                0,
+                $4,
+                NULL,
+                NULL
+              )
+            `,
+            [
+              fixture.characterId,
+              target
+                .daily_boss_definition_id,
+              rotationId,
+              observedAt,
+            ]
+          );
+
+          const readDailyState =
+            async (): Promise<{
+              attempts_used_in_rotation:
+                number;
+              total_attempts: string;
+              total_victories: string;
+              last_attempt_at:
+                Date | null;
+              last_victory_at:
+                Date | null;
+              highest_tier_defeated:
+                number | null;
+            }> => {
+              const result =
+                await testPool.query<{
+                  attempts_used_in_rotation:
+                    number;
+                  total_attempts: string;
+                  total_victories: string;
+                  last_attempt_at:
+                    Date | null;
+                  last_victory_at:
+                    Date | null;
+                  highest_tier_defeated:
+                    number | null;
+                }>(
+                  `
+                    SELECT
+                      attempts_used_in_rotation,
+                      total_attempts,
+                      total_victories,
+                      last_attempt_at,
+                      last_victory_at,
+                      highest_tier_defeated
+                    FROM
+                      character_daily_boss_progress
+                    WHERE character_id = $1
+                      AND
+                        daily_boss_definition_id =
+                          $2
+                      AND
+                        daily_boss_rotation_id =
+                          $3
+                  `,
+                  [
+                    fixture.characterId,
+                    target
+                      .daily_boss_definition_id,
+                    rotationId,
+                  ]
+                );
+
+              const row =
+                result.rows[0];
+
+              if (!row) {
+                throw new Error(
+                  "Daily Boss progress state was not found."
+                );
+              }
+
+              return row;
+            };
+
+          const beforeSession =
+            await readRollbackState(
+              fixture
+            );
+
+          const beforeDaily =
+            await readDailyState();
+
+          expect(
+            beforeDaily.total_victories
+          ).toBe("0");
+
+          expect(
+            beforeDaily
+              .highest_tier_defeated
+          ).toBeNull();
+
+          const service =
+            createService(
+              new VictoryRandomSource()
+            );
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Victory",
+            monsterId:
+              target.monster_id,
+            settlement: {
+              outcome: "Victory",
+            },
+          });
+
+          const afterSession =
+            await readRollbackState(
+              fixture
+            );
+
+          const afterDaily =
+            await readDailyState();
+
+          expect(afterSession.status).toBe(
+            "Victory"
+          );
+
+          expect(
+            afterSession.log_count
+          ).toBe("1");
+
+          expect(
+            afterSession.event_count
+          ).not.toBe("0");
+
+          expect(
+            afterDaily
+              .attempts_used_in_rotation
+          ).toBe(
+            beforeDaily
+              .attempts_used_in_rotation
+          );
+
+          expect(
+            afterDaily.total_attempts
+          ).toBe(
+            beforeDaily.total_attempts
+          );
+
+          expect(
+            afterDaily.total_victories
+          ).toBe(
+            (
+              BigInt(
+                beforeDaily
+                  .total_victories
+              ) +
+              1n
+            ).toString()
+          );
+
+          expect(
+            afterDaily.last_attempt_at
+          ).toEqual(
+            beforeDaily.last_attempt_at
+          );
+
+          expect(
+            afterDaily.last_victory_at
+          ).toEqual(observedAt);
+
+          expect(
+            afterDaily
+              .highest_tier_defeated
+          ).toBe(target.tier);
+        }
+        finally {
+          await testPool.query(
+            `
+              DELETE FROM
+                character_daily_boss_progress
+              WHERE character_id = $1
+                AND
+                  daily_boss_definition_id =
+                    $2
+                AND
+                  daily_boss_rotation_id =
+                    $3
+            `,
+            [
+              fixture.characterId,
+              target
+                .daily_boss_definition_id,
+              rotationId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              DELETE FROM
+                daily_boss_rotation
+              WHERE
+                daily_boss_rotation_id =
+                  $1
+            `,
+            [
+              rotationId,
+            ]
+          );
+
+          if (
+            temporaryDefinitionIds
+              .length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM
+                  daily_boss_definitions
+                WHERE
+                  daily_boss_definition_id =
+                    ANY($1::uuid[])
+              `,
+              [
+                temporaryDefinitionIds,
+              ]
+            );
+          }
+
+          if (
+            temporaryBossIds.length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM bosses
+                WHERE boss_id =
+                  ANY($1::uuid[])
+              `,
+              [
+                temporaryBossIds,
+              ]
+            );
+          }
+
+          if (
+            temporaryMonsterIds
+              .length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM monsters
+                WHERE monster_id =
+                  ANY($1::uuid[])
+              `,
+              [
+                temporaryMonsterIds,
+              ]
+            );
+          }
+        }
       }
     );
 
