@@ -140,20 +140,6 @@ describe("PostgreSQL combat mapper", () => {
     );
   });
 
-  it("rejects an abandoned session because M4 has no abandoned state", () => {
-    const row = createRow();
-
-    row.status = "Abandoned";
-    row.ended_at =
-      new Date("2026-01-01T00:01:00.000Z");
-
-    expect(() =>
-      mapPostgreSqlCombatSessionRow(row)
-    ).toThrow(
-      InvalidPersistentCombatStateError
-    );
-  });
-
   it("rejects unsupported statuses and defeat reasons", () => {
     const statusRow = createRow();
     statusRow.status = "Unknown";

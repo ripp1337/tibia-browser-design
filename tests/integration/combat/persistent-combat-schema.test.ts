@@ -28,7 +28,7 @@ const testPool = new Pool({
 });
 
 type SessionOverrides = {
-  status?: "Active" | "Victory" | "Defeat" | "Abandoned";
+  status?: "Active" | "Victory" | "Defeat";
   currentTurn?: number;
   characterHealth?: number;
   characterMaximumHealth?: number;
@@ -376,13 +376,6 @@ describe("M6 persistent combat schema", () => {
       characterHealth: 0,
       defeatReason: "PlayerHealthDepleted",
     });
-
-    await expectCheckViolation(() =>
-      insertCombatSession({
-        status: "Abandoned",
-        defeatReason: null,
-      })
-    );
   });
 
   it("rejects inconsistent status and defeat reason combinations", async () => {

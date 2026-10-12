@@ -331,7 +331,6 @@ The following remain outside M5:
 - damage and healing over time,
 - multiple targets,
 - escape,
-- combat abandonment.
 
 ## Completion log
 

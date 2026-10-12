@@ -180,9 +180,6 @@ export function mapPersistentCombatStatus(
     case PERSISTENT_COMBAT_STATUS.defeat:
       return PERSISTENT_COMBAT_STATUS.defeat;
 
-    case PERSISTENT_COMBAT_STATUS.abandoned:
-      return PERSISTENT_COMBAT_STATUS.abandoned;
-
     default:
       return invalid(
         `Unsupported persistent combat status: ${String(value)}`
@@ -222,11 +219,6 @@ export function mapPersistentStatusToDomain(
 
     case PERSISTENT_COMBAT_STATUS.defeat:
       return COMBAT_STATUS.playerDefeat;
-
-    case PERSISTENT_COMBAT_STATUS.abandoned:
-      return invalid(
-        "Abandoned combat sessions cannot be reconstructed as M4 combat state."
-      );
   }
 }
 

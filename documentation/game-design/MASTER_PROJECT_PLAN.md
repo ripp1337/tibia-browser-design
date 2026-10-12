@@ -2118,7 +2118,7 @@ b493752  Add M4 basic attack resolution
 
 ### Out of scope
 
-Persistent combat sessions, combat HTTP endpoints, authentication, ownership, expected-turn concurrency, Energy deduction, persistent events and logs, rewards, progression, cooldown writes, Bestiary updates, Task Boss progression, spells, consumables, monster abilities, active effects, multiple targets, escape, and abandonment remain outside M4.
+Persistent combat sessions, combat HTTP endpoints, authentication, ownership, expected-turn concurrency, Energy deduction, persistent events and logs, rewards, progression, cooldown writes, Bestiary updates, Task Boss progression, spells, consumables, monster abilities, active effects, multiple targets, and escape remain outside M4.
 
 ### Completion log
 
@@ -2269,14 +2269,12 @@ Supported persistent statuses:
 - `Active`
 - `Victory`
 - `Defeat`
-- `Abandoned`
 
 Supported defeat reasons:
 
 - `PlayerHealthDepleted`
 - `TurnLimitExceeded`
 
-M5 does not create new abandoned sessions, but historical abandoned sessions remain retrievable.
 
 The database enforces:
 
@@ -2533,7 +2531,6 @@ The following remain outside M5:
 - active buffs and debuffs,
 - damage and healing over time,
 - escape,
-- combat abandonment.
 
 ---
 

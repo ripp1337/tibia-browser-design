@@ -41,7 +41,7 @@ CombatSessions
 
 ## PURPOSE
 
-Stores active, completed, defeated, and abandoned combat encounters.
+Stores active, victorious, and defeated combat encounters.
 
 Acts as the authoritative server-side persistent combat state.
 
@@ -64,7 +64,6 @@ Supported values:
 - `Active`
 - `Victory`
 - `Defeat`
-- `Abandoned`
 
 `DefeatReason`
 
@@ -127,13 +126,6 @@ Supported values:
 - The session cannot accept another combat action.
 - `PlayerHealthDepleted` requires Character Health to equal zero.
 - `TurnLimitExceeded` requires both combatants to remain alive on turn `100`.
-
-### Abandoned
-
-- `EndedAt` is required.
-- The session cannot accept another combat action.
-- M5 does not create new abandoned sessions.
-- Historical abandoned sessions remain retrievable.
 
 ## TURN RULES
 
@@ -332,4 +324,3 @@ Not implemented in M5:
 - active buffs and debuffs,
 - damage or healing over time,
 - escape,
-- combat abandonment.

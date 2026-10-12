@@ -1,6 +1,6 @@
 ﻿# M6 Schema Data Dump
 
-Generated: 2026-10-08 13:49:34 +02:00
+Generated: 2026-10-12 19:23:48 +02:00
 Repository root: C:\Projects\ostatnia-szansa-game
 
 ## Purpose
@@ -1839,7 +1839,7 @@ unique_pity_tracking,unique_pity_tracking_character_id_key,UNIQUE,
 > tsx scripts/run-migrations.ts --status
 
 Database: ostatnia_szansa_dev
-Migrations: 88
+Migrations: 89
 applied  001_accounts.sql
 applied  002_achievements.sql
 applied  003_announcements.sql
@@ -1928,6 +1928,7 @@ applied  085_unique_monster_task_boss.sql
 applied  086_daily_boss_rotation_window.sql
 applied  087_daily_boss_attempt_rotation.sql
 applied  088_persistent_combat_api.sql
+applied  089_victory_death_progression.sql
 Pending: 0
 ```
 

@@ -8,7 +8,6 @@ export const PERSISTENT_COMBAT_STATUS = {
   active: "Active",
   victory: "Victory",
   defeat: "Defeat",
-  abandoned: "Abandoned",
 } as const;
 
 export const PERSISTENT_COMBAT_DEFEAT_REASON = {

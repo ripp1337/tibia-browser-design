@@ -1,6 +1,6 @@
 ﻿# M6 Technical Dump
 
-Generated: 2026-10-08 13:49:34 +02:00
+Generated: 2026-10-12 19:23:48 +02:00
 Repository root: C:\Projects\ostatnia-szansa-game
 
 ## Purpose
@@ -22,21 +22,25 @@ Fresh source dump for planning M6: Victory, Death, and Progression.
 Branch: m6/victory-death-progression
 
 Working tree:
-?? M6_SCHEMA_DATA_DUMP.md
-?? M6_TECHNICAL_DUMP.md
-?? scripts/generate-m6-context.ps1
+ M database-design/combat/combat-sessions.md
+ M documentation/game-design/CURRENT_MILESTONE.md
+ M documentation/game-design/MASTER_PROJECT_PLAN.md
+ M src/modules/combat/application/combat-session.models.ts
+ M src/modules/combat/infrastructure/postgres-combat.mapper.ts
+ M tests/integration/combat/persistent-combat-schema.test.ts
+ M tests/unit/combat/postgres-combat.mapper.test.ts
 
 Recent commits:
-a56e0c8 align documentation after M5
-331a28a complete M5 documentation
-2fec50c stabilize combat integration fixtures
-de9b527 test persistent combat HTTP flow
-f2236f0 connect persistent combat routes
-5b0f2dc add authenticated combat HTTP handler
-adb6ca5 add persistent combat retrieval
-de9ae2f implement transactional combat actions
-2db8ec3 implement transactional combat start
-263b3ca add transactional combat start infrastructure
+52393f3 verify combat settlement rollback coverage
+600c21c update database table count for M6
+e2e37d9 align combat retrieval test with terminal states
+b3b0b54 verify HTTP combat settlement responses
+ac0da34 verify final combat log retention
+ed39169 complete Daily Boss attempt consumption tests
+7edf739 checkpoint P11 daily boss attempt consumption
+39c10ef implement transactional defeat settlement
+e14bb55 implement transactional victory settlement
+4767c9d plan M6 implementation
 ```
 
 # ============================================================
@@ -168,6 +172,7 @@ import { ResolveCombatActionService } from "./modules/combat/application/resolve
 import { StartCombatService } from "./modules/combat/application/start-combat.service.js";
 import { CryptoRandomSource } from "./modules/combat/infrastructure/crypto-random-source.js";
 import { PostgresCombatSessionRepository } from "./modules/combat/infrastructure/postgres-combat-session.repository.js";
+import type { RandomSource } from "./modules/combat/ports/random-source.js";
 import { createCombatHttpHandler } from "./modules/combat/http/combat-http.handler.js";
 
 import { ArchiveCharacterService } from "./modules/characters/application/archive-character.service.js";
@@ -210,7 +215,14 @@ function isMonsterRoute(
   );
 }
 
-export function createApplicationServer(): Server {
+export type ApplicationServerDependencies = {
+  randomSource?: RandomSource;
+};
+
+export function createApplicationServer(
+  dependencies:
+    ApplicationServerDependencies = {}
+): Server {
   const characterRepository =
     new PostgresCharacterRepository(
       databasePool
@@ -243,6 +255,7 @@ export function createApplicationServer(): Server {
 
   const clock = new SystemClock();
   const randomSource =
+    dependencies.randomSource ??
     new CryptoRandomSource();
 
   const createCharacterService =
@@ -564,7 +577,6 @@ export const PERSISTENT_COMBAT_STATUS = {
   active: "Active",
   victory: "Victory",
   defeat: "Defeat",
-  abandoned: "Abandoned",
 } as const;
 
 export const PERSISTENT_COMBAT_DEFEAT_REASON = {
@@ -597,8 +609,14 @@ export type CombatSessionSnapshot = {
   currentTurn: number;
   player: CombatSessionCombatantSnapshot;
   monster: CombatSessionCombatantSnapshot;
+  rewards: {
+    monsterExperienceReward: bigint;
+    monsterGoldMinimum: bigint;
+    monsterGoldMaximum: bigint;
+  };
   startedAt: Date;
   endedAt: Date | null;
+  settledAt: Date | null;
 };
 
 export type PersistedCombatEvent = {
@@ -611,8 +629,81 @@ export type PersistedCombatEvent = {
   createdAt: Date;
 };
 
+export type CombatSettlementOutcome =
+  | "Victory"
+  | "Defeat";
+
+export type CombatSettlementExperience = {
+  before: bigint;
+  awarded: bigint;
+  lost: bigint;
+  after: bigint;
+};
+
+export type CombatSettlementGold = {
+  before: bigint;
+  baseRolled: bigint;
+  awarded: bigint;
+  after: bigint;
+};
+
+export type CombatSettlementLevel = {
+  before: number;
+  after: number;
+  levelsChanged: number;
+};
+
+export type CombatSettlementBestiary = {
+  discovered: boolean;
+  killCount: bigint | null;
+};
+
+export type CombatSettlementTaskBoss = {
+  progressed: boolean;
+  status: string | null;
+};
+
+export type CombatSettlementCooldown = {
+  applied: boolean;
+  availableAt: Date | null;
+};
+
+export type CombatSettlementDailyBoss = {
+  updated: boolean;
+  victoryRecorded: boolean;
+};
+
+export type CombatSettlementStatistics = {
+  damageDealt: bigint;
+  damageTaken: bigint;
+  highestPhysicalHit: bigint;
+};
+
+export type CombatFinalSummary = {
+  combatSessionId: CombatSessionId;
+  outcome: CombatSettlementOutcome;
+  turnCount: number;
+  startedAt: Date;
+  endedAt: Date;
+};
+
+export type CombatSettlement = {
+  outcome: CombatSettlementOutcome;
+  experience: CombatSettlementExperience;
+  gold: CombatSettlementGold;
+  level: CombatSettlementLevel;
+  blessingConsumed: boolean;
+  bestiary: CombatSettlementBestiary;
+  taskBoss: CombatSettlementTaskBoss;
+  cooldown: CombatSettlementCooldown;
+  dailyBoss: CombatSettlementDailyBoss;
+  statistics: CombatSettlementStatistics;
+  finalSummary: CombatFinalSummary;
+};
+
 export type CombatSessionView = CombatSessionSnapshot & {
   events: readonly CombatEvent[];
+  settlement: CombatSettlement | null;
 };
 
 export type StartCombatInput = {
@@ -669,6 +760,7 @@ import type {
 import type {
   CombatEventLog,
   CombatSessionSnapshot,
+  CombatSettlement,
   GetActiveCombatInput,
   GetCombatSessionInput,
   PersistedCombatEvent,
@@ -697,10 +789,19 @@ export type CombatStartMonster = {
   monsterType: MonsterType;
   level: number;
   energyCost: number;
+  experienceReward: bigint;
+  goldMinimum: bigint;
+  goldMaximum: bigint;
   maximumHealth: number;
   attack: number;
   defense: number;
   eligibility: MonsterEligibility;
+
+  dailyBossAttempt?: {
+    dailyBossDefinitionId: string;
+    dailyBossRotationId: string;
+    attemptsLimit: number;
+  };
 };
 
 export type CreateCombatSessionInput = {
@@ -714,6 +815,9 @@ export type CreateCombatSessionInput = {
   monsterMaximumHealth: number;
   monsterAttack: number;
   monsterDefense: number;
+  monsterExperienceReward: bigint;
+  monsterGoldMinimum: bigint;
+  monsterGoldMaximum: bigint;
   startedAt: Date;
 };
 
@@ -729,6 +833,10 @@ export interface CombatStartTransaction {
 
   calculateCharacterStatistics():
     Promise<EffectiveCharacterStatistics>;
+
+  consumeDailyBossAttempt(
+    monster: CombatStartMonster
+  ): Promise<void>;
 
   updateCharacterResources(
     resources: CharacterResources
@@ -757,9 +865,201 @@ export type PersistCombatActionInput = {
   observedAt: Date;
 };
 
+export type CombatSettlementCharacter = {
+  characterId: string;
+  level: number;
+  experience: bigint;
+  gold: bigint;
+  resources: CharacterResources;
+};
+
+export type CombatSettlementStatistics = {
+  totalGoldEarned: bigint;
+  highestGoldOwned: bigint;
+  totalMonstersKilled: bigint;
+  totalBossesKilled: bigint;
+  totalDailyBossesKilled: bigint;
+  totalDeaths: bigint;
+  totalDamageDealt: bigint;
+  totalDamageTaken: bigint;
+  highestPhysicalHit: bigint;
+
+  strongestMonsterKilledId:
+    string | null;
+  strongestMonsterPowerScore:
+    bigint | null;
+
+  strongestBossKilledId:
+    string | null;
+  strongestBossPowerScore:
+    bigint | null;
+
+  currentNoDeathStreak: bigint;
+  longestNoDeathStreak: bigint;
+};
+
+export type CombatSettlementMonster = {
+  monsterId: string;
+  monsterType: MonsterType;
+  powerScore: bigint;
+  cooldownSeconds: number;
+  bossId: string | null;
+  bossType:
+    | "MiniBoss"
+    | "TaskBoss"
+    | "DailyBoss"
+    | null;
+  additionalCooldownSeconds: number;
+};
+
+export type CombatSettlementTask = {
+  monsterTaskId: string;
+  progressMonsterId: string;
+  taskBossId: string;
+  requiredKills: bigint;
+  currentProgress: bigint;
+  currentStatus:
+    | "ACTIVE"
+    | "UNLOCKED"
+    | "WAITING_FOR_REUNLOCK";
+};
+
+export type CombatSettlementDailyBoss = {
+  dailyBossDefinitionId: string;
+  dailyBossRotationId: string;
+  tier: number;
+  attemptsUsedInRotation: number;
+  totalAttempts: bigint;
+  totalVictories: bigint;
+  highestTierDefeated: number | null;
+};
+
+export type CombatSettlementFightBuff = {
+  characterBuffId: string;
+  buffType: string;
+  value: number;
+  durationRemaining: number;
+};
+
+export type CombatSettlementContext = {
+  character: CombatSettlementCharacter;
+  promoted: boolean;
+  blessed: boolean;
+  statistics: CombatSettlementStatistics;
+  rewardBonuses: {
+    goldBonusPercent: number;
+    experienceBonusPercent: number;
+  };
+  monster: CombatSettlementMonster;
+
+  task: CombatSettlementTask | null;
+
+  dailyBoss:
+    CombatSettlementDailyBoss | null;
+
+  fightBuffs:
+    readonly CombatSettlementFightBuff[];
+
+  events:
+    readonly PersistedCombatEvent[];
+};
+
+export type ApplyVictorySettlementInput = {
+  context: CombatSettlementContext;
+
+  state: CombatState;
+  resolvedTurn: number;
+  events: readonly CombatEvent[];
+  observedAt: Date;
+
+  baseExperience: bigint;
+  baseGold: bigint;
+
+  experienceBonusBasisPoints: bigint;
+  goldBonusBasisPoints: bigint;
+
+  experienceAwarded: bigint;
+  goldAwarded: bigint;
+
+  experienceAfter: bigint;
+  goldAfter: bigint;
+
+  levelAfter: number;
+
+  resourcesAfter: CharacterResources;
+
+  damageDealt: bigint;
+  damageTaken: bigint;
+  highestPhysicalHit: bigint;
+
+  strongestMonsterKilledIdAfter:
+    string;
+  strongestBossKilledIdAfter:
+    string | null;
+
+  statisticsAfter: {
+    totalGoldEarned: bigint;
+    highestGoldOwned: bigint;
+    totalMonstersKilled: bigint;
+    totalBossesKilled: bigint;
+    totalDailyBossesKilled: bigint;
+    totalDamageDealt: bigint;
+    totalDamageTaken: bigint;
+    highestPhysicalHit: bigint;
+    currentNoDeathStreak: bigint;
+    longestNoDeathStreak: bigint;
+  };
+};
+
+export type ApplyDefeatSettlementInput = {
+  context: CombatSettlementContext;
+
+  state: CombatState;
+  resolvedTurn: number;
+  events: readonly CombatEvent[];
+  observedAt: Date;
+
+  lossPercent: 10 | 8 | 6 | 4;
+
+  experienceLost: bigint;
+  experienceAfter: bigint;
+
+  goldAfter: bigint;
+  levelAfter: number;
+
+  resourcesAfter:
+    CharacterResources;
+
+  blessingConsumed: boolean;
+
+  damageDealt: bigint;
+  damageTaken: bigint;
+  highestPhysicalHit: bigint;
+
+  statisticsAfter: {
+    totalDeaths: bigint;
+    totalDamageDealt: bigint;
+    totalDamageTaken: bigint;
+    highestPhysicalHit: bigint;
+    currentNoDeathStreak: bigint;
+    longestNoDeathStreak: bigint;
+  };
+};
+
 export interface CombatActionTransaction {
   readonly locked:
     LockedCombatSession;
+
+  loadSettlementContext():
+    Promise<CombatSettlementContext>;
+
+  applyVictorySettlement(
+    input: ApplyVictorySettlementInput
+  ): Promise<CombatSettlement>;
+
+  applyDefeatSettlement(
+    input: ApplyDefeatSettlementInput
+  ): Promise<CombatSettlement>;
 
   persistAction(
     input: PersistCombatActionInput
@@ -833,6 +1133,7 @@ export class GetActiveCombatService {
     return {
       ...session,
       events: [],
+      settlement: null,
     };
   }
 }
@@ -912,6 +1213,7 @@ export class GetCombatSessionService {
     return {
       ...session,
       events: [],
+      settlement: null,
     };
   }
 }
@@ -929,6 +1231,12 @@ import type {
 import type {
   RandomSource,
 } from "../ports/random-source.js";
+import {
+  planDefeatSettlement,
+} from "../../progression/domain/defeat-settlement.js";
+import {
+  planVictorySettlement,
+} from "../../progression/domain/victory-settlement.js";
 import {
   COMBAT_STATUS,
 } from "../domain/combat.constants.js";
@@ -989,12 +1297,202 @@ export class ResolveCombatActionService {
             this.randomSource
           );
 
-        await transaction.persistAction({
-          state: resolution.state,
-          resolvedTurn: currentTurn,
-          events: resolution.events,
-          observedAt,
-        });
+        let settlement = null;
+
+        if (
+          resolution.state.status ===
+          COMBAT_STATUS.playerVictory
+        ) {
+          const victoryContext =
+            await transaction
+              .loadSettlementContext();
+
+          const completeEvents = [
+            ...victoryContext.events.map(
+              (event) => event.event
+            ),
+            ...resolution.events,
+          ];
+
+          const victoryPlan =
+            planVictorySettlement(
+              transaction.locked.session,
+              victoryContext,
+              resolution.state.player
+                .currentHealth,
+              completeEvents,
+              this.randomSource
+            );
+
+          settlement =
+            await transaction
+              .applyVictorySettlement({
+                context:
+                  victoryContext,
+                state:
+                  resolution.state,
+                resolvedTurn:
+                  currentTurn,
+                events:
+                  resolution.events,
+                observedAt,
+
+                baseExperience:
+                  victoryPlan.baseExperience,
+                baseGold:
+                  victoryPlan.baseGold,
+
+                experienceBonusBasisPoints:
+                  victoryPlan
+                    .experienceBonusBasisPoints,
+                goldBonusBasisPoints:
+                  victoryPlan
+                    .goldBonusBasisPoints,
+
+                experienceAwarded:
+                  victoryPlan
+                    .experienceAwarded,
+                goldAwarded:
+                  victoryPlan
+                    .goldAwarded,
+
+                experienceAfter:
+                  victoryPlan
+                    .experienceAfter,
+                goldAfter:
+                  victoryPlan.goldAfter,
+
+                levelAfter:
+                  victoryPlan.levelAfter,
+
+                resourcesAfter: {
+                  ...victoryPlan
+                    .resourcesAfter,
+                  resourcesUpdatedAt:
+                    observedAt,
+                },
+
+                damageDealt:
+                  victoryPlan.damageDealt,
+                damageTaken:
+                  victoryPlan.damageTaken,
+                highestPhysicalHit:
+                  victoryPlan
+                    .highestPhysicalHit,
+
+                strongestMonsterKilledIdAfter:
+                  victoryPlan
+                    .strongestMonsterKilledIdAfter,
+
+                strongestBossKilledIdAfter:
+                  victoryPlan
+                    .strongestBossKilledIdAfter,
+
+                statisticsAfter:
+                  victoryPlan
+                    .statisticsAfter,
+              });
+        } else if (
+          resolution.state.status ===
+          COMBAT_STATUS.playerDefeat
+        ) {
+          if (
+            resolution.state.defeatReason ===
+            null
+          ) {
+            throw new Error(
+              "Terminal Defeat state requires a defeat reason."
+            );
+          }
+
+          const defeatContext =
+            await transaction
+              .loadSettlementContext();
+
+          const completeEvents = [
+            ...defeatContext.events.map(
+              (event) => event.event
+            ),
+            ...resolution.events,
+          ];
+
+          const defeatPlan =
+            planDefeatSettlement(
+              defeatContext,
+              resolution.state.player
+                .currentHealth,
+              resolution.state.defeatReason,
+              completeEvents
+            );
+
+          settlement =
+            await transaction
+              .applyDefeatSettlement({
+                context:
+                  defeatContext,
+
+                state:
+                  resolution.state,
+
+                resolvedTurn:
+                  currentTurn,
+
+                events:
+                  resolution.events,
+
+                observedAt,
+
+                lossPercent:
+                  defeatPlan.lossPercent,
+
+                experienceLost:
+                  defeatPlan
+                    .experienceLost,
+
+                experienceAfter:
+                  defeatPlan
+                    .experienceAfter,
+
+                goldAfter:
+                  defeatPlan.goldAfter,
+
+                levelAfter:
+                  defeatPlan.levelAfter,
+
+                resourcesAfter: {
+                  ...defeatPlan
+                    .resourcesAfter,
+
+                  resourcesUpdatedAt:
+                    observedAt,
+                },
+
+                blessingConsumed:
+                  defeatPlan
+                    .blessingConsumed,
+
+                damageDealt:
+                  defeatPlan.damageDealt,
+
+                damageTaken:
+                  defeatPlan.damageTaken,
+
+                highestPhysicalHit:
+                  defeatPlan
+                    .highestPhysicalHit,
+
+                statisticsAfter:
+                  defeatPlan
+                    .statisticsAfter,
+              });
+        } else {
+          await transaction.persistAction({
+            state: resolution.state,
+            resolvedTurn: currentTurn,
+            events: resolution.events,
+            observedAt,
+          });
+        }
 
         const persistentStatus =
           resolution.state.status ===
@@ -1039,7 +1537,13 @@ export class ResolveCombatActionService {
             COMBAT_STATUS.inProgress
               ? null
               : observedAt,
+          settledAt:
+            resolution.state.status ===
+            COMBAT_STATUS.inProgress
+              ? null
+              : observedAt,
           events: resolution.events,
+          settlement,
         };
       }
     );
@@ -1131,6 +1635,16 @@ export class StartCombatService {
           await transaction
             .calculateCharacterStatistics();
 
+        if (
+          monster.monsterType ===
+          "DailyBoss"
+        ) {
+          await transaction
+            .consumeDailyBossAttempt(
+              monster
+            );
+        }
+
         const updatedResources = {
           ...resources,
           currentEnergy:
@@ -1163,12 +1677,19 @@ export class StartCombatService {
               monster.attack,
             monsterDefense:
               monster.defense,
+            monsterExperienceReward:
+              monster.experienceReward,
+            monsterGoldMinimum:
+              monster.goldMinimum,
+            monsterGoldMaximum:
+              monster.goldMaximum,
             startedAt: observedAt,
           });
 
         return {
           ...session,
           events: [],
+          settlement: null,
         };
       }
     );
@@ -2531,6 +3052,73 @@ export class CryptoRandomSource
     return value / RANDOM_FLOAT_DIVISOR;
   }
 
+  public nextBigInt(
+    minimum: bigint,
+    maximum: bigint
+  ): bigint {
+    if (minimum > maximum) {
+      throw new RangeError(
+        "Random bigint minimum cannot exceed maximum."
+      );
+    }
+
+    if (minimum === maximum) {
+      return minimum;
+    }
+
+    const range =
+      maximum - minimum + 1n;
+
+    const bitLength =
+      range.toString(2).length;
+
+    const byteLength =
+      Math.ceil(bitLength / 8);
+
+    const excessBits =
+      byteLength * 8 - bitLength;
+
+    while (true) {
+      const bytes =
+        this.randomBytesProvider(
+          byteLength
+        );
+
+      if (
+        !Buffer.isBuffer(bytes) ||
+        bytes.length !== byteLength
+      ) {
+        throw new Error(
+          "Crypto random byte provider returned an invalid bigint buffer."
+        );
+      }
+
+      const candidateBytes =
+        Buffer.from(bytes);
+
+      if (excessBits > 0) {
+        const mask =
+          0xff >>> excessBits;
+
+        candidateBytes[0] =
+          (candidateBytes[0] ?? 0) &
+          mask;
+      }
+
+      let candidate = 0n;
+
+      for (const byte of candidateBytes) {
+        candidate =
+          candidate * 256n +
+          BigInt(byte);
+      }
+
+      if (candidate < range) {
+        return minimum + candidate;
+      }
+    }
+  }
+
   public nextInt(
     minimum: number,
     maximum: number
@@ -2631,8 +3219,12 @@ export type PostgreSqlCombatSessionRow = {
   monster_attack: unknown;
   monster_defense: unknown;
   defeat_reason: unknown;
+  monster_experience_reward: unknown;
+  monster_gold_min: unknown;
+  monster_gold_max: unknown;
   started_at: unknown;
   ended_at: unknown;
+  settled_at: unknown;
 };
 
 const UUID_PATTERN =
@@ -2711,6 +3303,22 @@ function mapSafeInteger(
   return mapped;
 }
 
+function mapBigInt(
+  value: unknown,
+  fieldName: string
+): bigint {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9]+$/u.test(value)
+  ) {
+    return invalid(
+      `${fieldName} must contain a non-negative bigint.`
+    );
+  }
+
+  return BigInt(value);
+}
+
 function mapDate(
   value: unknown,
   fieldName: string
@@ -2751,9 +3359,6 @@ export function mapPersistentCombatStatus(
     case PERSISTENT_COMBAT_STATUS.defeat:
       return PERSISTENT_COMBAT_STATUS.defeat;
 
-    case PERSISTENT_COMBAT_STATUS.abandoned:
-      return PERSISTENT_COMBAT_STATUS.abandoned;
-
     default:
       return invalid(
         `Unsupported persistent combat status: ${String(value)}`
@@ -2793,11 +3398,6 @@ export function mapPersistentStatusToDomain(
 
     case PERSISTENT_COMBAT_STATUS.defeat:
       return COMBAT_STATUS.playerDefeat;
-
-    case PERSISTENT_COMBAT_STATUS.abandoned:
-      return invalid(
-        "Abandoned combat sessions cannot be reconstructed as M4 combat state."
-      );
   }
 }
 
@@ -2941,6 +3541,20 @@ export function mapPostgreSqlCombatSessionSnapshotRow(
         0
       ),
     },
+    rewards: {
+      monsterExperienceReward: mapBigInt(
+        row.monster_experience_reward,
+        "monster_experience_reward"
+      ),
+      monsterGoldMinimum: mapBigInt(
+        row.monster_gold_min,
+        "monster_gold_min"
+      ),
+      monsterGoldMaximum: mapBigInt(
+        row.monster_gold_max,
+        "monster_gold_max"
+      ),
+    },
     startedAt: mapDate(
       row.started_at,
       "started_at"
@@ -2948,6 +3562,10 @@ export function mapPostgreSqlCombatSessionSnapshotRow(
     endedAt: mapNullableDate(
       row.ended_at,
       "ended_at"
+    ),
+    settledAt: mapNullableDate(
+      row.settled_at,
+      "settled_at"
     ),
   };
 
@@ -3019,15 +3637,19 @@ import {
 import {
   PERSISTENT_COMBAT_STATUS,
   type CombatEventLog,
+  type CombatSettlement,
   type CombatSessionSnapshot,
   type GetActiveCombatInput,
   type GetCombatSessionInput,
   type PersistedCombatEvent,
 } from "../application/combat-session.models.js";
 import type {
+  ApplyDefeatSettlementInput,
+  ApplyVictorySettlementInput,
   CombatActionTransaction,
   CombatActionTransactionInput,
   CombatSessionRepository,
+  CombatSettlementContext,
   CombatStartMonster,
   CombatStartTransaction,
   CombatStartTransactionInput,
@@ -3079,12 +3701,104 @@ type ActiveCombatRow = {
   combat_session_id: string;
 };
 
+type SettlementCharacterRow = {
+  character_id: string;
+  level: number;
+  experience: string;
+  gold: string;
+  current_health: string;
+  max_health: string;
+  current_mana: string;
+  max_mana: string;
+  current_energy: string;
+  max_energy: string;
+  resources_updated_at: Date;
+};
+
+type SettlementUnlockRow = {
+  is_promoted: boolean;
+};
+
+type SettlementBlessingRow = {
+  character_blessing_id: string;
+};
+
+type SettlementStatisticsRow = {
+  total_gold_earned: string;
+  highest_gold_owned: string;
+  total_monsters_killed: string;
+  total_bosses_killed: string;
+  total_daily_bosses_killed: string;
+  total_deaths: string;
+  total_damage_dealt: string;
+  total_damage_taken: string;
+  highest_physical_hit: string;
+
+  strongest_monster_killed_id:
+    string | null;
+  strongest_monster_power_score:
+    string | null;
+
+  strongest_boss_killed_id:
+    string | null;
+  strongest_boss_power_score:
+    string | null;
+
+  current_no_death_streak: string;
+  longest_no_death_streak: string;
+};
+
+type SettlementMonsterRow = {
+  monster_id: string;
+  monster_type: string;
+  power_score: string;
+  cooldown_seconds: number;
+  boss_id: string | null;
+  boss_type: string | null;
+  additional_cooldown_seconds: number | null;
+};
+
+type SettlementTaskDefinitionRow = {
+  monster_task_id: string;
+  progress_monster_id: string;
+  task_boss_id: string;
+  required_kills: string;
+};
+
+type SettlementTaskProgressRow = {
+  task_progress: string;
+  task_status: TaskStatus;
+};
+
+type SettlementDailyDefinitionRow = {
+  daily_boss_definition_id: string;
+  daily_boss_rotation_id: string;
+  tier: number;
+};
+
+type SettlementDailyProgressRow = {
+  attempts_used_in_rotation: number;
+  total_attempts: string;
+  total_victories: string;
+  highest_tier_defeated: number | null;
+};
+
+type SettlementFightBuffRow = {
+  character_buff_id: string;
+  buff_type: string;
+  value: string;
+  duration_remaining: number;
+};
+
 type MonsterStartRow = {
   monster_id: string;
   code: string;
   monster_type: string;
   level: number;
   energy_cost: number;
+  experience_reward: string;
+  gold_min: string;
+  gold_max: string;
   health: string;
   attack: string;
   defense: string;
@@ -3093,6 +3807,10 @@ type MonsterStartRow = {
   daily_boss_available: boolean;
   daily_attempts_used: number;
   daily_attempts_per_day: number | null;
+  daily_boss_definition_id:
+    string | null;
+  daily_boss_rotation_id:
+    string | null;
 };
 
 function mapSafeInteger(
@@ -3112,6 +3830,37 @@ function mapSafeInteger(
   }
 
   return mapped;
+}
+
+function parseNumericValue(
+  value: string | number,
+  fieldName: string
+): number {
+  const mapped = Number(value);
+
+  if (
+    !Number.isFinite(mapped) ||
+    mapped < 0
+  ) {
+    throw new InvalidPersistentCombatStateError(
+      `${fieldName} must contain a non-negative finite number.`
+    );
+  }
+
+  return mapped;
+}
+
+function mapNonNegativeBigInt(
+  value: string,
+  fieldName: string
+): bigint {
+  if (!/^[0-9]+$/u.test(value)) {
+    throw new InvalidPersistentCombatStateError(
+      `${fieldName} must contain a non-negative bigint.`
+    );
+  }
+
+  return BigInt(value);
 }
 
 function mapValidDate(
@@ -3359,6 +4108,9 @@ class PostgresCombatStartTransaction
             m.monster_type,
             m.level,
             m.energy_cost,
+            m.experience_reward,
+            m.gold_min,
+            m.gold_max,
             m.health,
             m.attack,
             m.defense,
@@ -3385,7 +4137,13 @@ class PostgresCombatStartTransaction
             ) AS daily_attempts_used,
 
             daily_definition.attempts_per_day
-              AS daily_attempts_per_day
+              AS daily_attempts_per_day,
+
+            daily_definition.daily_boss_definition_id
+              AS daily_boss_definition_id,
+
+            active_rotation.daily_boss_rotation_id
+              AS daily_boss_rotation_id
 
           FROM monsters AS m
 
@@ -3506,6 +4264,21 @@ class PostgresCombatStartTransaction
         row.energy_cost,
         "monster.energy_cost"
       ),
+      experienceReward:
+        mapNonNegativeBigInt(
+          row.experience_reward,
+          "monster.experience_reward"
+        ),
+      goldMinimum:
+        mapNonNegativeBigInt(
+          row.gold_min,
+          "monster.gold_min"
+        ),
+      goldMaximum:
+        mapNonNegativeBigInt(
+          row.gold_max,
+          "monster.gold_max"
+        ),
       maximumHealth: mapSafeInteger(
         row.health,
         "monster.health",
@@ -3520,6 +4293,21 @@ class PostgresCombatStartTransaction
         "monster.defense"
       ),
       eligibility,
+
+      dailyBossAttempt:
+        monsterType === "DailyBoss" &&
+        row.daily_boss_definition_id !== null &&
+        row.daily_boss_rotation_id !== null &&
+        dailyAttemptsPerDay !== undefined
+          ? {
+              dailyBossDefinitionId:
+                row.daily_boss_definition_id,
+              dailyBossRotationId:
+                row.daily_boss_rotation_id,
+              attemptsLimit:
+                dailyAttemptsPerDay,
+            }
+          : undefined,
     };
   }
 
@@ -3539,6 +4327,85 @@ class PostgresCombatStartTransaction
         this.character.characterId,
       observedAt: this.observedAt,
     });
+  }
+
+  public async consumeDailyBossAttempt(
+    monster: CombatStartMonster
+  ): Promise<void> {
+    if (
+      monster.monsterType !==
+      "DailyBoss"
+    ) {
+      return;
+    }
+
+    const attempt =
+      monster.dailyBossAttempt;
+
+    if (attempt === undefined) {
+      throw new InvalidPersistentCombatStateError(
+        "Daily Boss start metadata is incomplete."
+      );
+    }
+
+    const result =
+      await this.client.query(
+        `
+          INSERT INTO character_daily_boss_progress (
+            character_id,
+            daily_boss_definition_id,
+            daily_boss_rotation_id,
+            attempts_used_in_rotation,
+            total_attempts,
+            last_attempt_at,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            1,
+            1,
+            $4,
+            $4,
+            $4
+          )
+          ON CONFLICT (
+            character_id,
+            daily_boss_definition_id,
+            daily_boss_rotation_id
+          )
+          DO UPDATE
+          SET
+            attempts_used_in_rotation =
+              character_daily_boss_progress
+                .attempts_used_in_rotation + 1,
+            total_attempts =
+              character_daily_boss_progress
+                .total_attempts + 1,
+            last_attempt_at = $4,
+            updated_at = $4
+          WHERE
+            character_daily_boss_progress
+              .attempts_used_in_rotation < $5
+          RETURNING
+            character_daily_boss_progress_id
+        `,
+        [
+          this.character.characterId,
+          attempt.dailyBossDefinitionId,
+          attempt.dailyBossRotationId,
+          this.observedAt,
+          attempt.attemptsLimit,
+        ]
+      );
+
+    if (result.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Daily Boss attempt could not be consumed."
+      );
+    }
   }
 
   public async updateCharacterResources(
@@ -3601,7 +4468,10 @@ class PostgresCombatStartTransaction
               monster_maximum_health,
               monster_attack,
               monster_defense,
-              defeat_reason
+              defeat_reason,
+              monster_experience_reward,
+              monster_gold_min,
+              monster_gold_max
             )
             VALUES (
               $1,
@@ -3618,7 +4488,10 @@ class PostgresCombatStartTransaction
               $10,
               $11,
               $12,
-              NULL
+              NULL,
+              $13,
+              $14,
+              $15
             )
             RETURNING
               combat_session_id,
@@ -3640,8 +4513,12 @@ class PostgresCombatStartTransaction
               monster_attack,
               monster_defense,
               defeat_reason,
+              monster_experience_reward,
+              monster_gold_min,
+              monster_gold_max,
               started_at,
-              ended_at
+              ended_at,
+              settled_at
           `,
           [
             this.character.characterId,
@@ -3656,6 +4533,9 @@ class PostgresCombatStartTransaction
             input.monsterMaximumHealth,
             input.monsterAttack,
             input.monsterDefense,
+            input.monsterExperienceReward.toString(),
+            input.monsterGoldMinimum.toString(),
+            input.monsterGoldMaximum.toString(),
           ]
         );
 
@@ -3687,61 +4567,2533 @@ class PostgresCombatStartTransaction
 
 
 
+export type CombatSettlementFailurePoint =
+  | "victory.character"
+  | "victory.statistics"
+  | "victory.core"
+  | "victory.bestiary"
+  | "victory.task"
+  | "victory.dailyBoss"
+  | "victory.cooldown"
+  | "victory.fightBuff"
+  | "victory.consequences"
+  | "victory.finalLog"
+  | "victory.retention"
+  | "victory.terminalSession"
+  | "defeat.character"
+  | "defeat.statistics"
+  | "defeat.blessing"
+  | "defeat.fightBuff"
+  | "defeat.core"
+  | "defeat.finalLog"
+  | "defeat.retention"
+  | "defeat.terminalSession";
+
+export type CombatSettlementFailureInjector = (
+  point: CombatSettlementFailurePoint
+) => void | Promise<void>;
+
+export type PostgresCombatSessionRepositoryOptions = {
+  settlementFailureInjector?:
+    CombatSettlementFailureInjector;
+};
+
 class PostgresCombatActionTransaction
   implements CombatActionTransaction {
   public constructor(
     private readonly client: PoolClient,
     public readonly locked:
-      LockedCombatSession
+      LockedCombatSession,
+    private readonly observedAt: Date,
+    private readonly settlementFailureInjector?:
+      CombatSettlementFailureInjector
   ) {}
 
-  public async persistAction(
-    input: PersistCombatActionInput
-  ): Promise<readonly PersistedCombatEvent[]> {
+  private async injectSettlementFailure(
+    point: CombatSettlementFailurePoint
+  ): Promise<void> {
+    await this.settlementFailureInjector?.(
+      point
+    );
+  }
+
+  public async loadSettlementContext():
+  Promise<CombatSettlementContext> {
+    const characterResult =
+      await this.client.query<
+        SettlementCharacterRow
+      >(
+        `
+          SELECT
+            character_id,
+            level,
+            experience,
+            gold,
+            current_health,
+            max_health,
+            current_mana,
+            max_mana,
+            current_energy,
+            max_energy,
+            resources_updated_at
+          FROM characters
+          WHERE character_id = $1
+            AND status = 'IsActive'
+          FOR UPDATE
+        `,
+        [
+          this.locked.session
+            .characterId,
+        ]
+      );
+
+    const character =
+      characterResult.rows[0];
+
+    if (!character) {
+      throw new CharacterNotFoundError();
+    }
+
+    const unlockResult =
+      await this.client.query<
+        SettlementUnlockRow
+      >(
+        `
+          SELECT is_promoted
+          FROM character_unlocks
+          WHERE character_id = $1
+          FOR UPDATE
+        `,
+        [character.character_id]
+      );
+
+    const unlock = unlockResult.rows[0];
+
+    if (!unlock) {
+      throw new InvalidPersistentCombatStateError(
+        "Character unlock state was not found."
+      );
+    }
+
+    const blessingResult =
+      await this.client.query<
+        SettlementBlessingRow
+      >(
+        `
+          SELECT character_blessing_id
+          FROM character_blessings
+          WHERE character_id = $1
+          FOR UPDATE
+        `,
+        [character.character_id]
+      );
+
+    const statisticsResult =
+      await this.client.query<
+        SettlementStatisticsRow
+      >(
+        `
+          SELECT
+            total_gold_earned,
+            highest_gold_owned,
+            total_monsters_killed,
+            total_bosses_killed,
+            total_daily_bosses_killed,
+            total_deaths,
+            total_damage_dealt,
+            total_damage_taken,
+            statistics.highest_physical_hit,
+
+            statistics.strongest_monster_killed_id,
+            strongest_monster.power_score::text
+              AS strongest_monster_power_score,
+
+            statistics.strongest_boss_killed_id,
+            strongest_boss_monster.power_score::text
+              AS strongest_boss_power_score,
+
+            statistics.current_no_death_streak,
+            statistics.longest_no_death_streak
+          FROM character_statistics
+            AS statistics
+          LEFT JOIN monsters
+            AS strongest_monster
+            ON strongest_monster.monster_id =
+              statistics.strongest_monster_killed_id
+          LEFT JOIN bosses
+            AS strongest_boss
+            ON strongest_boss.boss_id =
+              statistics.strongest_boss_killed_id
+          LEFT JOIN monsters
+            AS strongest_boss_monster
+            ON strongest_boss_monster.monster_id =
+              strongest_boss.monster_id
+          WHERE statistics.character_id = $1
+          FOR UPDATE OF statistics
+        `,
+        [character.character_id]
+      );
+
+    const statistics =
+      statisticsResult.rows[0];
+
+    if (!statistics) {
+      throw new InvalidPersistentCombatStateError(
+        "Character statistics were not found."
+      );
+    }
+
+    const monsterResult =
+      await this.client.query<
+        SettlementMonsterRow
+      >(
+        `
+          SELECT
+            m.monster_id,
+            m.monster_type,
+            m.power_score,
+            m.cooldown_seconds,
+            b.boss_id,
+            b.boss_type,
+            b.additional_cooldown_seconds
+          FROM monsters AS m
+          LEFT JOIN bosses AS b
+            ON b.monster_id =
+              m.monster_id
+          WHERE m.monster_id = $1
+        `,
+        [
+          this.locked.session
+            .monsterId,
+        ]
+      );
+
+    const monster =
+      monsterResult.rows[0];
+
+    if (!monster) {
+      throw new InvalidPersistentCombatStateError(
+        "Settlement monster was not found."
+      );
+    }
+
+    const taskDefinitionResult =
+      await this.client.query<
+        SettlementTaskDefinitionRow
+      >(
+        `
+          SELECT
+            mt.monster_task_id,
+            mt.monster_id
+              AS progress_monster_id,
+            mt.boss_id
+              AS task_boss_id,
+            mt.required_kills
+          FROM monster_tasks AS mt
+          LEFT JOIN bosses AS encountered_boss
+            ON encountered_boss.boss_id =
+              mt.boss_id
+          WHERE mt.monster_id = $1
+            OR encountered_boss.monster_id = $1
+          ORDER BY mt.monster_task_id
+        `,
+        [
+          this.locked.session
+            .monsterId,
+        ]
+      );
+
+    if (
+      taskDefinitionResult.rows.length > 1
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Settlement monster matched multiple Task definitions."
+      );
+    }
+
+    const taskDefinition =
+      taskDefinitionResult.rows[0] ?? null;
+
+    let taskProgress:
+      SettlementTaskProgressRow | null =
+        null;
+
+    if (taskDefinition !== null) {
+      const taskProgressResult =
+        await this.client.query<
+          SettlementTaskProgressRow
+        >(
+          `
+            SELECT
+              task_progress,
+              task_status
+            FROM bestiary_statistics
+            WHERE character_id = $1
+              AND monster_id = $2
+            FOR UPDATE
+          `,
+          [
+            character.character_id,
+            taskDefinition
+              .progress_monster_id,
+          ]
+        );
+
+      taskProgress =
+        taskProgressResult.rows[0] ?? null;
+    }
+
+    const dailyDefinitionResult =
+      await this.client.query<
+        SettlementDailyDefinitionRow
+      >(
+        `
+          SELECT
+            definition.daily_boss_definition_id,
+            rotation.daily_boss_rotation_id,
+            definition.tier
+          FROM bosses AS boss
+          INNER JOIN daily_boss_definitions
+            AS definition
+            ON definition.boss_id =
+              boss.boss_id
+          INNER JOIN daily_boss_rotation
+            AS rotation
+            ON definition.daily_boss_definition_id
+              IN (
+                rotation.tier_1_boss_id,
+                rotation.tier_2_boss_id,
+                rotation.tier_3_boss_id
+              )
+            AND rotation.created_at <= $2
+            AND rotation.reset_timestamp > $2
+          WHERE boss.monster_id = $1
+          ORDER BY
+            rotation.created_at DESC,
+            rotation.daily_boss_rotation_id DESC
+          LIMIT 1
+        `,
+        [
+          this.locked.session
+            .monsterId,
+          this.observedAt,
+        ]
+      );
+
+    const dailyDefinition =
+      dailyDefinitionResult.rows[0] ?? null;
+
+    let dailyProgress:
+      SettlementDailyProgressRow | null =
+        null;
+
+    if (dailyDefinition !== null) {
+      const dailyProgressResult =
+        await this.client.query<
+          SettlementDailyProgressRow
+        >(
+          `
+            SELECT
+              attempts_used_in_rotation,
+              total_attempts,
+              total_victories,
+              highest_tier_defeated
+            FROM character_daily_boss_progress
+            WHERE character_id = $1
+              AND daily_boss_definition_id = $2
+              AND daily_boss_rotation_id = $3
+            FOR UPDATE
+          `,
+          [
+            character.character_id,
+            dailyDefinition
+              .daily_boss_definition_id,
+            dailyDefinition
+              .daily_boss_rotation_id,
+          ]
+        );
+
+      dailyProgress =
+        dailyProgressResult.rows[0] ?? null;
+    }
+
+    const fightBuffResult =
+      await this.client.query<
+        SettlementFightBuffRow
+      >(
+        `
+          SELECT
+            character_buff_id,
+            buff_type,
+            value,
+            duration_remaining
+          FROM character_buffs
+          WHERE character_id = $1
+            AND duration_type = 'Fights'
+            AND duration_remaining > 0
+            AND (
+              expires_at IS NULL
+              OR expires_at > $2
+            )
+          ORDER BY character_buff_id
+          FOR UPDATE
+        `,
+        [
+          character.character_id,
+          this.observedAt,
+        ]
+      );
+
+    const eventResult =
+      await this.client.query<
+        PostgreSqlCombatEventRow
+      >(
+        `
+          SELECT
+            combat_session_event_id,
+            combat_session_id,
+            turn_number,
+            event_order,
+            event_type,
+            event_data_json,
+            created_at
+          FROM combat_session_events
+          WHERE combat_session_id = $1
+          ORDER BY
+            turn_number ASC,
+            event_order ASC
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+        ]
+      );
+
+    const statisticsRepository =
+      new PostgresCharacterStatisticsRepository(
+        this.client
+      );
+
+    const statisticsService =
+      new CalculateCharacterStatsService(
+        statisticsRepository
+      );
+
+    const effectiveStatistics =
+      await statisticsService.execute({
+        characterId:
+          character.character_id,
+        observedAt: this.observedAt,
+      });
+
+    const bossType =
+      monster.boss_type === null
+        ? null
+        : monster.boss_type === "MiniBoss" ||
+            monster.boss_type === "TaskBoss" ||
+            monster.boss_type === "DailyBoss"
+          ? monster.boss_type
+          : (() => {
+              throw new InvalidPersistentCombatStateError(
+                "Settlement boss type is invalid."
+              );
+            })();
+
+    return {
+      character: {
+        characterId:
+          character.character_id,
+        level: mapSafeInteger(
+          character.level,
+          "settlement.character.level",
+          1
+        ),
+        experience:
+          mapNonNegativeBigInt(
+            character.experience,
+            "settlement.character.experience"
+          ),
+        gold:
+          mapNonNegativeBigInt(
+            character.gold,
+            "settlement.character.gold"
+          ),
+        resources: {
+          currentHealth: mapSafeInteger(
+            character.current_health,
+            "settlement.character.current_health"
+          ),
+          maximumHealth: mapSafeInteger(
+            character.max_health,
+            "settlement.character.max_health",
+            1
+          ),
+          currentMana: mapSafeInteger(
+            character.current_mana,
+            "settlement.character.current_mana"
+          ),
+          maximumMana: mapSafeInteger(
+            character.max_mana,
+            "settlement.character.max_mana"
+          ),
+          currentEnergy: mapSafeInteger(
+            character.current_energy,
+            "settlement.character.current_energy"
+          ),
+          maximumEnergy: mapSafeInteger(
+            character.max_energy,
+            "settlement.character.max_energy",
+            1
+          ),
+          resourcesUpdatedAt:
+            mapValidDate(
+              character.resources_updated_at,
+              "settlement.character.resources_updated_at"
+            ),
+        },
+      },
+
+      promoted: unlock.is_promoted,
+
+      blessed:
+        blessingResult.rows.length === 1,
+
+      statistics: {
+        totalGoldEarned:
+          mapNonNegativeBigInt(
+            statistics.total_gold_earned,
+            "settlement.statistics.total_gold_earned"
+          ),
+        highestGoldOwned:
+          mapNonNegativeBigInt(
+            statistics.highest_gold_owned,
+            "settlement.statistics.highest_gold_owned"
+          ),
+        totalMonstersKilled:
+          mapNonNegativeBigInt(
+            statistics.total_monsters_killed,
+            "settlement.statistics.total_monsters_killed"
+          ),
+        totalBossesKilled:
+          mapNonNegativeBigInt(
+            statistics.total_bosses_killed,
+            "settlement.statistics.total_bosses_killed"
+          ),
+        totalDailyBossesKilled:
+          mapNonNegativeBigInt(
+            statistics.total_daily_bosses_killed,
+            "settlement.statistics.total_daily_bosses_killed"
+          ),
+        totalDeaths:
+          mapNonNegativeBigInt(
+            statistics.total_deaths,
+            "settlement.statistics.total_deaths"
+          ),
+        totalDamageDealt:
+          mapNonNegativeBigInt(
+            statistics.total_damage_dealt,
+            "settlement.statistics.total_damage_dealt"
+          ),
+        totalDamageTaken:
+          mapNonNegativeBigInt(
+            statistics.total_damage_taken,
+            "settlement.statistics.total_damage_taken"
+          ),
+        highestPhysicalHit:
+          mapNonNegativeBigInt(
+            statistics.highest_physical_hit,
+            "settlement.statistics.highest_physical_hit"
+          ),
+
+        strongestMonsterKilledId:
+          statistics
+            .strongest_monster_killed_id,
+
+        strongestMonsterPowerScore:
+          statistics
+            .strongest_monster_power_score ===
+          null
+            ? null
+            : mapNonNegativeBigInt(
+                statistics
+                  .strongest_monster_power_score,
+                "settlement.statistics.strongest_monster_power_score"
+              ),
+
+        strongestBossKilledId:
+          statistics
+            .strongest_boss_killed_id,
+
+        strongestBossPowerScore:
+          statistics
+            .strongest_boss_power_score ===
+          null
+            ? null
+            : mapNonNegativeBigInt(
+                statistics
+                  .strongest_boss_power_score,
+                "settlement.statistics.strongest_boss_power_score"
+              ),
+
+        currentNoDeathStreak:
+          mapNonNegativeBigInt(
+            statistics.current_no_death_streak,
+            "settlement.statistics.current_no_death_streak"
+          ),
+        longestNoDeathStreak:
+          mapNonNegativeBigInt(
+            statistics.longest_no_death_streak,
+            "settlement.statistics.longest_no_death_streak"
+          ),
+      },
+
+      rewardBonuses: {
+        goldBonusPercent:
+          effectiveStatistics
+            .goldBonusPercent,
+        experienceBonusPercent:
+          effectiveStatistics
+            .experienceBonusPercent,
+      },
+
+      monster: {
+        monsterId:
+          monster.monster_id,
+        monsterType:
+          mapMonsterType(
+            monster.monster_type
+          ),
+        powerScore:
+          mapNonNegativeBigInt(
+            monster.power_score,
+            "settlement.monster.power_score"
+          ),
+        cooldownSeconds:
+          mapSafeInteger(
+            monster.cooldown_seconds,
+            "settlement.monster.cooldown_seconds"
+          ),
+        bossId: monster.boss_id,
+        bossType,
+        additionalCooldownSeconds:
+          monster.additional_cooldown_seconds ===
+          null
+            ? 0
+            : mapSafeInteger(
+                monster.additional_cooldown_seconds,
+                "settlement.monster.additional_cooldown_seconds"
+              ),
+      },
+
+      task:
+        taskDefinition === null
+          ? null
+          : {
+              monsterTaskId:
+                taskDefinition
+                  .monster_task_id,
+              progressMonsterId:
+                taskDefinition
+                  .progress_monster_id,
+              taskBossId:
+                taskDefinition
+                  .task_boss_id,
+              requiredKills:
+                mapNonNegativeBigInt(
+                  taskDefinition
+                    .required_kills,
+                  "settlement.task.required_kills"
+                ),
+              currentProgress:
+                taskProgress === null
+                  ? 0n
+                  : mapNonNegativeBigInt(
+                      taskProgress
+                        .task_progress,
+                      "settlement.task.current_progress"
+                    ),
+              currentStatus:
+                taskProgress === null
+                  ? "ACTIVE"
+                  : taskProgress.task_status,
+            },
+
+      dailyBoss:
+        dailyDefinition === null
+          ? null
+          : {
+              dailyBossDefinitionId:
+                dailyDefinition
+                  .daily_boss_definition_id,
+              dailyBossRotationId:
+                dailyDefinition
+                  .daily_boss_rotation_id,
+              tier: mapSafeInteger(
+                dailyDefinition.tier,
+                "settlement.daily_boss.tier",
+                1
+              ),
+              attemptsUsedInRotation:
+                dailyProgress === null
+                  ? 0
+                  : mapSafeInteger(
+                      dailyProgress
+                        .attempts_used_in_rotation,
+                      "settlement.daily_boss.attempts_used_in_rotation"
+                    ),
+              totalAttempts:
+                dailyProgress === null
+                  ? 0n
+                  : mapNonNegativeBigInt(
+                      dailyProgress
+                        .total_attempts,
+                      "settlement.daily_boss.total_attempts"
+                    ),
+              totalVictories:
+                dailyProgress === null
+                  ? 0n
+                  : mapNonNegativeBigInt(
+                      dailyProgress
+                        .total_victories,
+                      "settlement.daily_boss.total_victories"
+                    ),
+              highestTierDefeated:
+                dailyProgress
+                  ?.highest_tier_defeated ??
+                null,
+            },
+
+      fightBuffs:
+        fightBuffResult.rows.map(
+          (row) => ({
+            characterBuffId:
+              row.character_buff_id,
+            buffType: row.buff_type,
+            value: parseNumericValue(
+              row.value,
+              "settlement.fight_buff.value"
+            ),
+            durationRemaining:
+              mapSafeInteger(
+                row.duration_remaining,
+                "settlement.fight_buff.duration_remaining",
+                1
+              ),
+          })
+        ),
+
+      events:
+        eventResult.rows.map(
+          mapPersistedEvent
+        ),
+    };
+  }
+
+  private async persistVictoryCharacter(
+    input: ApplyVictorySettlementInput
+  ): Promise<void> {
+    const update =
+      await this.client.query(
+        `
+          UPDATE characters
+          SET
+            level = $2,
+            experience = $3,
+            gold = $4,
+            current_health = $5,
+            max_health = $6,
+            current_mana = $7,
+            max_mana = $8,
+            current_energy = $9,
+            max_energy = $10,
+            resources_updated_at = $11,
+            updated_at = $11
+          WHERE character_id = $1
+            AND status = 'IsActive'
+            AND level = $12
+            AND experience = $13
+            AND gold = $14
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.levelAfter,
+          input.experienceAfter
+            .toString(),
+          input.goldAfter.toString(),
+          input.resourcesAfter
+            .currentHealth,
+          input.resourcesAfter
+            .maximumHealth,
+          input.resourcesAfter
+            .currentMana,
+          input.resourcesAfter
+            .maximumMana,
+          input.resourcesAfter
+            .currentEnergy,
+          input.resourcesAfter
+            .maximumEnergy,
+          input.observedAt,
+          input.context.character.level,
+          input.context.character
+            .experience.toString(),
+          input.context.character
+            .gold.toString(),
+        ]
+      );
+
+    if (update.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory character state changed after settlement loading."
+      );
+    }
+  }
+
+  private async persistVictoryStatistics(
+    input: ApplyVictorySettlementInput
+  ): Promise<void> {
+    const update =
+      await this.client.query(
+        `
+          UPDATE character_statistics
+          SET
+            total_gold_earned = $2,
+            highest_gold_owned = $3,
+            total_monsters_killed = $4,
+            total_bosses_killed = $5,
+            total_daily_bosses_killed = $6,
+            total_damage_dealt = $7,
+            total_damage_taken = $8,
+            highest_physical_hit = $9,
+            strongest_monster_killed_id = $10,
+            strongest_boss_killed_id = $11,
+            current_no_death_streak = $12,
+            longest_no_death_streak = $13,
+            updated_at = $14
+          WHERE character_id = $1
+            AND total_gold_earned = $15
+            AND highest_gold_owned = $16
+            AND total_monsters_killed = $17
+            AND total_bosses_killed = $18
+            AND total_daily_bosses_killed = $19
+            AND total_damage_dealt = $20
+            AND total_damage_taken = $21
+            AND highest_physical_hit = $22
+            AND current_no_death_streak = $23
+            AND longest_no_death_streak = $24
+        `,
+        [
+          this.locked.session
+            .characterId,
+
+          input.statisticsAfter
+            .totalGoldEarned.toString(),
+          input.statisticsAfter
+            .highestGoldOwned.toString(),
+          input.statisticsAfter
+            .totalMonstersKilled.toString(),
+          input.statisticsAfter
+            .totalBossesKilled.toString(),
+          input.statisticsAfter
+            .totalDailyBossesKilled
+            .toString(),
+          input.statisticsAfter
+            .totalDamageDealt.toString(),
+          input.statisticsAfter
+            .totalDamageTaken.toString(),
+          input.statisticsAfter
+            .highestPhysicalHit.toString(),
+
+          input
+            .strongestMonsterKilledIdAfter,
+          input
+            .strongestBossKilledIdAfter,
+
+          input.statisticsAfter
+            .currentNoDeathStreak
+            .toString(),
+          input.statisticsAfter
+            .longestNoDeathStreak
+            .toString(),
+
+          input.observedAt,
+
+          input.context.statistics
+            .totalGoldEarned.toString(),
+          input.context.statistics
+            .highestGoldOwned.toString(),
+          input.context.statistics
+            .totalMonstersKilled.toString(),
+          input.context.statistics
+            .totalBossesKilled.toString(),
+          input.context.statistics
+            .totalDailyBossesKilled
+            .toString(),
+          input.context.statistics
+            .totalDamageDealt.toString(),
+          input.context.statistics
+            .totalDamageTaken.toString(),
+          input.context.statistics
+            .highestPhysicalHit.toString(),
+          input.context.statistics
+            .currentNoDeathStreak
+            .toString(),
+          input.context.statistics
+            .longestNoDeathStreak
+            .toString(),
+        ]
+      );
+
+    if (update.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory statistics changed after settlement loading."
+      );
+    }
+  }
+
+  private async persistVictoryCore(
+    input: ApplyVictorySettlementInput
+  ): Promise<void> {
+    if (
+      input.state.status !==
+      COMBAT_STATUS.playerVictory
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory persistence requires a player Victory state."
+      );
+    }
+
+    if (
+      input.context.character.characterId !==
+      this.locked.session.characterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement character does not match the locked session."
+      );
+    }
+
+    if (
+      input.context.monster.monsterId !==
+      this.locked.session.monsterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement monster does not match the locked session."
+      );
+    }
+
+    await this.persistCombatEvents({
+      resolvedTurn:
+        input.resolvedTurn,
+      events: input.events,
+      observedAt: input.observedAt,
+    });
+
+    const characterUpdate =
+      await this.client.query(
+        `
+          UPDATE characters
+          SET
+            level = $2,
+            experience = $3,
+            gold = $4,
+            current_health = $5,
+            max_health = $6,
+            current_mana = $7,
+            max_mana = $8,
+            current_energy = $9,
+            max_energy = $10,
+            resources_updated_at = $11,
+            updated_at = $11
+          WHERE character_id = $1
+            AND status = 'IsActive'
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.levelAfter,
+          input.experienceAfter
+            .toString(),
+          input.goldAfter
+            .toString(),
+          input.resourcesAfter
+            .currentHealth,
+          input.resourcesAfter
+            .maximumHealth,
+          input.resourcesAfter
+            .currentMana,
+          input.resourcesAfter
+            .maximumMana,
+          input.resourcesAfter
+            .currentEnergy,
+          input.resourcesAfter
+            .maximumEnergy,
+          input.observedAt,
+        ]
+      );
+
+    if (
+      characterUpdate.rowCount !== 1
+    ) {
+      throw new CharacterNotFoundError();
+    }
+
+    await this.injectSettlementFailure(
+      "victory.character"
+    );
+
+    const statisticsUpdate =
+      await this.client.query(
+        `
+          UPDATE character_statistics
+          SET
+            total_gold_earned = $2,
+            highest_gold_owned = $3,
+            total_monsters_killed = $4,
+            total_bosses_killed = $5,
+            total_daily_bosses_killed = $6,
+            total_damage_dealt = $7,
+            total_damage_taken = $8,
+            highest_physical_hit = $9,
+            strongest_monster_killed_id = $10,
+            strongest_boss_killed_id = $11,
+            current_no_death_streak = $12,
+            longest_no_death_streak = $13,
+            updated_at = $14
+          WHERE character_id = $1
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.statisticsAfter
+            .totalGoldEarned
+            .toString(),
+          input.statisticsAfter
+            .highestGoldOwned
+            .toString(),
+          input.statisticsAfter
+            .totalMonstersKilled
+            .toString(),
+          input.statisticsAfter
+            .totalBossesKilled
+            .toString(),
+          input.statisticsAfter
+            .totalDailyBossesKilled
+            .toString(),
+          input.statisticsAfter
+            .totalDamageDealt
+            .toString(),
+          input.statisticsAfter
+            .totalDamageTaken
+            .toString(),
+          input.statisticsAfter
+            .highestPhysicalHit
+            .toString(),
+          input.strongestMonsterKilledIdAfter,
+          input.strongestBossKilledIdAfter,
+          input.statisticsAfter
+            .currentNoDeathStreak
+            .toString(),
+          input.statisticsAfter
+            .longestNoDeathStreak
+            .toString(),
+          input.observedAt,
+        ]
+      );
+
+    if (
+      statisticsUpdate.rowCount !== 1
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement could not update character statistics."
+      );
+    }
+
+    await this.injectSettlementFailure(
+      "victory.statistics"
+    );
+  }
+
+  private async persistVictoryConsequences(
+    input: ApplyVictorySettlementInput
+  ): Promise<{
+    bestiary: {
+      discovered: boolean;
+      killCount: bigint;
+    };
+    taskBoss: {
+      progressed: boolean;
+      status: string | null;
+    };
+    cooldown: {
+      applied: boolean;
+      availableAt: Date | null;
+    };
+    dailyBoss: {
+      updated: boolean;
+      victoryRecorded: boolean;
+    };
+  }> {
+    const bestiaryEntryInsert =
+      await this.client.query(
+        `
+          INSERT INTO bestiary_entries (
+            character_id,
+            monster_id,
+            unlocked_at,
+            created_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $3
+          )
+          ON CONFLICT (
+            character_id,
+            monster_id
+          )
+          DO NOTHING
+          RETURNING bestiary_entry_id
+        `,
+        [
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          input.observedAt,
+        ]
+      );
+
+    const bestiaryStatistics =
+      await this.client.query<{
+        kill_count: string;
+        task_progress: string;
+        task_status: string;
+      }>(
+        `
+          INSERT INTO bestiary_statistics (
+            character_id,
+            monster_id,
+            kill_count,
+            first_kill_at,
+            last_kill_at,
+            task_progress,
+            task_status,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            $2,
+            1,
+            $3,
+            $3,
+            0,
+            'ACTIVE',
+            $3,
+            $3
+          )
+          ON CONFLICT (
+            character_id,
+            monster_id
+          )
+          DO UPDATE
+          SET
+            kill_count =
+              bestiary_statistics.kill_count + 1,
+            last_kill_at = EXCLUDED.last_kill_at,
+            updated_at = EXCLUDED.updated_at
+          RETURNING
+            kill_count,
+            task_progress,
+            task_status
+        `,
+        [
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          input.observedAt,
+        ]
+      );
+
+    const bestiaryRow =
+      bestiaryStatistics.rows[0];
+
+    if (!bestiaryRow) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement could not update Bestiary statistics."
+      );
+    }
+
+    await this.injectSettlementFailure(
+      "victory.bestiary"
+    );
+
+    let taskProgressed = false;
+    let taskStatus: string | null =
+      input.context.task
+        ?.currentStatus ??
+      null;
+
+    const task =
+      input.context.task;
+
+    if (
+      task !== null &&
+      this.locked.session.monsterId ===
+        task.progressMonsterId
+    ) {
+      const progressUpdate =
+        await this.client.query<{
+          task_progress: string;
+          task_status: string;
+        }>(
+          `
+            UPDATE bestiary_statistics
+            SET
+              task_progress = LEAST(
+                $3::bigint,
+                task_progress + 1
+              ),
+              task_status =
+                CASE
+                  WHEN LEAST(
+                    $3::bigint,
+                    task_progress + 1
+                  ) >= $3::bigint
+                    THEN 'UNLOCKED'
+                  ELSE task_status
+                END,
+              updated_at = $4
+            WHERE character_id = $1
+              AND monster_id = $2
+              AND task_status = 'ACTIVE'
+            RETURNING
+              task_progress,
+              task_status
+          `,
+          [
+            this.locked.session
+              .characterId,
+            task.progressMonsterId,
+            task.requiredKills
+              .toString(),
+            input.observedAt,
+          ]
+        );
+
+      const progressRow =
+        progressUpdate.rows[0];
+
+      if (progressRow) {
+        taskProgressed = true;
+        taskStatus =
+          progressRow.task_status;
+      }
+    }
+
+    if (
+      task !== null &&
+      input.context.monster.bossId ===
+        task.taskBossId
+    ) {
+      const bossUpdate =
+        await this.client.query<{
+          task_status: string;
+        }>(
+          `
+            UPDATE bestiary_statistics
+            SET
+              task_status =
+                'WAITING_FOR_REUNLOCK',
+              updated_at = $3
+            WHERE character_id = $1
+              AND monster_id = $2
+              AND task_status = 'UNLOCKED'
+            RETURNING task_status
+          `,
+          [
+            this.locked.session
+              .characterId,
+            task.progressMonsterId,
+            input.observedAt,
+          ]
+        );
+
+      const bossRow =
+        bossUpdate.rows[0];
+
+      if (bossRow) {
+        taskProgressed = true;
+        taskStatus =
+          bossRow.task_status;
+      }
+
+      await this.injectSettlementFailure(
+        "victory.task"
+      );
+    }
+
+    let dailyBossUpdated = false;
+    let dailyBossVictoryRecorded = false;
+
+    const dailyBoss =
+      input.context.dailyBoss;
+
+    if (dailyBoss !== null) {
+      const dailyUpdate =
+        await this.client.query(
+          `
+            UPDATE character_daily_boss_progress
+            SET
+              total_victories =
+                total_victories + 1,
+              last_victory_at = $4,
+              highest_tier_defeated =
+                GREATEST(
+                  COALESCE(
+                    highest_tier_defeated,
+                    0
+                  ),
+                  $5
+                ),
+              updated_at = $4
+            WHERE character_id = $1
+              AND daily_boss_definition_id = $2
+              AND daily_boss_rotation_id = $3
+          `,
+          [
+            this.locked.session
+              .characterId,
+            dailyBoss
+              .dailyBossDefinitionId,
+            dailyBoss
+              .dailyBossRotationId,
+            input.observedAt,
+            dailyBoss.tier,
+          ]
+        );
+
+      if (dailyUpdate.rowCount !== 1) {
+        throw new InvalidPersistentCombatStateError(
+          "Daily Boss Victory progress was not found."
+        );
+      }
+
+      dailyBossUpdated = true;
+      dailyBossVictoryRecorded = true;
+
+      await this.injectSettlementFailure(
+        "victory.dailyBoss"
+      );
+    }
+
+    let cooldownApplied = false;
+    let cooldownAvailableAt:
+      Date | null = null;
+
+    const monsterType =
+      input.context.monster
+        .monsterType;
+
+    if (
+      monsterType === "Normal" ||
+      monsterType === "MiniBoss"
+    ) {
+      const baseSeconds =
+        input.context.monster
+          .cooldownSeconds;
+
+      const additionalSeconds =
+        monsterType === "MiniBoss"
+          ? input.context.monster
+              .additionalCooldownSeconds
+          : 0;
+
+      const totalSeconds =
+        baseSeconds +
+        additionalSeconds;
+
+      if (
+        !Number.isSafeInteger(
+          totalSeconds
+        ) ||
+        totalSeconds < 0
+      ) {
+        throw new InvalidPersistentCombatStateError(
+          "Victory cooldown duration is invalid."
+        );
+      }
+
+      if (totalSeconds > 0) {
+        cooldownAvailableAt =
+          new Date(
+            input.observedAt.getTime() +
+            totalSeconds * 1000
+          );
+
+        if (
+          Number.isNaN(
+            cooldownAvailableAt.getTime()
+          )
+        ) {
+          throw new InvalidPersistentCombatStateError(
+            "Victory cooldown timestamp is invalid."
+          );
+        }
+
+        const cooldownWrite =
+          await this.client.query(
+            `
+              INSERT INTO character_cooldowns (
+                character_id,
+                cooldown_type,
+                target_id,
+                available_at,
+                created_at,
+                updated_at
+              )
+              VALUES (
+                $1,
+                'Monster',
+                $2,
+                $3,
+                $4,
+                $4
+              )
+              ON CONFLICT (
+                character_id,
+                target_id
+              )
+              WHERE cooldown_type = 'Monster'
+              DO UPDATE
+              SET
+                available_at =
+                  EXCLUDED.available_at,
+                updated_at =
+                  EXCLUDED.updated_at
+            `,
+            [
+              this.locked.session
+                .characterId,
+              this.locked.session
+                .monsterId,
+              cooldownAvailableAt,
+              input.observedAt,
+            ]
+          );
+
+        if (cooldownWrite.rowCount !== 1) {
+          throw new InvalidPersistentCombatStateError(
+            "Victory cooldown could not be persisted."
+          );
+        }
+
+        cooldownApplied = true;
+
+        await this.injectSettlementFailure(
+          "victory.cooldown"
+        );
+      }
+    }
+
+    for (
+      const buff of
+      input.context.fightBuffs
+    ) {
+      if (
+        buff.durationRemaining === 1
+      ) {
+        const deletion =
+          await this.client.query(
+            `
+              DELETE FROM character_buffs
+              WHERE character_buff_id = $1
+                AND character_id = $2
+                AND duration_type = 'Fights'
+                AND duration_remaining = 1
+            `,
+            [
+              buff.characterBuffId,
+              this.locked.session
+                .characterId,
+            ]
+          );
+
+        if (deletion.rowCount !== 1) {
+          throw new InvalidPersistentCombatStateError(
+            "Fight-based buff could not be consumed."
+          );
+        }
+
+        await this.injectSettlementFailure(
+          "victory.fightBuff"
+        );
+
+        continue;
+      }
+
+      const decrement =
+        await this.client.query(
+          `
+            UPDATE character_buffs
+            SET
+              duration_remaining =
+                duration_remaining - 1,
+              updated_at = $3
+            WHERE character_buff_id = $1
+              AND character_id = $2
+              AND duration_type = 'Fights'
+              AND duration_remaining > 1
+          `,
+          [
+            buff.characterBuffId,
+            this.locked.session
+              .characterId,
+            input.observedAt,
+          ]
+        );
+
+      if (decrement.rowCount !== 1) {
+        throw new InvalidPersistentCombatStateError(
+          "Fight-based buff duration could not be decremented."
+        );
+      }
+    }
+
+    return {
+      bestiary: {
+        discovered:
+          bestiaryEntryInsert.rowCount ===
+          1,
+        killCount:
+          mapNonNegativeBigInt(
+            bestiaryRow.kill_count,
+            "victory.bestiary.kill_count"
+          ),
+      },
+      taskBoss: {
+        progressed: taskProgressed,
+        status: taskStatus,
+      },
+      cooldown: {
+        applied: cooldownApplied,
+        availableAt:
+          cooldownAvailableAt,
+      },
+      dailyBoss: {
+        updated:
+          dailyBossUpdated,
+        victoryRecorded:
+          dailyBossVictoryRecorded,
+      },
+    };
+  }
+
+  public async applyVictorySettlement(
+    input: ApplyVictorySettlementInput
+  ): Promise<CombatSettlement> {
+    if (
+      input.state.status !==
+      COMBAT_STATUS.playerVictory
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement requires a player Victory state."
+      );
+    }
+
+    if (
+      input.state.defeatReason !== null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement cannot contain a defeat reason."
+      );
+    }
+
+    if (
+      !(input.observedAt instanceof Date) ||
+      Number.isNaN(
+        input.observedAt.getTime()
+      )
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement time is invalid."
+      );
+    }
+
+    if (
+      input.observedAt.getTime() <
+      this.locked.session
+        .startedAt.getTime()
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory settlement cannot predate combat start."
+      );
+    }
+
+    await this.persistVictoryCore(
+      input
+    );
+
+    await this.injectSettlementFailure(
+      "victory.core"
+    );
+
+    const consequences =
+      await this.persistVictoryConsequences(
+        input
+      );
+
+    await this.injectSettlementFailure(
+      "victory.consequences"
+    );
+
+    const summary = {
+      version: 1,
+      outcome: "Victory",
+      defeatReason: null,
+
+      endingResources: {
+        health:
+          input.resourcesAfter
+            .currentHealth,
+        maximumHealth:
+          input.resourcesAfter
+            .maximumHealth,
+        mana:
+          input.resourcesAfter
+            .currentMana,
+        maximumMana:
+          input.resourcesAfter
+            .maximumMana,
+        energy:
+          input.resourcesAfter
+            .currentEnergy,
+        maximumEnergy:
+          input.resourcesAfter
+            .maximumEnergy,
+      },
+
+      turnCount: input.state.turn,
+
+      damage: {
+        dealt:
+          input.damageDealt
+            .toString(),
+        taken:
+          input.damageTaken
+            .toString(),
+        highestPhysicalHit:
+          input.highestPhysicalHit
+            .toString(),
+      },
+
+      rewards: {
+        baseExperience:
+          input.baseExperience
+            .toString(),
+        finalExperience:
+          input.experienceAwarded
+            .toString(),
+        baseGold:
+          input.baseGold
+            .toString(),
+        finalGold:
+          input.goldAwarded
+            .toString(),
+        experienceBonusBasisPoints:
+          input.experienceBonusBasisPoints
+            .toString(),
+        goldBonusBasisPoints:
+          input.goldBonusBasisPoints
+            .toString(),
+      },
+
+      progression: {
+        experienceBefore:
+          input.context.character
+            .experience
+            .toString(),
+        experienceAfter:
+          input.experienceAfter
+            .toString(),
+        goldBefore:
+          input.context.character
+            .gold
+            .toString(),
+        goldAfter:
+          input.goldAfter
+            .toString(),
+        levelBefore:
+          input.context.character
+            .level,
+        levelAfter:
+          input.levelAfter,
+        experienceLost: "0",
+      },
+
+      blessingConsumed: false,
+      bestiary:
+        consequences.bestiary,
+      taskBoss:
+        consequences.taskBoss,
+
+      cooldown: {
+        applied:
+          consequences.cooldown
+            .applied,
+        availableAt:
+          consequences.cooldown
+            .availableAt
+            ?.toISOString() ??
+          null,
+      },
+
+      dailyBoss:
+        consequences.dailyBoss,
+
+      fightBuffsConsumed:
+        input.context.fightBuffs
+          .length,
+    };
+
+    const logInsert =
+      await this.client.query(
+        `
+          INSERT INTO combat_logs (
+            combat_session_id,
+            character_id,
+            monster_id,
+            combat_result,
+            turn_count,
+            started_at,
+            ended_at,
+            combat_data_json,
+            created_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            'Victory',
+            $4,
+            $5,
+            $6,
+            $7::jsonb,
+            $6
+          )
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          input.state.turn,
+          this.locked.session
+            .startedAt,
+          input.observedAt,
+          JSON.stringify(
+            summary,
+            (_key, value: unknown) =>
+              typeof value === "bigint"
+                ? value.toString()
+                : value
+          ),
+        ]
+      );
+
+    if (logInsert.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Victory final combat log could not be created."
+      );
+    }
+
+    await this.injectSettlementFailure(
+      "victory.finalLog"
+    );
+
+    await this.client.query(
+      `
+        DELETE FROM combat_logs
+        WHERE combat_log_id IN (
+          SELECT combat_log_id
+          FROM combat_logs
+          WHERE character_id = $1
+          ORDER BY
+            created_at DESC,
+            combat_log_id DESC
+          OFFSET 10
+        )
+      `,
+      [
+        this.locked.session
+          .characterId,
+      ]
+    );
+
+    await this.injectSettlementFailure(
+      "victory.retention"
+    );
+
+    const finalSessionUpdate =
+      await this.client.query(
+        `
+          UPDATE combat_sessions
+          SET
+            status = 'Victory',
+            current_turn = $2,
+            character_health = $3,
+            monster_health = $4,
+            defeat_reason = NULL,
+            ended_at = $5,
+            settled_at = $5,
+            updated_at = $5
+          WHERE combat_session_id = $1
+            AND status = 'Active'
+            AND ended_at IS NULL
+            AND settled_at IS NULL
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+          input.state.turn,
+          input.state.player
+            .currentHealth,
+          input.state.monster
+            .currentHealth,
+          input.observedAt,
+        ]
+      );
+
+    if (
+      finalSessionUpdate.rowCount !== 1
+    ) {
+      throw new CombatSessionNotFoundError();
+    }
+
+    await this.injectSettlementFailure(
+      "victory.terminalSession"
+    );
+
+    return {
+      outcome: "Victory",
+
+      experience: {
+        before:
+          input.context.character
+            .experience,
+        awarded:
+          input.experienceAwarded,
+        lost: 0n,
+        after:
+          input.experienceAfter,
+      },
+
+      gold: {
+        before:
+          input.context.character
+            .gold,
+        baseRolled:
+          input.baseGold,
+        awarded:
+          input.goldAwarded,
+        after:
+          input.goldAfter,
+      },
+
+      level: {
+        before:
+          input.context.character
+            .level,
+        after:
+          input.levelAfter,
+        levelsChanged:
+          input.levelAfter -
+          input.context.character
+            .level,
+      },
+
+      blessingConsumed: false,
+
+      bestiary:
+        consequences.bestiary,
+
+      taskBoss:
+        consequences.taskBoss,
+
+      cooldown:
+        consequences.cooldown,
+
+      dailyBoss:
+        consequences.dailyBoss,
+
+      statistics: {
+        damageDealt:
+          input.damageDealt,
+        damageTaken:
+          input.damageTaken,
+        highestPhysicalHit:
+          input.highestPhysicalHit,
+      },
+
+      finalSummary: {
+        combatSessionId:
+          this.locked.session
+            .combatSessionId,
+        outcome: "Victory",
+        turnCount:
+          input.state.turn,
+        startedAt:
+          this.locked.session
+            .startedAt,
+        endedAt:
+          input.observedAt,
+      },
+    };
+  }
+
+  private async persistDefeatCore(
+    input: ApplyDefeatSettlementInput
+  ): Promise<void> {
+    if (
+      input.state.status !==
+      COMBAT_STATUS.playerDefeat
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat persistence requires a player Defeat state."
+      );
+    }
+
+    if (
+      input.state.defeatReason === null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat persistence requires a defeat reason."
+      );
+    }
+
+    if (
+      input.context.character.characterId !==
+      this.locked.session.characterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement character does not match the locked session."
+      );
+    }
+
+    if (
+      input.context.monster.monsterId !==
+      this.locked.session.monsterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement monster does not match the locked session."
+      );
+    }
+
+    if (
+      input.blessingConsumed !==
+      input.context.blessed
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat Blessing result does not match the locked settlement context."
+      );
+    }
+
+    await this.persistCombatEvents({
+      resolvedTurn:
+        input.resolvedTurn,
+      events: input.events,
+      observedAt: input.observedAt,
+    });
+
+    const characterUpdate =
+      await this.client.query(
+        `
+          UPDATE characters
+          SET
+            level = $2,
+            experience = $3,
+            gold = $4,
+            current_health = $5,
+            max_health = $6,
+            current_mana = $7,
+            max_mana = $8,
+            current_energy = $9,
+            max_energy = $10,
+            resources_updated_at = $11,
+            updated_at = $11
+          WHERE character_id = $1
+            AND status = 'IsActive'
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.levelAfter,
+          input.experienceAfter
+            .toString(),
+          input.goldAfter
+            .toString(),
+          input.resourcesAfter
+            .currentHealth,
+          input.resourcesAfter
+            .maximumHealth,
+          input.resourcesAfter
+            .currentMana,
+          input.resourcesAfter
+            .maximumMana,
+          input.resourcesAfter
+            .currentEnergy,
+          input.resourcesAfter
+            .maximumEnergy,
+          input.observedAt,
+        ]
+      );
+
+    if (
+      characterUpdate.rowCount !== 1
+    ) {
+      throw new CharacterNotFoundError();
+    }
+
+    await this.injectSettlementFailure(
+      "defeat.character"
+    );
+
+    const statisticsUpdate =
+      await this.client.query(
+        `
+          UPDATE character_statistics
+          SET
+            total_deaths = $2,
+            total_damage_dealt = $3,
+            total_damage_taken = $4,
+            highest_physical_hit = $5,
+            current_no_death_streak = $6,
+            longest_no_death_streak = $7,
+            updated_at = $8
+          WHERE character_id = $1
+        `,
+        [
+          this.locked.session
+            .characterId,
+          input.statisticsAfter
+            .totalDeaths
+            .toString(),
+          input.statisticsAfter
+            .totalDamageDealt
+            .toString(),
+          input.statisticsAfter
+            .totalDamageTaken
+            .toString(),
+          input.statisticsAfter
+            .highestPhysicalHit
+            .toString(),
+          input.statisticsAfter
+            .currentNoDeathStreak
+            .toString(),
+          input.statisticsAfter
+            .longestNoDeathStreak
+            .toString(),
+          input.observedAt,
+        ]
+      );
+
+    if (
+      statisticsUpdate.rowCount !== 1
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement could not update character statistics."
+      );
+    }
+
+    await this.injectSettlementFailure(
+      "defeat.statistics"
+    );
+
+    if (input.blessingConsumed) {
+      const blessingDeletion =
+        await this.client.query(
+          `
+            DELETE FROM character_blessings
+            WHERE character_id = $1
+          `,
+          [
+            this.locked.session
+              .characterId,
+          ]
+        );
+
+      if (
+        blessingDeletion.rowCount !== 1
+      ) {
+        throw new InvalidPersistentCombatStateError(
+          "Defeat Blessing could not be consumed."
+        );
+      }
+
+      await this.injectSettlementFailure(
+        "defeat.blessing"
+      );
+    }
+
+    for (
+      const buff of
+      input.context.fightBuffs
+    ) {
+      if (
+        buff.durationRemaining === 1
+      ) {
+        const deletion =
+          await this.client.query(
+            `
+              DELETE FROM character_buffs
+              WHERE character_buff_id = $1
+                AND character_id = $2
+                AND duration_type = 'Fights'
+                AND duration_remaining = 1
+            `,
+            [
+              buff.characterBuffId,
+              this.locked.session
+                .characterId,
+            ]
+          );
+
+        if (deletion.rowCount !== 1) {
+          throw new InvalidPersistentCombatStateError(
+            "Fight-based buff could not be consumed after Defeat."
+          );
+        }
+
+        await this.injectSettlementFailure(
+          "defeat.fightBuff"
+        );
+
+        continue;
+      }
+
+      const decrement =
+        await this.client.query(
+          `
+            UPDATE character_buffs
+            SET
+              duration_remaining =
+                duration_remaining - 1,
+              updated_at = $3
+            WHERE character_buff_id = $1
+              AND character_id = $2
+              AND duration_type = 'Fights'
+              AND duration_remaining > 1
+          `,
+          [
+            buff.characterBuffId,
+            this.locked.session
+              .characterId,
+            input.observedAt,
+          ]
+        );
+
+      if (decrement.rowCount !== 1) {
+        throw new InvalidPersistentCombatStateError(
+          "Fight-based buff duration could not be decremented after Defeat."
+        );
+      }
+    }
+  }
+
+  public async applyDefeatSettlement(
+    input: ApplyDefeatSettlementInput
+  ): Promise<CombatSettlement> {
+    if (
+      input.state.status !==
+      COMBAT_STATUS.playerDefeat
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement requires a player Defeat state."
+      );
+    }
+
+    if (
+      input.state.defeatReason === null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement requires a defeat reason."
+      );
+    }
+
+    if (
+      !(input.observedAt instanceof Date) ||
+      Number.isNaN(
+        input.observedAt.getTime()
+      )
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement time is invalid."
+      );
+    }
+
+    if (
+      input.observedAt.getTime() <
+      this.locked.session
+        .startedAt.getTime()
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement cannot predate combat start."
+      );
+    }
+
     const persistent =
       mapDomainStatusToPersistent(
         input.state
       );
 
-    const endedAt =
-      persistent.endedAtRequired
-        ? input.observedAt
-        : null;
+    if (
+      persistent.status !==
+        PERSISTENT_COMBAT_STATUS.defeat ||
+      persistent.defeatReason === null
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat settlement could not map the terminal state."
+      );
+    }
 
-    const update =
+    await this.persistDefeatCore(
+      input
+    );
+
+    await this.injectSettlementFailure(
+      "defeat.core"
+    );
+
+    const summary = {
+      version: 1,
+      outcome: "Defeat",
+      defeatReason:
+        persistent.defeatReason,
+
+      endingResources: {
+        health:
+          input.resourcesAfter
+            .currentHealth,
+        maximumHealth:
+          input.resourcesAfter
+            .maximumHealth,
+        mana:
+          input.resourcesAfter
+            .currentMana,
+        maximumMana:
+          input.resourcesAfter
+            .maximumMana,
+        energy:
+          input.resourcesAfter
+            .currentEnergy,
+        maximumEnergy:
+          input.resourcesAfter
+            .maximumEnergy,
+      },
+
+      turnCount:
+        input.state.turn,
+
+      damage: {
+        dealt:
+          input.damageDealt
+            .toString(),
+        taken:
+          input.damageTaken
+            .toString(),
+        highestPhysicalHit:
+          input.highestPhysicalHit
+            .toString(),
+      },
+
+      rewards: {
+        baseExperience: "0",
+        finalExperience: "0",
+        baseGold: "0",
+        finalGold: "0",
+        experienceBonusBasisPoints: "0",
+        goldBonusBasisPoints: "0",
+      },
+
+      progression: {
+        experienceBefore:
+          input.context.character
+            .experience
+            .toString(),
+        experienceAfter:
+          input.experienceAfter
+            .toString(),
+        experienceLost:
+          input.experienceLost
+            .toString(),
+        experienceLossPercent:
+          input.lossPercent,
+
+        goldBefore:
+          input.context.character
+            .gold
+            .toString(),
+        goldAfter:
+          input.goldAfter
+            .toString(),
+
+        levelBefore:
+          input.context.character
+            .level,
+        levelAfter:
+          input.levelAfter,
+      },
+
+      blessingConsumed:
+        input.blessingConsumed,
+
+      bestiary: {
+        discovered: false,
+        killCount: null,
+      },
+
+      taskBoss: {
+        progressed: false,
+        status:
+          input.context.task
+            ?.currentStatus ??
+          null,
+      },
+
+      cooldown: {
+        applied: false,
+        availableAt: null,
+      },
+
+      dailyBoss: {
+        updated: false,
+        victoryRecorded: false,
+      },
+
+      fightBuffsConsumed:
+        input.context.fightBuffs
+          .length,
+    };
+
+    const logInsert =
       await this.client.query(
         `
-          UPDATE combat_sessions
-          SET
-            status = $2,
-            current_turn = $3,
-            character_health = $4,
-            monster_health = $5,
-            defeat_reason = $6,
-            ended_at = $7,
-            updated_at = $8
-          WHERE combat_session_id = $1
-            AND status = 'Active'
+          INSERT INTO combat_logs (
+            combat_session_id,
+            character_id,
+            monster_id,
+            combat_result,
+            turn_count,
+            started_at,
+            ended_at,
+            combat_data_json,
+            created_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            'Defeat',
+            $4,
+            $5,
+            $6,
+            $7::jsonb,
+            $6
+          )
         `,
         [
           this.locked.session
             .combatSessionId,
-          persistent.status,
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          input.state.turn,
+          this.locked.session
+            .startedAt,
+          input.observedAt,
+          JSON.stringify(
+            summary,
+            (_key, value) =>
+              typeof value === "bigint"
+                ? value.toString()
+                : value
+          ),
+        ]
+      );
+
+    if (logInsert.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Defeat final combat log could not be created."
+      );
+    }
+
+    await this.injectSettlementFailure(
+      "defeat.finalLog"
+    );
+
+    await this.client.query(
+      `
+        DELETE FROM combat_logs
+        WHERE combat_log_id IN (
+          SELECT combat_log_id
+          FROM combat_logs
+          WHERE character_id = $1
+          ORDER BY
+            created_at DESC,
+            combat_log_id DESC
+          OFFSET 10
+        )
+      `,
+      [
+        this.locked.session
+          .characterId,
+      ]
+    );
+
+    await this.injectSettlementFailure(
+      "defeat.retention"
+    );
+
+    const finalSessionUpdate =
+      await this.client.query(
+        `
+          UPDATE combat_sessions
+          SET
+            status = 'Defeat',
+            current_turn = $2,
+            character_health = $3,
+            monster_health = $4,
+            defeat_reason = $5,
+            ended_at = $6,
+            settled_at = $6,
+            updated_at = $6
+          WHERE combat_session_id = $1
+            AND status = 'Active'
+            AND ended_at IS NULL
+            AND settled_at IS NULL
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
           input.state.turn,
           input.state.player
             .currentHealth,
           input.state.monster
             .currentHealth,
           persistent.defeatReason,
-          endedAt,
           input.observedAt,
         ]
       );
 
-    if (update.rowCount !== 1) {
+    if (
+      finalSessionUpdate.rowCount !== 1
+    ) {
       throw new CombatSessionNotFoundError();
     }
 
+    await this.injectSettlementFailure(
+      "defeat.terminalSession"
+    );
+
+    return {
+      outcome: "Defeat",
+
+      experience: {
+        before:
+          input.context.character
+            .experience,
+        awarded: 0n,
+        lost:
+          input.experienceLost,
+        after:
+          input.experienceAfter,
+      },
+
+      gold: {
+        before:
+          input.context.character
+            .gold,
+        baseRolled: 0n,
+        awarded: 0n,
+        after:
+          input.goldAfter,
+      },
+
+      level: {
+        before:
+          input.context.character
+            .level,
+        after:
+          input.levelAfter,
+        levelsChanged:
+          input.levelAfter -
+          input.context.character
+            .level,
+      },
+
+      blessingConsumed:
+        input.blessingConsumed,
+
+      bestiary: {
+        discovered: false,
+        killCount: null,
+      },
+
+      taskBoss: {
+        progressed: false,
+        status:
+          input.context.task
+            ?.currentStatus ??
+          null,
+      },
+
+      cooldown: {
+        applied: false,
+        availableAt: null,
+      },
+
+      dailyBoss: {
+        updated: false,
+        victoryRecorded: false,
+      },
+
+      statistics: {
+        damageDealt:
+          input.damageDealt,
+        damageTaken:
+          input.damageTaken,
+        highestPhysicalHit:
+          input.highestPhysicalHit,
+      },
+
+      finalSummary: {
+        combatSessionId:
+          this.locked.session
+            .combatSessionId,
+        outcome: "Defeat",
+        turnCount:
+          input.state.turn,
+        startedAt:
+          this.locked.session
+            .startedAt,
+        endedAt:
+          input.observedAt,
+      },
+    };
+  }
+
+  private async persistCombatEvents(
+    input: {
+      resolvedTurn: number;
+      events: readonly CombatEvent[];
+      observedAt: Date;
+    }
+  ): Promise<readonly PersistedCombatEvent[]> {
     const persistedEvents:
       PersistedCombatEvent[] = [];
 
@@ -3813,41 +7165,78 @@ class PostgresCombatActionTransaction
       );
     }
 
+    return persistedEvents;
+  }
+
+  private async persistCombatState(
+    input: PersistCombatActionInput
+  ): Promise<void> {
+    const persistent =
+      mapDomainStatusToPersistent(
+        input.state
+      );
+
+    const endedAt =
+      persistent.endedAtRequired
+        ? input.observedAt
+        : null;
+
+    const update =
+      await this.client.query(
+        `
+          UPDATE combat_sessions
+          SET
+            status = $2,
+            current_turn = $3,
+            character_health = $4,
+            monster_health = $5,
+            defeat_reason = $6,
+            ended_at = $7,
+            updated_at = $8
+          WHERE combat_session_id = $1
+            AND status = 'Active'
+        `,
+        [
+          this.locked.session
+            .combatSessionId,
+          persistent.status,
+          input.state.turn,
+          input.state.player
+            .currentHealth,
+          input.state.monster
+            .currentHealth,
+          persistent.defeatReason,
+          endedAt,
+          input.observedAt,
+        ]
+      );
+
+    if (update.rowCount !== 1) {
+      throw new CombatSessionNotFoundError();
+    }
+  }
+
+  public async persistAction(
+    input: PersistCombatActionInput
+  ): Promise<readonly PersistedCombatEvent[]> {
     if (
       input.state.status !==
       COMBAT_STATUS.inProgress
     ) {
-      const health =
-        input.state.status ===
-        COMBAT_STATUS.playerDefeat
-          ? 0
-          : input.state.player
-              .currentHealth;
-
-      const healthUpdate =
-        await this.client.query(
-          `
-            UPDATE characters
-            SET
-              current_health = $2,
-              updated_at = $3
-            WHERE character_id = $1
-              AND status = 'IsActive'
-          `,
-          [
-            this.locked.session
-              .characterId,
-            health,
-            input.observedAt,
-          ]
-        );
-
-      if (
-        healthUpdate.rowCount !== 1
-      ) {
-        throw new CharacterNotFoundError();
-      }
+      throw new InvalidPersistentCombatStateError(
+        "Terminal combat must use settlement persistence."
+      );
     }
+
+    const persistedEvents =
+      await this.persistCombatEvents({
+        resolvedTurn:
+          input.resolvedTurn,
+        events: input.events,
+        observedAt: input.observedAt,
+      });
+
+    await this.persistCombatState(input);
 
     return persistedEvents;
   }
@@ -3856,7 +7245,9 @@ class PostgresCombatActionTransaction
 export class PostgresCombatSessionRepository
   implements CombatSessionRepository {
   public constructor(
-    private readonly pool: Pool
+    private readonly pool: Pool,
+    private readonly options:
+      PostgresCombatSessionRepositoryOptions = {}
   ) {}
 
   public async withStartTransaction<TResult>(
@@ -3944,8 +7335,12 @@ export class PostgresCombatSessionRepository
                 cs.monster_attack,
                 cs.monster_defense,
                 cs.defeat_reason,
+                cs.monster_experience_reward,
+                cs.monster_gold_min,
+                cs.monster_gold_max,
                 cs.started_at,
-                cs.ended_at
+                cs.ended_at,
+                cs.settled_at
               FROM combat_sessions AS cs
               INNER JOIN characters AS c
                 ON c.character_id =
@@ -3983,7 +7378,10 @@ export class PostgresCombatSessionRepository
               session: mapped.session,
               combatState:
                 mapped.combatState,
-            }
+            },
+            input.observedAt,
+            this.options
+              .settlementFailureInjector
           );
 
         return operation(transaction);
@@ -4016,8 +7414,12 @@ export class PostgresCombatSessionRepository
             cs.monster_attack,
             cs.monster_defense,
             cs.defeat_reason,
+            cs.monster_experience_reward,
+            cs.monster_gold_min,
+            cs.monster_gold_max,
             cs.started_at,
-            cs.ended_at
+            cs.ended_at,
+            cs.settled_at
           FROM combat_sessions AS cs
           INNER JOIN characters AS c
             ON c.character_id =
@@ -4070,8 +7472,12 @@ export class PostgresCombatSessionRepository
             cs.monster_attack,
             cs.monster_defense,
             cs.defeat_reason,
+            cs.monster_experience_reward,
+            cs.monster_gold_min,
+            cs.monster_gold_max,
             cs.started_at,
-            cs.ended_at
+            cs.ended_at,
+            cs.settled_at
           FROM combat_sessions AS cs
           INNER JOIN characters AS c
             ON c.character_id =
@@ -4161,6 +7567,11 @@ export interface RandomSource {
     minimum: number,
     maximum: number
   ): number;
+
+  nextBigInt?(
+    minimum: bigint,
+    maximum: bigint
+  ): bigint;
 }
 
 ```
@@ -4875,14 +8286,14 @@ function modifierValue(
   return source?.[statistic] ?? 0;
 }
 
-function calculateLevelMaximumHealth(level: number): number {
+export function calculateLevelMaximumHealth(level: number): number {
   return (
     BASE_STATISTICS.maximumHealth +
     (level - 1) * 30
   );
 }
 
-function calculateLevelMaximumMana(level: number): number {
+export function calculateLevelMaximumMana(level: number): number {
   return (
     BASE_STATISTICS.maximumMana +
     (level - 1) * 15
@@ -7708,14 +11119,262 @@ function createFixture(
         monster: {
           ...state.monster,
         },
+    rewards: {
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
+    },
         startedAt:
           new Date(
             "2026-10-07T19:59:00.000Z"
           ),
         endedAt: null,
+        settledAt: null,
       },
       combatState: state,
     },
+    loadSettlementContext:
+      vi.fn(async () => ({
+        character: {
+          characterId: "character-1",
+          level: 1,
+          experience: 0n,
+          gold: 0n,
+          resources: {
+            currentHealth:
+              state.player.currentHealth,
+            maximumHealth: 180,
+            currentMana: 35,
+            maximumMana: 35,
+            currentEnergy: 100,
+            maximumEnergy: 100,
+            resourcesUpdatedAt:
+              new Date(
+                "2026-10-07T19:59:00.000Z"
+              ),
+          },
+        },
+
+        promoted: false,
+        blessed: false,
+
+        statistics: {
+          totalGoldEarned: 0n,
+          highestGoldOwned: 0n,
+          totalMonstersKilled: 0n,
+          totalBossesKilled: 0n,
+          totalDailyBossesKilled: 0n,
+          totalDeaths: 0n,
+          totalDamageDealt: 0n,
+          totalDamageTaken: 0n,
+          highestPhysicalHit: 0n,
+
+          strongestMonsterKilledId:
+            null,
+          strongestMonsterPowerScore:
+            null,
+          strongestBossKilledId:
+            null,
+          strongestBossPowerScore:
+            null,
+
+          currentNoDeathStreak: 0n,
+          longestNoDeathStreak: 0n,
+        },
+
+        rewardBonuses: {
+          goldBonusPercent: 0,
+          experienceBonusPercent: 0,
+        },
+
+        monster: {
+          monsterId: "monster-1",
+          monsterType: "Normal" as const,
+          powerScore: 10n,
+          cooldownSeconds: 30,
+          bossId: null,
+          bossType: null,
+          additionalCooldownSeconds: 0,
+        },
+
+        task: null,
+        dailyBoss: null,
+        fightBuffs: [],
+        events: [],
+      })),
+
+    applyVictorySettlement:
+      vi.fn(async (input) => ({
+        outcome: "Victory" as const,
+
+        experience: {
+          before:
+            input.context.character
+              .experience,
+          awarded:
+            input.experienceAwarded,
+          lost: 0n,
+          after:
+            input.experienceAfter,
+        },
+
+        gold: {
+          before:
+            input.context.character
+              .gold,
+          baseRolled:
+            input.baseGold,
+          awarded:
+            input.goldAwarded,
+          after:
+            input.goldAfter,
+        },
+
+        level: {
+          before:
+            input.context.character
+              .level,
+          after:
+            input.levelAfter,
+          levelsChanged:
+            input.levelAfter -
+            input.context.character
+              .level,
+        },
+
+        blessingConsumed: false,
+
+        bestiary: {
+          discovered: true,
+          killCount: 1n,
+        },
+
+        taskBoss: {
+          progressed: false,
+          status: null,
+        },
+
+        cooldown: {
+          applied: true,
+          availableAt:
+            new Date(
+              input.observedAt.getTime() +
+              30_000
+            ),
+        },
+
+        dailyBoss: {
+          updated: false,
+          victoryRecorded: false,
+        },
+
+        statistics: {
+          damageDealt:
+            input.damageDealt,
+          damageTaken:
+            input.damageTaken,
+          highestPhysicalHit:
+            input.highestPhysicalHit,
+        },
+
+        finalSummary: {
+          combatSessionId:
+            "session-1",
+          outcome: "Victory" as const,
+          turnCount:
+            input.state.turn,
+          startedAt:
+            new Date(
+              "2026-10-07T19:59:00.000Z"
+            ),
+          endedAt:
+            input.observedAt,
+        },
+      })),
+
+    applyDefeatSettlement:
+      vi.fn(async (input) => ({
+        outcome: "Defeat" as const,
+
+        experience: {
+          before:
+            input.context.character
+              .experience,
+          awarded: 0n,
+          lost:
+            input.experienceLost,
+          after:
+            input.experienceAfter,
+        },
+
+        gold: {
+          before:
+            input.context.character
+              .gold,
+          baseRolled: 0n,
+          awarded: 0n,
+          after:
+            input.goldAfter,
+        },
+
+        level: {
+          before:
+            input.context.character
+              .level,
+          after:
+            input.levelAfter,
+          levelsChanged:
+            input.levelAfter -
+            input.context.character
+              .level,
+        },
+
+        blessingConsumed:
+          input.blessingConsumed,
+
+        bestiary: {
+          discovered: false,
+          killCount: null,
+        },
+
+        taskBoss: {
+          progressed: false,
+          status: null,
+        },
+
+        cooldown: {
+          applied: false,
+          availableAt: null,
+        },
+
+        dailyBoss: {
+          updated: false,
+          victoryRecorded: false,
+        },
+
+        statistics: {
+          damageDealt:
+            input.damageDealt,
+          damageTaken:
+            input.damageTaken,
+          highestPhysicalHit:
+            input.highestPhysicalHit,
+        },
+
+        finalSummary: {
+          combatSessionId:
+            "session-1",
+          outcome: "Defeat" as const,
+          turnCount:
+            input.state.turn,
+          startedAt:
+            new Date(
+              "2026-10-07T19:59:00.000Z"
+            ),
+          endedAt:
+            input.observedAt,
+        },
+      })),
     persistAction,
   };
 
@@ -7814,6 +11473,8 @@ describe(
         status: "Active",
         currentTurn: 2,
         endedAt: null,
+        settledAt: null,
+        settlement: null,
       });
 
       expect(
@@ -8093,8 +11754,14 @@ CombatSessionSnapshot {
       attack: 15,
       defense: 8,
     },
+    rewards: {
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
+    },
     startedAt: observedAt,
     endedAt: null,
+    settledAt: null,
   };
 }
 
@@ -8112,6 +11779,9 @@ function createFixture(
       monsterType: MONSTER_TYPE.normal,
       level: 1,
       energyCost: 3,
+      experienceReward: 50n,
+      goldMinimum: 10n,
+      goldMaximum: 20n,
       maximumHealth: 80,
       attack: 15,
       defense: 8,
@@ -8134,6 +11804,9 @@ function createFixture(
       experienceBonusPercent: 0,
     }));
 
+  const consumeDailyBossAttempt =
+    vi.fn(async () => undefined);
+
   const updateCharacterResources =
     vi.fn(async () => undefined);
 
@@ -8147,6 +11820,7 @@ function createFixture(
       vi.fn(async () => false),
     findMonster,
     calculateCharacterStatistics,
+    consumeDailyBossAttempt,
     updateCharacterResources,
     createCombatSession,
   };
@@ -8191,6 +11865,7 @@ function createFixture(
     withStartTransaction,
     findMonster,
     calculateCharacterStatistics,
+    consumeDailyBossAttempt,
     updateCharacterResources,
     createCombatSession,
   };
@@ -8255,6 +11930,9 @@ describe("StartCombatService", () => {
       monsterMaximumHealth: 80,
       monsterAttack: 15,
       monsterDefense: 8,
+      monsterExperienceReward: 50n,
+      monsterGoldMinimum: 10n,
+      monsterGoldMaximum: 20n,
       startedAt: observedAt,
     });
 
@@ -8311,6 +11989,9 @@ describe("StartCombatService", () => {
       monsterType: MONSTER_TYPE.normal,
       level: 1,
       energyCost: 0,
+      experienceReward: 50n,
+      goldMinimum: 10n,
+      goldMaximum: 20n,
       maximumHealth: 80,
       attack: 15,
       defense: 8,
@@ -8412,6 +12093,9 @@ describe("StartCombatService", () => {
       monsterType: MONSTER_TYPE.normal,
       level: 20,
       energyCost: 3,
+      experienceReward: 50n,
+      goldMinimum: 10n,
+      goldMaximum: 20n,
       maximumHealth: 80,
       attack: 15,
       defense: 8,
@@ -8475,6 +12159,134 @@ describe("StartCombatService", () => {
     await expect(
       fixture.service.execute(input)
     ).rejects.toBe(failure);
+
+    expect(
+      fixture.createCombatSession
+    ).not.toHaveBeenCalled();
+  });
+
+  it("consumes a Daily Boss attempt before persisting resources", async () => {
+    const fixture = createFixture();
+
+    fixture.findMonster.mockResolvedValueOnce({
+      monsterId: "daily-monster-1",
+      monsterCode: "daily_dragon",
+      monsterType:
+        MONSTER_TYPE.dailyBoss,
+      level: 10,
+      energyCost: 3,
+      experienceReward: 100n,
+      goldMinimum: 20n,
+      goldMaximum: 30n,
+      maximumHealth: 200,
+      attack: 25,
+      defense: 12,
+      eligibility: {
+        isEligible: true,
+        reasons: [],
+      },
+      dailyBossAttempt: {
+        dailyBossDefinitionId:
+          "daily-definition-1",
+        dailyBossRotationId:
+          "daily-rotation-1",
+        attemptsLimit: 1,
+      },
+    });
+
+    await fixture.service.execute({
+      ...input,
+      monsterCode: "daily_dragon",
+    });
+
+    expect(
+      fixture.consumeDailyBossAttempt
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      fixture.consumeDailyBossAttempt
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monsterId: "daily-monster-1",
+        monsterType: "DailyBoss",
+        dailyBossAttempt: {
+          dailyBossDefinitionId:
+            "daily-definition-1",
+          dailyBossRotationId:
+            "daily-rotation-1",
+          attemptsLimit: 1,
+        },
+      })
+    );
+
+    expect(
+      fixture.consumeDailyBossAttempt
+        .mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      fixture.updateCharacterResources
+        .mock.invocationCallOrder[0]
+    );
+
+    expect(
+      fixture.updateCharacterResources
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      fixture.createCombatSession
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("stops Daily Boss start when attempt consumption fails", async () => {
+    const fixture = createFixture();
+
+    fixture.findMonster.mockResolvedValueOnce({
+      monsterId: "daily-monster-1",
+      monsterCode: "daily_dragon",
+      monsterType:
+        MONSTER_TYPE.dailyBoss,
+      level: 10,
+      energyCost: 3,
+      experienceReward: 100n,
+      goldMinimum: 20n,
+      goldMaximum: 30n,
+      maximumHealth: 200,
+      attack: 25,
+      defense: 12,
+      eligibility: {
+        isEligible: true,
+        reasons: [],
+      },
+      dailyBossAttempt: {
+        dailyBossDefinitionId:
+          "daily-definition-1",
+        dailyBossRotationId:
+          "daily-rotation-1",
+        attemptsLimit: 1,
+      },
+    });
+
+    const failure =
+      new Error(
+        "Daily Boss attempt failed."
+      );
+
+    fixture.consumeDailyBossAttempt
+      .mockRejectedValueOnce(failure);
+
+    await expect(
+      fixture.service.execute({
+        ...input,
+        monsterCode: "daily_dragon",
+      })
+    ).rejects.toBe(failure);
+
+    expect(
+      fixture.consumeDailyBossAttempt
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      fixture.updateCharacterResources
+    ).not.toHaveBeenCalled();
 
     expect(
       fixture.createCombatSession
@@ -8828,9 +12640,13 @@ PostgreSqlCombatSessionRow {
     monster_attack: "15",
     monster_defense: "8",
     defeat_reason: null,
+    monster_experience_reward: "50",
+    monster_gold_min: "10",
+    monster_gold_max: "20",
     started_at:
       new Date("2026-01-01T00:00:00.000Z"),
     ended_at: null,
+    settled_at: null,
   };
 }
 
@@ -8919,20 +12735,6 @@ describe("PostgreSQL combat mapper", () => {
       result.combatState.defeatReason
     ).toBe(
       COMBAT_DEFEAT_REASON.playerHealthDepleted
-    );
-  });
-
-  it("rejects an abandoned session because M4 has no abandoned state", () => {
-    const row = createRow();
-
-    row.status = "Abandoned";
-    row.ended_at =
-      new Date("2026-01-01T00:01:00.000Z");
-
-    expect(() =>
-      mapPostgreSqlCombatSessionRow(row)
-    ).toThrow(
-      InvalidPersistentCombatStateError
     );
   });
 
@@ -9998,8 +13800,11 @@ describe(
           `
             UPDATE combat_sessions
             SET
-              status = 'Abandoned',
-              ended_at = $2
+              status = 'Victory',
+              monster_health = 0,
+              defeat_reason = NULL,
+              ended_at = $2,
+              settled_at = $2
             WHERE combat_session_id = $1
           `,
           [
@@ -10031,7 +13836,8 @@ describe(
               fixture.combatSessionId,
           })
         ).resolves.toMatchObject({
-          status: "Abandoned",
+          status: "Victory",
+          defeatReason: null,
         });
       }
     );
@@ -10075,7 +13881,7 @@ const testPool = new Pool({
 });
 
 type SessionOverrides = {
-  status?: "Active" | "Victory" | "Defeat" | "Abandoned";
+  status?: "Active" | "Victory" | "Defeat";
   currentTurn?: number;
   characterHealth?: number;
   characterMaximumHealth?: number;
@@ -10091,6 +13897,10 @@ type SessionOverrides = {
     | string
     | null;
   endedAt?: Date | null;
+  settledAt?: Date | null;
+  monsterExperienceReward?: number;
+  monsterGoldMin?: number;
+  monsterGoldMax?: number;
 };
 
 let accountId: string;
@@ -10107,6 +13917,13 @@ async function insertCombatSession(
       : status === "Active"
         ? null
         : new Date();
+
+  const settledAt =
+    overrides.settledAt !== undefined
+      ? overrides.settledAt
+      : status === "Active"
+        ? null
+        : endedAt;
 
   const result = await testPool.query<{
     combat_session_id: string;
@@ -10128,13 +13945,18 @@ async function insertCombatSession(
         monster_maximum_health,
         monster_attack,
         monster_defense,
-        defeat_reason
+        defeat_reason,
+        settled_at,
+        monster_experience_reward,
+        monster_gold_min,
+        monster_gold_max
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         NOW() - INTERVAL '1 minute',
         $8,
-        $9, $10, $11, $12, $13, $14, $15
+        $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, $19
       )
       RETURNING combat_session_id
     `,
@@ -10154,6 +13976,10 @@ async function insertCombatSession(
       overrides.monsterAttack ?? 15,
       overrides.monsterDefense ?? 8,
       overrides.defeatReason ?? null,
+      settledAt,
+      overrides.monsterExperienceReward ?? 0,
+      overrides.monsterGoldMin ?? 0,
+      overrides.monsterGoldMax ?? 0,
     ]
   );
 
@@ -10176,7 +14002,7 @@ async function expectCheckViolation(
   });
 }
 
-describe("M5 persistent combat schema", () => {
+describe("M6 persistent combat schema", () => {
   beforeAll(async () => {
     const account = await createTestAccount(testPool);
     accountId = account.accountId;
@@ -10254,7 +14080,7 @@ describe("M5 persistent combat schema", () => {
     }
   });
 
-  it("contains the M5 snapshot columns and event table", async () => {
+  it("contains the M6 settlement schema", async () => {
     const columns = await testPool.query<{
       table_name: string;
       column_name: string;
@@ -10267,7 +14093,10 @@ describe("M5 persistent combat schema", () => {
         WHERE table_schema = 'public'
           AND table_name IN (
             'combat_sessions',
-            'combat_session_events'
+            'combat_session_events',
+            'monsters',
+            'character_blessings',
+            'character_statistics'
           )
       `
     );
@@ -10303,6 +14132,27 @@ describe("M5 persistent combat schema", () => {
     )).toBe(true);
     expect(names.has(
       "combat_sessions.defeat_reason"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.settled_at"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.monster_experience_reward"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.monster_gold_min"
+    )).toBe(true);
+    expect(names.has(
+      "combat_sessions.monster_gold_max"
+    )).toBe(true);
+    expect(names.has(
+      "monsters.experience_reward"
+    )).toBe(true);
+    expect(names.has(
+      "character_blessings.character_id"
+    )).toBe(true);
+    expect(names.has(
+      "character_statistics.current_no_death_streak"
     )).toBe(true);
     expect(names.has(
       "combat_session_events.event_data_json"
@@ -10379,11 +14229,6 @@ describe("M5 persistent combat schema", () => {
       characterHealth: 0,
       defeatReason: "PlayerHealthDepleted",
     });
-
-    await insertCombatSession({
-      status: "Abandoned",
-      defeatReason: null,
-    });
   });
 
   it("rejects inconsistent status and defeat reason combinations", async () => {
@@ -10410,8 +14255,17 @@ describe("M5 persistent combat schema", () => {
 
     await expectCheckViolation(() =>
       insertCombatSession({
-        status: "Abandoned",
-        defeatReason: "TurnLimitExceeded",
+        status: "Victory",
+        settledAt: null,
+      })
+    );
+
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        status: "Defeat",
+        characterHealth: 0,
+        defeatReason: "PlayerHealthDepleted",
+        settledAt: null,
       })
     );
   });
@@ -10423,6 +14277,119 @@ describe("M5 persistent combat schema", () => {
         defeatReason: "UnsupportedReason",
       })
     );
+  });
+
+  it("rejects invalid reward snapshots", async () => {
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        monsterExperienceReward: -1,
+      })
+    );
+
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        monsterGoldMin: -1,
+      })
+    );
+
+    await expectCheckViolation(() =>
+      insertCombatSession({
+        monsterGoldMin: 10,
+        monsterGoldMax: 9,
+      })
+    );
+  });
+
+  it("enforces one active Blessing per character", async () => {
+    await testPool.query(
+      `
+        INSERT INTO character_blessings (
+          character_id,
+          activated_at
+        )
+        VALUES ($1, NOW())
+      `,
+      [characterId]
+    );
+
+    await expect(
+      testPool.query(
+        `
+          INSERT INTO character_blessings (
+            character_id,
+            activated_at
+          )
+          VALUES ($1, NOW())
+        `,
+        [characterId]
+      )
+    ).rejects.toMatchObject({
+      code: "23505",
+    });
+
+    await testPool.query(
+      `
+        DELETE FROM character_blessings
+        WHERE character_id = $1
+      `,
+      [characterId]
+    );
+  });
+
+  it("rejects negative M6 progression values", async () => {
+    await testPool.query(
+      `
+        INSERT INTO character_statistics (
+          character_id
+        )
+        VALUES ($1)
+        ON CONFLICT (character_id) DO NOTHING
+      `,
+      [characterId]
+    );
+
+    await expect(
+      testPool.query(
+        `
+          UPDATE monsters
+          SET experience_reward = -1
+          WHERE monster_id = $1
+        `,
+        [monsterId]
+      )
+    ).rejects.toMatchObject({
+      code: "23514",
+    });
+
+    await expect(
+      testPool.query(
+        `
+          UPDATE character_statistics
+          SET current_no_death_streak = -1
+          WHERE character_id = $1
+        `,
+        [characterId]
+      )
+    ).rejects.toMatchObject({
+      code: "23514",
+    });
+  });
+
+  it("contains the recent combat-log index", async () => {
+    const result = await testPool.query<{
+      indexname: string;
+    }>(
+      `
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'combat_logs'
+          AND indexname =
+            'ix_combat_logs_character_recent'
+      `
+    );
+
+    expect(result.rows).toHaveLength(1);
   });
 
   it("rejects duplicate event positions in one turn", async () => {
@@ -10584,6 +14551,7 @@ import {
 } from "../../../src/modules/combat/domain/combat.constants.js";
 import {
   PostgresCombatSessionRepository,
+  type CombatSettlementFailurePoint,
 } from "../../../src/modules/combat/infrastructure/postgres-combat-session.repository.js";
 import type {
   RandomSource,
@@ -10633,6 +14601,27 @@ class MissRandomSource
   implements RandomSource {
   public nextFloat(): number {
     return 0.99;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    void maximum;
+    return minimum;
+  }
+}
+
+class DefeatRandomSource
+  implements RandomSource {
+  private floatCall = 0;
+
+  public nextFloat(): number {
+    this.floatCall += 1;
+
+    return this.floatCall === 1
+      ? 0.99
+      : 0;
   }
 
   public nextInt(
@@ -10751,6 +14740,148 @@ async function createFixture(
   };
 }
 
+type RollbackState = {
+  status: string;
+  current_turn: number;
+  session_health: number;
+  monster_health: number;
+  defeat_reason: string | null;
+  ended_at: Date | null;
+  settled_at: Date | null;
+  level: number;
+  experience: string;
+  gold: string;
+  character_health: string;
+  total_gold_earned: string;
+  total_monsters_killed: string;
+  total_deaths: string;
+  total_damage_dealt: string;
+  total_damage_taken: string;
+  highest_physical_hit: string;
+  event_count: string;
+  log_count: string;
+  bestiary_entry_count: string;
+  bestiary_statistics_count: string;
+  cooldown_count: string;
+  blessing_count: string;
+  fight_buff_count: string;
+  fight_buff_duration: string | null;
+};
+
+async function readRollbackState(
+  fixture: Fixture
+): Promise<RollbackState> {
+  const result =
+    await testPool.query<RollbackState>(
+      `
+        SELECT
+          cs.status,
+          cs.current_turn,
+          cs.character_health
+            AS session_health,
+          cs.monster_health,
+          cs.defeat_reason,
+          cs.ended_at,
+          cs.settled_at,
+          character.level,
+          character.experience,
+          character.gold,
+          character.current_health
+            AS character_health,
+          statistics.total_gold_earned,
+          statistics.total_monsters_killed,
+          statistics.total_deaths,
+          statistics.total_damage_dealt,
+          statistics.total_damage_taken,
+          statistics.highest_physical_hit,
+          (
+            SELECT COUNT(*)::text
+            FROM combat_session_events
+            WHERE combat_session_id =
+              cs.combat_session_id
+          ) AS event_count,
+          (
+            SELECT COUNT(*)::text
+            FROM combat_logs
+            WHERE combat_session_id =
+              cs.combat_session_id
+          ) AS log_count,
+          (
+            SELECT COUNT(*)::text
+            FROM bestiary_entries
+            WHERE character_id =
+              cs.character_id
+              AND monster_id =
+                cs.monster_id
+          ) AS bestiary_entry_count,
+          (
+            SELECT COUNT(*)::text
+            FROM bestiary_statistics
+            WHERE character_id =
+              cs.character_id
+              AND monster_id =
+                cs.monster_id
+          ) AS bestiary_statistics_count,
+          (
+            SELECT COUNT(*)::text
+            FROM character_cooldowns
+            WHERE character_id =
+              cs.character_id
+              AND target_id =
+                cs.monster_id
+          ) AS cooldown_count,
+          (
+            SELECT COUNT(*)::text
+            FROM character_blessings
+            WHERE character_id =
+              cs.character_id
+          ) AS blessing_count,
+          (
+            SELECT COUNT(*)::text
+            FROM character_buffs
+            WHERE character_id =
+              cs.character_id
+              AND duration_type =
+                'Fights'
+          ) AS fight_buff_count,
+          (
+            SELECT
+              MAX(
+                duration_remaining
+              )::text
+            FROM character_buffs
+            WHERE character_id =
+              cs.character_id
+              AND duration_type =
+                'Fights'
+          ) AS fight_buff_duration
+        FROM combat_sessions AS cs
+        INNER JOIN characters
+          AS character
+          ON character.character_id =
+            cs.character_id
+        INNER JOIN character_statistics
+          AS statistics
+          ON statistics.character_id =
+            cs.character_id
+        WHERE cs.combat_session_id = $1
+      `,
+      [
+        fixture.combatSessionId,
+      ]
+    );
+
+  const state = result.rows[0];
+
+  if (!state) {
+    throw new Error(
+      "Rollback state was not found."
+    );
+  }
+
+  return state;
+}
+
 function createService(
   randomSource: RandomSource
 ): ResolveCombatActionService {
@@ -10802,6 +14933,69 @@ describe(
     afterAll(async () => {
       await testPool.end();
     });
+
+    it(
+      "loads authoritative settlement context under transaction locks",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        const context =
+          await combatRepository
+            .withActionTransaction(
+              {
+                accountId:
+                  fixture.accountId,
+                characterId:
+                  fixture.characterId,
+                observedAt,
+              },
+              async (transaction) =>
+                transaction
+                  .loadSettlementContext()
+            );
+
+        expect(context).toMatchObject({
+          character: {
+            characterId:
+              fixture.characterId,
+            level: 1,
+            experience: 0n,
+            gold: 0n,
+          },
+          promoted: false,
+          blessed: false,
+          rewardBonuses: {
+            goldBonusPercent: 0,
+            experienceBonusPercent: 0,
+          },
+          statistics: {
+            totalGoldEarned: 0n,
+            totalMonstersKilled: 0n,
+            totalDeaths: 0n,
+            currentNoDeathStreak: 0n,
+          },
+        });
+
+        expect(
+          context.character.resources
+            .currentHealth
+        ).toBeGreaterThanOrEqual(0);
+
+        expect(
+          context.monster.powerScore
+        ).toBeGreaterThanOrEqual(0n);
+
+        expect(
+          context.monster.cooldownSeconds
+        ).toBeGreaterThanOrEqual(0);
+
+        expect(context.events).toEqual([]);
+        expect(context.fightBuffs).toEqual([]);
+        expect(context.task).toBeNull();
+        expect(context.dailyBoss).toBeNull();
+      }
+    );
 
     it(
       "persists the next state and ordered events atomically",
@@ -10994,6 +15188,2172 @@ describe(
         expect(
           stored.rows[0]?.current_health
         ).toBe("100");
+      }
+    );
+
+    it(
+      "persists Health-depletion Defeat and applies death progression",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              level = 3,
+              experience = 220,
+              current_health = 5,
+              max_health = 240,
+              current_mana = 60,
+              max_mana = 65,
+              current_energy = 90,
+              max_energy = 100
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET
+              character_health = 5,
+              character_maximum_health = 240
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const service = createService(
+          new DefeatRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(result).toMatchObject({
+          status: "Defeat",
+          defeatReason:
+            "PlayerHealthDepleted",
+          currentTurn: 1,
+          endedAt: observedAt,
+          settledAt: observedAt,
+
+          player: {
+            currentHealth: 0,
+          },
+
+          settlement: {
+            outcome: "Defeat",
+
+            experience: {
+              before: 220n,
+              awarded: 0n,
+              lost: 22n,
+              after: 198n,
+            },
+
+            gold: {
+              awarded: 0n,
+            },
+
+            level: {
+              before: 3,
+              after: 2,
+              levelsChanged: -1,
+            },
+
+            blessingConsumed: false,
+          },
+        });
+
+        const stored =
+          await testPool.query<{
+            status: string;
+            defeat_reason: string | null;
+            ended_at: Date | null;
+            settled_at: Date | null;
+            session_health: number;
+            character_health: string;
+            level: number;
+            experience: string;
+            total_deaths: string;
+            current_no_death_streak: string;
+            log_count: string;
+          }>(
+            `
+              SELECT
+                cs.status,
+                cs.defeat_reason,
+                cs.ended_at,
+                cs.settled_at,
+                cs.character_health
+                  AS session_health,
+                c.current_health
+                  AS character_health,
+                c.level,
+                c.experience,
+                statistics.total_deaths,
+                statistics.current_no_death_streak,
+                COUNT(logs.combat_log_id)::text
+                  AS log_count
+              FROM combat_sessions AS cs
+              INNER JOIN characters AS c
+                ON c.character_id =
+                  cs.character_id
+              INNER JOIN character_statistics
+                AS statistics
+                ON statistics.character_id =
+                  c.character_id
+              LEFT JOIN combat_logs AS logs
+                ON logs.combat_session_id =
+                  cs.combat_session_id
+              WHERE cs.combat_session_id = $1
+              GROUP BY
+                cs.combat_session_id,
+                c.character_id,
+                statistics.character_id,
+                statistics.total_deaths,
+                statistics.current_no_death_streak
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        expect(stored.rows[0]).toEqual({
+          status: "Defeat",
+          defeat_reason:
+            "PlayerHealthDepleted",
+          ended_at: observedAt,
+          settled_at: observedAt,
+          session_health: "0",
+          character_health: "0",
+          level: 2,
+          experience: "198",
+          total_deaths: "1",
+          current_no_death_streak: "0",
+          log_count: "1",
+        });
+      }
+    );
+
+    it(
+      "retains ten newest final logs without deleting old sessions or events",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const historicalSessionIds:
+          string[] = [];
+
+        for (
+          let index = 0;
+          index < 10;
+          index += 1
+        ) {
+          const endedAt =
+            new Date(
+              observedAt.getTime() -
+              (10 - index) * 60_000
+            );
+
+          const startedAt =
+            new Date(
+              endedAt.getTime() -
+              30_000
+            );
+
+          const sessionInsert =
+            await testPool.query<{
+              combat_session_id: string;
+            }>(
+              `
+                INSERT INTO combat_sessions (
+                  character_id,
+                  monster_id,
+                  status,
+                  current_turn,
+                  character_health,
+                  character_mana,
+                  monster_health,
+                  started_at,
+                  ended_at,
+                  character_maximum_health,
+                  character_attack,
+                  character_defense,
+                  monster_maximum_health,
+                  monster_attack,
+                  monster_defense,
+                  defeat_reason,
+                  settled_at,
+                  monster_experience_reward,
+                  monster_gold_min,
+                  monster_gold_max
+                )
+                SELECT
+                  character_id,
+                  monster_id,
+                  'Victory',
+                  1,
+                  character_health,
+                  character_mana,
+                  0,
+                  $2,
+                  $3,
+                  character_maximum_health,
+                  character_attack,
+                  character_defense,
+                  monster_maximum_health,
+                  monster_attack,
+                  monster_defense,
+                  NULL,
+                  $3,
+                  monster_experience_reward,
+                  monster_gold_min,
+                  monster_gold_max
+                FROM combat_sessions
+                WHERE combat_session_id = $1
+                RETURNING
+                  combat_session_id
+              `,
+              [
+                fixture.combatSessionId,
+                startedAt,
+                endedAt,
+              ]
+            );
+
+          const historicalSessionId =
+            sessionInsert.rows[0]
+              ?.combat_session_id;
+
+          if (!historicalSessionId) {
+            throw new Error(
+              "Historical combat session was not created."
+            );
+          }
+
+          historicalSessionIds.push(
+            historicalSessionId
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO combat_logs (
+                combat_session_id,
+                character_id,
+                monster_id,
+                combat_result,
+                turn_count,
+                started_at,
+                ended_at,
+                combat_data_json,
+                created_at
+              )
+              SELECT
+                combat_session_id,
+                character_id,
+                monster_id,
+                'Victory',
+                1,
+                started_at,
+                ended_at,
+                jsonb_build_object(
+                  'version',
+                  1,
+                  'sequence',
+                  $2::integer
+                ),
+                ended_at
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              historicalSessionId,
+              index + 1,
+            ]
+          );
+        }
+
+        const oldestSessionId =
+          historicalSessionIds[0];
+
+        if (!oldestSessionId) {
+          throw new Error(
+            "Oldest historical session is missing."
+          );
+        }
+
+        await testPool.query(
+          `
+            INSERT INTO combat_session_events (
+              combat_session_id,
+              turn_number,
+              event_order,
+              event_type,
+              event_data_json,
+              created_at
+            )
+            VALUES (
+              $1,
+              1,
+              0,
+              'AttackResolved',
+              $2::jsonb,
+              $3
+            )
+          `,
+          [
+            oldestSessionId,
+            JSON.stringify({
+              type:
+                "AttackResolved",
+              attacker: "Player",
+              defender: "Monster",
+              hit: true,
+              critical: false,
+              damage: 1,
+            }),
+            new Date(
+              observedAt.getTime() -
+              10 * 60_000
+            ),
+          ]
+        );
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        const result =
+          await service.execute(
+            actionInput(fixture)
+          );
+
+        expect(
+          result.settlement
+        ).toMatchObject({
+          outcome: "Victory",
+          finalSummary: {
+            combatSessionId:
+              fixture.combatSessionId,
+            outcome: "Victory",
+            endedAt: observedAt,
+          },
+        });
+
+        const retainedLogs =
+          await testPool.query<{
+            combat_session_id: string;
+            created_at: Date;
+            combat_data_json: {
+              version?: number;
+              outcome?: string;
+              sequence?: number;
+            };
+          }>(
+            `
+              SELECT
+                combat_session_id,
+                created_at,
+                combat_data_json
+              FROM combat_logs
+              WHERE character_id = $1
+              ORDER BY
+                created_at DESC,
+                combat_log_id DESC
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+        expect(
+          retainedLogs.rows
+        ).toHaveLength(10);
+
+        expect(
+          retainedLogs.rows[0]
+            ?.combat_session_id
+        ).toBe(
+          fixture.combatSessionId
+        );
+
+        expect(
+          retainedLogs.rows[0]
+            ?.combat_data_json
+        ).toMatchObject({
+          version: 1,
+          outcome: "Victory",
+        });
+
+        expect(
+          retainedLogs.rows.some(
+            (row) =>
+              row.combat_session_id ===
+              oldestSessionId
+          )
+        ).toBe(false);
+
+        const preserved =
+          await testPool.query<{
+            session_count: string;
+            event_count: string;
+          }>(
+            `
+              SELECT
+                (
+                  SELECT COUNT(*)::text
+                  FROM combat_sessions
+                  WHERE combat_session_id = $1
+                ) AS session_count,
+                (
+                  SELECT COUNT(*)::text
+                  FROM combat_session_events
+                  WHERE combat_session_id = $1
+                ) AS event_count
+            `,
+            [
+              oldestSessionId,
+            ]
+          );
+
+        expect(
+          preserved.rows[0]
+        ).toEqual({
+          session_count: "1",
+          event_count: "1",
+        });
+
+        const totalSessions =
+          await testPool.query<{
+            count: string;
+          }>(
+            `
+              SELECT COUNT(*)::text
+                AS count
+              FROM combat_sessions
+              WHERE character_id = $1
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+        expect(
+          totalSessions.rows[0]?.count
+        ).toBe("11");
+      }
+    );
+
+    it(
+      "isolates retention per character and resolves timestamp ties by log id",
+      async () => {
+        const primary =
+          await createFixture(10);
+
+        const secondary =
+          await createFixture(100);
+
+        const tiedCreatedAt =
+          new Date(
+            observedAt.getTime() -
+            60_000
+          );
+
+        const primaryLogIds = [
+          "00000000-0000-0000-0000-000000000001",
+          "00000000-0000-0000-0000-000000000002",
+          "00000000-0000-0000-0000-000000000003",
+          "00000000-0000-0000-0000-000000000004",
+          "00000000-0000-0000-0000-000000000005",
+          "00000000-0000-0000-0000-000000000006",
+          "00000000-0000-0000-0000-000000000007",
+          "00000000-0000-0000-0000-000000000008",
+          "00000000-0000-0000-0000-000000000009",
+          "00000000-0000-0000-0000-00000000000a",
+        ] as const;
+
+        const secondaryLogIds = [
+          "00000000-0000-0000-0000-000000000011",
+          "00000000-0000-0000-0000-000000000012",
+          "00000000-0000-0000-0000-000000000013",
+          "00000000-0000-0000-0000-000000000014",
+          "00000000-0000-0000-0000-000000000015",
+          "00000000-0000-0000-0000-000000000016",
+          "00000000-0000-0000-0000-000000000017",
+          "00000000-0000-0000-0000-000000000018",
+          "00000000-0000-0000-0000-000000000019",
+          "00000000-0000-0000-0000-00000000001a",
+        ] as const;
+
+        const insertHistoricalLog =
+          async (
+            fixture: Fixture,
+            combatLogId: string,
+            sequence: number
+          ): Promise<string> => {
+            const startedAt =
+              new Date(
+                tiedCreatedAt.getTime() -
+                30_000
+              );
+
+            const sessionInsert =
+              await testPool.query<{
+                combat_session_id: string;
+              }>(
+                `
+                  INSERT INTO combat_sessions (
+                    character_id,
+                    monster_id,
+                    status,
+                    current_turn,
+                    character_health,
+                    character_mana,
+                    monster_health,
+                    started_at,
+                    ended_at,
+                    character_maximum_health,
+                    character_attack,
+                    character_defense,
+                    monster_maximum_health,
+                    monster_attack,
+                    monster_defense,
+                    defeat_reason,
+                    settled_at,
+                    monster_experience_reward,
+                    monster_gold_min,
+                    monster_gold_max
+                  )
+                  SELECT
+                    character_id,
+                    monster_id,
+                    'Victory',
+                    1,
+                    character_health,
+                    character_mana,
+                    0,
+                    $2,
+                    $3,
+                    character_maximum_health,
+                    character_attack,
+                    character_defense,
+                    monster_maximum_health,
+                    monster_attack,
+                    monster_defense,
+                    NULL,
+                    $3,
+                    monster_experience_reward,
+                    monster_gold_min,
+                    monster_gold_max
+                  FROM combat_sessions
+                  WHERE combat_session_id = $1
+                  RETURNING
+                    combat_session_id
+                `,
+                [
+                  fixture.combatSessionId,
+                  startedAt,
+                  tiedCreatedAt,
+                ]
+              );
+
+            const sessionId =
+              sessionInsert.rows[0]
+                ?.combat_session_id;
+
+            if (!sessionId) {
+              throw new Error(
+                "Historical session was not created."
+              );
+            }
+
+            await testPool.query(
+              `
+                INSERT INTO combat_logs (
+                  combat_log_id,
+                  combat_session_id,
+                  character_id,
+                  monster_id,
+                  combat_result,
+                  turn_count,
+                  started_at,
+                  ended_at,
+                  combat_data_json,
+                  created_at
+                )
+                SELECT
+                  $2::uuid,
+                  combat_session_id,
+                  character_id,
+                  monster_id,
+                  'Victory',
+                  1,
+                  started_at,
+                  ended_at,
+                  jsonb_build_object(
+                    'version',
+                    1,
+                    'sequence',
+                    $3::integer
+                  ),
+                  $4
+                FROM combat_sessions
+                WHERE combat_session_id = $1
+              `,
+              [
+                sessionId,
+                combatLogId,
+                sequence,
+                tiedCreatedAt,
+              ]
+            );
+
+            return sessionId;
+          };
+
+        const primarySessionIds:
+          string[] = [];
+
+        for (
+          let index = 0;
+          index < primaryLogIds.length;
+          index += 1
+        ) {
+          const logId =
+            primaryLogIds[index];
+
+          if (!logId) {
+            throw new Error(
+              "Primary log ID is missing."
+            );
+          }
+
+          primarySessionIds.push(
+            await insertHistoricalLog(
+              primary,
+              logId,
+              index + 1
+            )
+          );
+        }
+
+        for (
+          let index = 0;
+          index < secondaryLogIds.length;
+          index += 1
+        ) {
+          const logId =
+            secondaryLogIds[index];
+
+          if (!logId) {
+            throw new Error(
+              "Secondary log ID is missing."
+            );
+          }
+
+          await insertHistoricalLog(
+            secondary,
+            logId,
+            index + 1
+          );
+        }
+
+        const service = createService(
+          new VictoryRandomSource()
+        );
+
+        await service.execute(
+          actionInput(primary)
+        );
+
+        const primaryLogs =
+          await testPool.query<{
+            combat_log_id: string;
+            combat_session_id: string;
+          }>(
+            `
+              SELECT
+                combat_log_id,
+                combat_session_id
+              FROM combat_logs
+              WHERE character_id = $1
+              ORDER BY
+                created_at DESC,
+                combat_log_id DESC
+            `,
+            [
+              primary.characterId,
+            ]
+          );
+
+        expect(
+          primaryLogs.rows
+        ).toHaveLength(10);
+
+        expect(
+          primaryLogs.rows[0]
+            ?.combat_session_id
+        ).toBe(
+          primary.combatSessionId
+        );
+
+        expect(
+          primaryLogs.rows.some(
+            (row) =>
+              row.combat_log_id ===
+              primaryLogIds[0]
+          )
+        ).toBe(false);
+
+        for (
+          const retainedId of
+          primaryLogIds.slice(1)
+        ) {
+          expect(
+            primaryLogs.rows.some(
+              (row) =>
+                row.combat_log_id ===
+                retainedId
+            )
+          ).toBe(true);
+        }
+
+        const secondaryLogs =
+          await testPool.query<{
+            combat_log_id: string;
+          }>(
+            `
+              SELECT combat_log_id
+              FROM combat_logs
+              WHERE character_id = $1
+              ORDER BY
+                created_at DESC,
+                combat_log_id DESC
+            `,
+            [
+              secondary.characterId,
+            ]
+          );
+
+        expect(
+          secondaryLogs.rows
+        ).toHaveLength(10);
+
+        expect(
+          secondaryLogs.rows.map(
+            (row) =>
+              row.combat_log_id
+          )
+        ).toEqual(
+          [...secondaryLogIds].reverse()
+        );
+
+        const deletedLogSession =
+          primarySessionIds[0];
+
+        if (!deletedLogSession) {
+          throw new Error(
+            "Deleted log session is missing."
+          );
+        }
+
+        const preservedSession =
+          await testPool.query<{
+            count: string;
+          }>(
+            `
+              SELECT COUNT(*)::text
+                AS count
+              FROM combat_sessions
+              WHERE combat_session_id = $1
+            `,
+            [
+              deletedLogSession,
+            ]
+          );
+
+        expect(
+          preservedSession.rows[0]
+            ?.count
+        ).toBe("1");
+      }
+    );
+
+    it(
+      "rolls back every main Victory settlement phase",
+      async () => {
+        const points:
+          CombatSettlementFailurePoint[] = [
+            "victory.character",
+            "victory.statistics",
+            "victory.core",
+            "victory.bestiary",
+            "victory.consequences",
+            "victory.finalLog",
+            "victory.retention",
+            "victory.terminalSession",
+          ];
+
+        for (const point of points) {
+          const fixture =
+            await createFixture(10);
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          const failure =
+            new Error(
+              `Injected failure at ${point}.`
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (currentPoint) => {
+                    if (
+                      currentPoint === point
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new VictoryRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            after,
+            `Rollback mismatch at ${point}`
+          ).toEqual(before);
+        }
+      }
+    );
+
+    it(
+      "rolls back every main Defeat settlement phase",
+      async () => {
+        const points:
+          CombatSettlementFailurePoint[] = [
+            "defeat.character",
+            "defeat.statistics",
+            "defeat.core",
+            "defeat.finalLog",
+            "defeat.retention",
+            "defeat.terminalSession",
+          ];
+
+        for (const point of points) {
+          const fixture =
+            await createFixture();
+
+          await testPool.query(
+            `
+              UPDATE characters
+              SET
+                level = 3,
+                experience = 220,
+                current_health = 5,
+                max_health = 240,
+                current_mana = 60,
+                max_mana = 65,
+                current_energy = 90,
+                max_energy = 100
+              WHERE character_id = $1
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET
+                character_health = 5,
+                character_maximum_health =
+                  240
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          const failure =
+            new Error(
+              `Injected failure at ${point}.`
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (currentPoint) => {
+                    if (
+                      currentPoint === point
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new DefeatRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            after,
+            `Rollback mismatch at ${point}`
+          ).toEqual(before);
+        }
+      }
+    );
+
+    it(
+      "rolls back Victory when cooldown persistence is followed by failure",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions
+                AS session
+              INNER JOIN monsters
+                AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE
+                session.combat_session_id =
+                  $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown rollback monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            before.cooldown_count
+          ).toBe("0");
+
+          const failure =
+            new Error(
+              "Injected failure at victory.cooldown."
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (point) => {
+                    if (
+                      point ===
+                      "victory.cooldown"
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new VictoryRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(after).toEqual(before);
+          expect(
+            after.cooldown_count
+          ).toBe("0");
+          expect(after.status).toBe(
+            "Active"
+          );
+          expect(after.log_count).toBe(
+            "0"
+          );
+          expect(after.event_count).toBe(
+            "0"
+          );
+        }
+        finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+
+    it(
+      "rolls back Victory fight-buff consumption",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        await testPool.query(
+          `
+            INSERT INTO character_buffs (
+              character_id,
+              buff_type,
+              buff_source_type,
+              value,
+              duration_type,
+              duration_remaining,
+              is_positive,
+              applied_at,
+              expires_at
+            )
+            VALUES (
+              $1,
+              'ExperienceBoost',
+              'System',
+              4.5,
+              'Fights',
+              1,
+              TRUE,
+              $2,
+              NULL
+            )
+          `,
+          [
+            fixture.characterId,
+            new Date(
+              observedAt.getTime() -
+              60_000
+            ),
+          ]
+        );
+
+        const before =
+          await readRollbackState(
+            fixture
+          );
+
+        expect(
+          before.fight_buff_count
+        ).toBe("1");
+
+        expect(
+          before.fight_buff_duration
+        ).toBe("1");
+
+        const failure =
+          new Error(
+            "Injected failure at victory.fightBuff."
+          );
+
+        const repository =
+          new PostgresCombatSessionRepository(
+            testPool,
+            {
+              settlementFailureInjector:
+                async (point) => {
+                  if (
+                    point ===
+                    "victory.fightBuff"
+                  ) {
+                    throw failure;
+                  }
+                },
+            }
+          );
+
+        const service =
+          new ResolveCombatActionService(
+            repository,
+            new VictoryRandomSource(),
+            clock
+          );
+
+        await expect(
+          service.execute(
+            actionInput(fixture)
+          )
+        ).rejects.toBe(failure);
+
+        const after =
+          await readRollbackState(
+            fixture
+          );
+
+        expect(after).toEqual(before);
+
+        expect(
+          after.fight_buff_duration
+        ).toBe("1");
+
+        expect(after.status).toBe(
+          "Active"
+        );
+
+        expect(after.log_count).toBe(
+          "0"
+        );
+
+        expect(after.event_count).toBe(
+          "0"
+        );
+      }
+    );
+
+    it(
+      "rolls back conditional Defeat Blessing and fight-buff phases",
+      async () => {
+        const points:
+          CombatSettlementFailurePoint[] = [
+            "defeat.blessing",
+            "defeat.fightBuff",
+          ];
+
+        for (const point of points) {
+          const fixture =
+            await createFixture();
+
+          await testPool.query(
+            `
+              UPDATE characters
+              SET
+                level = 3,
+                experience = 220,
+                current_health = 5,
+                max_health = 240,
+                current_mana = 60,
+                max_mana = 65,
+                current_energy = 90,
+                max_energy = 100
+              WHERE character_id = $1
+            `,
+            [
+              fixture.characterId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET
+                character_health = 5,
+                character_maximum_health =
+                  240
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO character_blessings (
+                character_id,
+                activated_at
+              )
+              VALUES ($1, $2)
+            `,
+            [
+              fixture.characterId,
+              new Date(
+                observedAt.getTime() -
+                60_000
+              ),
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO character_buffs (
+                character_id,
+                buff_type,
+                buff_source_type,
+                value,
+                duration_type,
+                duration_remaining,
+                is_positive,
+                applied_at,
+                expires_at
+              )
+              VALUES (
+                $1,
+                'GoldBoost',
+                'System',
+                3.5,
+                'Fights',
+                1,
+                TRUE,
+                $2,
+                NULL
+              )
+            `,
+            [
+              fixture.characterId,
+              new Date(
+                observedAt.getTime() -
+                60_000
+              ),
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            before.blessing_count
+          ).toBe("1");
+
+          expect(
+            before.fight_buff_count
+          ).toBe("1");
+
+          expect(
+            before.fight_buff_duration
+        ).toBe("1");
+
+          const failure =
+            new Error(
+              `Injected failure at ${point}.`
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (currentPoint) => {
+                    if (
+                      currentPoint === point
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new DefeatRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            after,
+            `Rollback mismatch at ${point}`
+          ).toEqual(before);
+
+          expect(
+            after.blessing_count
+          ).toBe("1");
+
+          expect(
+            after.fight_buff_duration
+        ).toBe("1");
+
+          expect(after.status).toBe(
+            "Active"
+          );
+
+          expect(after.log_count).toBe(
+            "0"
+          );
+
+          expect(after.event_count).toBe(
+            "0"
+          );
+        }
+      }
+    );
+
+    it(
+      "rolls back Task Boss progression after Victory failure",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const task =
+          await testPool.query<{
+            progress_monster_id: string;
+            boss_monster_id: string;
+          }>(
+            `
+              SELECT
+                task.monster_id
+                  AS progress_monster_id,
+                boss.monster_id
+                  AS boss_monster_id
+              FROM monster_tasks AS task
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  task.boss_id
+              WHERE boss.boss_type =
+                'TaskBoss'
+              ORDER BY
+                task.monster_task_id
+              LIMIT 1
+            `
+          );
+
+        const taskRow =
+          task.rows[0];
+
+        if (!taskRow) {
+          throw new Error(
+            "Task Boss rollback fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            taskRow.boss_monster_id,
+          ]
+        );
+
+        await testPool.query(
+          `
+            INSERT INTO bestiary_statistics (
+              character_id,
+              monster_id,
+              kill_count,
+              first_kill_at,
+              last_kill_at,
+              task_progress,
+              task_status,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              $1,
+              $2,
+              10,
+              $3,
+              $3,
+              10,
+              'UNLOCKED',
+              $3,
+              $3
+            )
+            ON CONFLICT (
+              character_id,
+              monster_id
+            )
+            DO UPDATE
+            SET
+              task_progress = 10,
+              task_status = 'UNLOCKED',
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            fixture.characterId,
+            taskRow.progress_monster_id,
+            new Date(
+              observedAt.getTime() -
+              60_000
+            ),
+          ]
+        );
+
+        const readTaskState =
+          async (): Promise<{
+            task_progress: string;
+            task_status: string;
+          }> => {
+            const result =
+              await testPool.query<{
+                task_progress: string;
+                task_status: string;
+              }>(
+                `
+                  SELECT
+                    task_progress,
+                    task_status
+                  FROM bestiary_statistics
+                  WHERE character_id = $1
+                    AND monster_id = $2
+                `,
+                [
+                  fixture.characterId,
+                  taskRow.progress_monster_id,
+                ]
+              );
+
+            const row = result.rows[0];
+
+            if (!row) {
+              throw new Error(
+                "Task Boss progress state was not found."
+              );
+            }
+
+            return row;
+          };
+
+        const beforeSession =
+          await readRollbackState(
+            fixture
+          );
+
+        const beforeTask =
+          await readTaskState();
+
+        expect(beforeTask).toEqual({
+          task_progress: "10",
+          task_status: "UNLOCKED",
+        });
+
+        const failure =
+          new Error(
+            "Injected failure at victory.task."
+          );
+
+        const repository =
+          new PostgresCombatSessionRepository(
+            testPool,
+            {
+              settlementFailureInjector:
+                async (point) => {
+                  if (
+                    point ===
+                    "victory.task"
+                  ) {
+                    throw failure;
+                  }
+                },
+            }
+          );
+
+        const service =
+          new ResolveCombatActionService(
+            repository,
+            new VictoryRandomSource(),
+            clock
+          );
+
+        await expect(
+          service.execute(
+            actionInput(fixture)
+          )
+        ).rejects.toBe(failure);
+
+        const afterSession =
+          await readRollbackState(
+            fixture
+          );
+
+        const afterTask =
+          await readTaskState();
+
+        expect(afterSession).toEqual(
+          beforeSession
+        );
+
+        expect(afterTask).toEqual(
+          beforeTask
+        );
+
+        expect(
+          afterTask.task_status
+        ).toBe("UNLOCKED");
+
+        expect(afterSession.status).toBe(
+          "Active"
+        );
+
+        expect(
+          afterSession.log_count
+        ).toBe("0");
+
+        expect(
+          afterSession.event_count
+        ).toBe("0");
+      }
+    );
+
+    it(
+      "rolls back Daily Boss Victory progress",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const temporaryMonsterIds:
+          string[] = [];
+
+        const temporaryBossIds:
+          string[] = [];
+
+        const temporaryDefinitionIds:
+          string[] = [];
+
+        const createSupportDefinition =
+          async (
+            tier: number
+          ): Promise<{
+            daily_boss_definition_id:
+              string;
+            monster_id: string;
+            tier: number;
+          }> => {
+            const suffix =
+              randomUUID().replaceAll(
+                "-",
+                ""
+              );
+
+            const monster =
+              await testPool.query<{
+                monster_id: string;
+              }>(
+                `
+                  INSERT INTO monsters (
+                    monster_family_id,
+                    name,
+                    description,
+                    artwork,
+                    monster_type,
+                    level,
+                    health,
+                    attack,
+                    defense,
+                    spell_power_percent,
+                    cooldown_seconds,
+                    ability_chance_percent,
+                    gold_min,
+                    gold_max,
+                    loot_level_modifier,
+                    power_score,
+                    code,
+                    energy_cost,
+                    experience_reward
+                  )
+                  SELECT
+                    monster_family_id,
+                    $1,
+                    description,
+                    artwork,
+                    'DailyBoss',
+                    level,
+                    health,
+                    attack,
+                    defense,
+                    spell_power_percent,
+                    0,
+                    ability_chance_percent,
+                    gold_min,
+                    gold_max,
+                    loot_level_modifier,
+                    power_score,
+                    $2,
+                    energy_cost,
+                    experience_reward
+                  FROM monsters
+                  WHERE code =
+                    'dev_monster_10'
+                  RETURNING monster_id
+                `,
+                [
+                  `P14 Daily Support ${tier} ${suffix}`,
+                  `p14_daily_${tier}_${suffix}`,
+                ]
+              );
+
+            const monsterId =
+              monster.rows[0]
+                ?.monster_id;
+
+            if (!monsterId) {
+              throw new Error(
+                "Temporary Daily Boss monster was not created."
+              );
+            }
+
+            temporaryMonsterIds.push(
+              monsterId
+            );
+
+            const boss =
+              await testPool.query<{
+                boss_id: string;
+              }>(
+                `
+                  INSERT INTO bosses (
+                    monster_id,
+                    boss_type
+                  )
+                  VALUES (
+                    $1,
+                    'DailyBoss'
+                  )
+                  RETURNING boss_id
+                `,
+                [
+                  monsterId,
+                ]
+              );
+
+            const bossId =
+              boss.rows[0]?.boss_id;
+
+            if (!bossId) {
+              throw new Error(
+                "Temporary Daily Boss record was not created."
+              );
+            }
+
+            temporaryBossIds.push(
+              bossId
+            );
+
+            const definition =
+              await testPool.query<{
+                daily_boss_definition_id:
+                  string;
+              }>(
+                `
+                  INSERT INTO
+                    daily_boss_definitions (
+                      boss_id,
+                      tier,
+                      recommended_level,
+                      attempts_per_day
+                    )
+                  VALUES (
+                    $1,
+                    $2,
+                    1,
+                    3
+                  )
+                  RETURNING
+                    daily_boss_definition_id
+                `,
+                [
+                  bossId,
+                  tier,
+                ]
+              );
+
+            const definitionId =
+              definition.rows[0]
+                ?.daily_boss_definition_id;
+
+            if (!definitionId) {
+              throw new Error(
+                "Temporary Daily Boss definition was not created."
+              );
+            }
+
+            temporaryDefinitionIds.push(
+              definitionId
+            );
+
+            return {
+              daily_boss_definition_id:
+                definitionId,
+              monster_id: monsterId,
+              tier,
+            };
+          };
+
+        const existingDefinition =
+          await testPool.query<{
+            daily_boss_definition_id:
+              string;
+            monster_id: string;
+            tier: number;
+          }>(
+            `
+              SELECT
+                definition
+                  .daily_boss_definition_id,
+                boss.monster_id,
+                definition.tier
+              FROM daily_boss_definitions
+                AS definition
+              INNER JOIN bosses AS boss
+                ON boss.boss_id =
+                  definition.boss_id
+              WHERE boss.boss_type =
+                'DailyBoss'
+              ORDER BY
+                definition
+                  .daily_boss_definition_id
+              LIMIT 1
+            `
+          );
+
+        const target =
+          existingDefinition.rows[0];
+
+        if (!target) {
+          throw new Error(
+            "Seeded Daily Boss definition was not found."
+          );
+        }
+
+        const tierTwo =
+          await createSupportDefinition(
+            2
+          );
+
+        const tierThree =
+          await createSupportDefinition(
+            3
+          );
+
+        const rotation =
+          await testPool.query<{
+            daily_boss_rotation_id: string;
+          }>(
+            `
+              INSERT INTO daily_boss_rotation (
+                tier_1_boss_id,
+                tier_2_boss_id,
+                tier_3_boss_id,
+                reset_timestamp,
+                created_at
+              )
+              VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5
+              )
+              RETURNING
+                daily_boss_rotation_id
+            `,
+            [
+              target
+                .daily_boss_definition_id,
+              tierTwo
+                .daily_boss_definition_id,
+              tierThree
+                .daily_boss_definition_id,
+              new Date(
+                observedAt.getTime() +
+                60 * 60 * 1000
+              ),
+              new Date(
+                observedAt.getTime() -
+                60 * 60 * 1000
+              ),
+            ]
+          );
+
+        const rotationId =
+          rotation.rows[0]
+            ?.daily_boss_rotation_id;
+
+        if (!rotationId) {
+          throw new Error(
+            "Daily Boss rollback rotation was not created."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE combat_sessions
+              SET monster_id = $2
+              WHERE combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+              target.monster_id,
+            ]
+          );
+
+          await testPool.query(
+            `
+              INSERT INTO
+                character_daily_boss_progress (
+                  character_id,
+                  daily_boss_definition_id,
+                  daily_boss_rotation_id,
+                  attempts_used_in_rotation,
+                  total_attempts,
+                  total_victories,
+                  last_attempt_at,
+                  last_victory_at,
+                  highest_tier_defeated
+                )
+              VALUES (
+                $1,
+                $2,
+                $3,
+                1,
+                1,
+                0,
+                $4,
+                NULL,
+                NULL
+              )
+            `,
+            [
+              fixture.characterId,
+              target
+                .daily_boss_definition_id,
+              rotationId,
+              observedAt,
+            ]
+          );
+
+          const readDailyState =
+            async (): Promise<{
+              attempts_used_in_rotation:
+                number;
+              total_attempts: string;
+              total_victories: string;
+              last_attempt_at:
+                Date | null;
+              last_victory_at:
+                Date | null;
+              highest_tier_defeated:
+                number | null;
+            }> => {
+              const result =
+                await testPool.query<{
+                  attempts_used_in_rotation:
+                    number;
+                  total_attempts: string;
+                  total_victories: string;
+                  last_attempt_at:
+                    Date | null;
+                  last_victory_at:
+                    Date | null;
+                  highest_tier_defeated:
+                    number | null;
+                }>(
+                  `
+                    SELECT
+                      attempts_used_in_rotation,
+                      total_attempts,
+                      total_victories,
+                      last_attempt_at,
+                      last_victory_at,
+                      highest_tier_defeated
+                    FROM
+                      character_daily_boss_progress
+                    WHERE character_id = $1
+                      AND
+                        daily_boss_definition_id =
+                          $2
+                      AND
+                        daily_boss_rotation_id =
+                          $3
+                  `,
+                  [
+                    fixture.characterId,
+                    target
+                      .daily_boss_definition_id,
+                    rotationId,
+                  ]
+                );
+
+              const row =
+                result.rows[0];
+
+              if (!row) {
+                throw new Error(
+                  "Daily Boss progress state was not found."
+                );
+              }
+
+              return row;
+            };
+
+          const beforeSession =
+            await readRollbackState(
+              fixture
+            );
+
+          const beforeDaily =
+            await readDailyState();
+
+          expect(
+            beforeDaily.total_victories
+          ).toBe("0");
+
+          expect(
+            beforeDaily
+              .highest_tier_defeated
+          ).toBeNull();
+
+          const failure =
+            new Error(
+              "Injected failure at victory.dailyBoss."
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (point) => {
+                    if (
+                      point ===
+                      "victory.dailyBoss"
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new VictoryRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const afterSession =
+            await readRollbackState(
+              fixture
+            );
+
+          const afterDaily =
+            await readDailyState();
+
+          expect(afterSession).toEqual(
+            beforeSession
+          );
+
+          expect(afterDaily).toEqual(
+            beforeDaily
+          );
+
+          expect(
+            afterDaily.total_victories
+          ).toBe("0");
+
+          expect(
+            afterDaily
+              .last_victory_at
+          ).toBeNull();
+
+          expect(afterSession.status).toBe(
+            "Active"
+          );
+
+          expect(
+            afterSession.log_count
+          ).toBe("0");
+
+          expect(
+            afterSession.event_count
+          ).toBe("0");
+        }
+        finally {
+          await testPool.query(
+            `
+              DELETE FROM
+                character_daily_boss_progress
+              WHERE character_id = $1
+                AND
+                  daily_boss_definition_id =
+                    $2
+                AND
+                  daily_boss_rotation_id =
+                    $3
+            `,
+            [
+              fixture.characterId,
+              target
+                .daily_boss_definition_id,
+              rotationId,
+            ]
+          );
+
+          await testPool.query(
+            `
+              DELETE FROM
+                daily_boss_rotation
+              WHERE
+                daily_boss_rotation_id =
+                  $1
+            `,
+            [
+              rotationId,
+            ]
+          );
+
+          if (
+            temporaryDefinitionIds
+              .length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM
+                  daily_boss_definitions
+                WHERE
+                  daily_boss_definition_id =
+                    ANY($1::uuid[])
+              `,
+              [
+                temporaryDefinitionIds,
+              ]
+            );
+          }
+
+          if (
+            temporaryBossIds.length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM bosses
+                WHERE boss_id =
+                  ANY($1::uuid[])
+              `,
+              [
+                temporaryBossIds,
+              ]
+            );
+          }
+
+          if (
+            temporaryMonsterIds
+              .length > 0
+          ) {
+            await testPool.query(
+              `
+                DELETE FROM monsters
+                WHERE monster_id =
+                  ANY($1::uuid[])
+              `,
+              [
+                temporaryMonsterIds,
+              ]
+            );
+          }
+        }
       }
     );
 
@@ -11205,7 +17565,10 @@ Promise<Fixture> {
           health,
           attack,
           defense,
-          energy_cost
+          energy_cost,
+          experience_reward,
+          gold_min,
+          gold_max
         )
         SELECT
           monster_family_id,
@@ -11217,7 +17580,10 @@ Promise<Fixture> {
           100,
           5,
           2,
-          5
+          5,
+          75,
+          11,
+          22
         FROM monster_families
         ORDER BY monster_family_id
         LIMIT 1
@@ -11408,6 +17774,38 @@ describe(
         expect(
           stored.rows[0]?.count
         ).toBe("1");
+
+        expect(result.rewards).toEqual({
+          monsterExperienceReward: 75n,
+          monsterGoldMinimum: 11n,
+          monsterGoldMaximum: 22n,
+        });
+
+        const rewardSnapshot =
+          await testPool.query<{
+            monster_experience_reward: string;
+            monster_gold_min: string;
+            monster_gold_max: string;
+          }>(
+            `
+              SELECT
+                monster_experience_reward,
+                monster_gold_min,
+                monster_gold_max
+              FROM combat_sessions
+              WHERE character_id = $1
+                AND status = 'Active'
+            `,
+            [fixture.characterId]
+          );
+
+        expect(
+          rewardSnapshot.rows[0]
+        ).toEqual({
+          monster_experience_reward: "75",
+          monster_gold_min: "11",
+          monster_gold_max: "22",
+        });
       }
     );
 
@@ -11894,6 +18292,9 @@ import {
 import {
   PostgresCharacterRepository,
 } from "../../../src/modules/characters/infrastructure/postgres-character.repository.js";
+import type {
+  RandomSource,
+} from "../../../src/modules/combat/ports/random-source.js";
 import {
   createTestAccount,
   deleteTestAccount,
@@ -11978,7 +18379,10 @@ async function createCombatMonster() {
         health,
         attack,
         defense,
-        energy_cost
+        energy_cost,
+        experience_reward,
+        gold_min,
+        gold_max
       )
       SELECT
         monster_family_id,
@@ -11990,7 +18394,10 @@ async function createCombatMonster() {
         100,
         5,
         2,
-        5
+        5,
+        75,
+        11,
+        22
       FROM monster_families
       ORDER BY monster_family_id
       LIMIT 1
@@ -12020,9 +18427,61 @@ async function createCombatMonster() {
   return monster;
 }
 
-async function startServer() {
+class DefeatRandomSource
+  implements RandomSource {
+  private floatCall = 0;
+
+  public nextFloat(): number {
+    this.floatCall += 1;
+
+    return this.floatCall === 1
+      ? 0.99
+      : 0;
+  }
+
+  public nextInt(
+    _minimum: number,
+    maximum: number
+  ): number {
+    return maximum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+class VictoryRandomSource
+  implements RandomSource {
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    _minimum: number,
+    maximum: number
+  ): number {
+    return maximum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+async function startServer(
+  randomSource?: RandomSource
+) {
   const server =
-    createApplicationServer();
+    createApplicationServer({
+      randomSource,
+    });
 
   openedServers.push(server);
 
@@ -12319,6 +18778,470 @@ describe(
         expect(
           logBody.data.events.length
         ).toBeGreaterThan(0);
+      }
+    );
+
+    it(
+      "returns a terminal Victory settlement with string amounts",
+      async () => {
+        const account =
+          await createTestAccount(
+            testPool
+          );
+
+        createdAccountIds.push(
+          account.accountId
+        );
+
+        const character =
+          await characterRepository
+            .createCharacterGraph({
+              accountId:
+                account.accountId,
+              seasonId: null,
+              name:
+                `Http-Victory-${randomUUID()
+                  .slice(0, 8)}`,
+              spellLoadoutName:
+                "Default Spells",
+              equipmentLoadoutName:
+                "Default Equipment",
+            });
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              current_health = 100,
+              current_energy = 50,
+              resources_updated_at = NOW()
+            WHERE character_id = $1
+          `,
+          [
+            character.characterId,
+          ]
+        );
+
+        const monster =
+          await createCombatMonster();
+
+        await testPool.query(
+          `
+            UPDATE monsters
+            SET
+              health = 1,
+              defense = 0,
+              attack = 0,
+              experience_reward =
+                9007199254740993,
+              gold_min =
+                9007199254740994,
+              gold_max =
+                9007199254740994
+            WHERE monster_id = $1
+          `,
+          [
+            monster.monster_id,
+          ]
+        );
+
+        const token =
+          await createAuthorizationSession(
+            account.accountId
+          );
+
+        const { baseUrl } =
+          await startServer(
+            new VictoryRandomSource()
+          );
+
+        const combatUrl =
+          `${baseUrl}/characters/${character.characterId}/combat`;
+
+        const startResponse =
+          await fetch(
+            combatUrl,
+            jsonRequest(token, {
+              monsterCode:
+                monster.code,
+            })
+          );
+
+        expect(
+          startResponse.status
+        ).toBe(201);
+
+        const startBody =
+          await startResponse.json() as {
+            data: {
+              combatSessionId:
+                string;
+            };
+          };
+
+        const actionResponse =
+          await fetch(
+            `${combatUrl}/actions`,
+            jsonRequest(token, {
+              expectedTurn: 1,
+              action: {
+                type:
+                  "basic_attack",
+              },
+            })
+          );
+
+        expect(
+          actionResponse.status
+        ).toBe(200);
+
+        const body =
+          await actionResponse.json() as {
+            data: {
+              status: string;
+              settlement: {
+                outcome: string;
+                experience: {
+                  before: string;
+                  awarded: string;
+                  lost: string;
+                  after: string;
+                };
+                gold: {
+                  before: string;
+                  baseRolled: string;
+                  awarded: string;
+                  after: string;
+                };
+                bestiary: {
+                  killCount:
+                    string | null;
+                };
+                statistics: {
+                  damageDealt: string;
+                  damageTaken: string;
+                  highestPhysicalHit:
+                    string;
+                };
+                finalSummary: {
+                  combatSessionId:
+                    string;
+                  outcome: string;
+                  startedAt: string;
+                  endedAt: string;
+                };
+              };
+            };
+          };
+
+        expect(
+          body.data.status
+        ).toBe("Victory");
+
+        expect(
+          body.data.settlement
+        ).toMatchObject({
+          outcome: "Victory",
+
+          experience: {
+            before: "0",
+            awarded:
+              "9007199254740993",
+            lost: "0",
+            after:
+              "9007199254740993",
+          },
+
+          gold: {
+            before: "0",
+            baseRolled:
+              "9007199254740994",
+            awarded:
+              "9007199254740994",
+            after:
+              "9007199254740994",
+          },
+
+          bestiary: {
+            killCount: "1",
+          },
+
+          finalSummary: {
+            combatSessionId:
+              startBody.data
+                .combatSessionId,
+            outcome: "Victory",
+          },
+        });
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageDealt
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageTaken
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics
+            .highestPhysicalHit
+        ).toBe("string");
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.startedAt
+            )
+          )
+        ).toBe(false);
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.endedAt
+            )
+          )
+        ).toBe(false);
+      }
+    );
+
+    it(
+      "returns a terminal Defeat settlement with string amounts",
+      async () => {
+        const account =
+          await createTestAccount(
+            testPool
+          );
+
+        createdAccountIds.push(
+          account.accountId
+        );
+
+        const character =
+          await characterRepository
+            .createCharacterGraph({
+              accountId:
+                account.accountId,
+              seasonId: null,
+              name:
+                `Http-Defeat-${randomUUID()
+                  .slice(0, 8)}`,
+              spellLoadoutName:
+                "Default Spells",
+              equipmentLoadoutName:
+                "Default Equipment",
+            });
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              experience = 0,
+              gold =
+                9007199254740994,
+              current_health = 1,
+              current_energy = 50,
+              resources_updated_at =
+                NOW()
+            WHERE character_id = $1
+          `,
+          [
+            character.characterId,
+          ]
+        );
+
+        const monster =
+          await createCombatMonster();
+
+        await testPool.query(
+          `
+            UPDATE monsters
+            SET
+              health = 100,
+              attack = 1000,
+              defense = 1000,
+              experience_reward = 75,
+              gold_min = 11,
+              gold_max = 22
+            WHERE monster_id = $1
+          `,
+          [
+            monster.monster_id,
+          ]
+        );
+
+        const token =
+          await createAuthorizationSession(
+            account.accountId
+          );
+
+        const { baseUrl } =
+          await startServer(
+            new DefeatRandomSource()
+          );
+
+        const combatUrl =
+          `${baseUrl}/characters/${character.characterId}/combat`;
+
+        const startResponse =
+          await fetch(
+            combatUrl,
+            jsonRequest(token, {
+              monsterCode:
+                monster.code,
+            })
+          );
+
+        expect(
+          startResponse.status
+        ).toBe(201);
+
+        const startBody =
+          await startResponse.json() as {
+            data: {
+              combatSessionId:
+                string;
+            };
+          };
+
+        const actionResponse =
+          await fetch(
+            `${combatUrl}/actions`,
+            jsonRequest(token, {
+              expectedTurn: 1,
+              action: {
+                type:
+                  "basic_attack",
+              },
+            })
+          );
+
+        expect(
+          actionResponse.status
+        ).toBe(200);
+
+        const body =
+          await actionResponse.json() as {
+            data: {
+              status: string;
+              defeatReason:
+                string | null;
+              settlement: {
+                outcome: string;
+                experience: {
+                  before: string;
+                  awarded: string;
+                  lost: string;
+                  after: string;
+                };
+                gold: {
+                  before: string;
+                  baseRolled: string;
+                  awarded: string;
+                  after: string;
+                };
+                statistics: {
+                  damageDealt: string;
+                  damageTaken: string;
+                  highestPhysicalHit:
+                    string;
+                };
+                finalSummary: {
+                  combatSessionId:
+                    string;
+                  outcome: string;
+                  startedAt: string;
+                  endedAt: string;
+                };
+              };
+            };
+          };
+
+        expect(
+          body.data.status
+        ).toBe("Defeat");
+
+        expect(
+          body.data.defeatReason
+        ).toBe("PlayerHealthDepleted");
+
+        expect(
+          body.data.settlement
+        ).toMatchObject({
+          outcome: "Defeat",
+
+          experience: {
+            before: "0",
+            awarded: "0",
+            lost: "0",
+            after: "0",
+          },
+
+          gold: {
+            before:
+              "9007199254740994",
+            baseRolled: "0",
+            awarded: "0",
+            after:
+              "9007199254740994",
+          },
+
+          finalSummary: {
+            combatSessionId:
+              startBody.data
+                .combatSessionId,
+            outcome: "Defeat",
+          },
+        });
+
+        expect(
+          typeof body.data.settlement
+            .experience.lost
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .experience.after
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageDealt
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics.damageTaken
+        ).toBe("string");
+
+        expect(
+          typeof body.data.settlement
+            .statistics
+            .highestPhysicalHit
+        ).toBe("string");
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.startedAt
+            )
+          )
+        ).toBe(false);
+
+        expect(
+          Number.isNaN(
+            Date.parse(
+              body.data.settlement
+                .finalSummary.endedAt
+            )
+          )
+        ).toBe(false);
       }
     );
 
@@ -12675,7 +19598,6 @@ The following remain outside M5:
 - damage and healing over time,
 - multiple targets,
 - escape,
-- combat abandonment.
 
 ## Completion log
 
@@ -14809,7 +21731,7 @@ b493752  Add M4 basic attack resolution
 
 ### Out of scope
 
-Persistent combat sessions, combat HTTP endpoints, authentication, ownership, expected-turn concurrency, Energy deduction, persistent events and logs, rewards, progression, cooldown writes, Bestiary updates, Task Boss progression, spells, consumables, monster abilities, active effects, multiple targets, escape, and abandonment remain outside M4.
+Persistent combat sessions, combat HTTP endpoints, authentication, ownership, expected-turn concurrency, Energy deduction, persistent events and logs, rewards, progression, cooldown writes, Bestiary updates, Task Boss progression, spells, consumables, monster abilities, active effects, multiple targets, and escape remain outside M4.
 
 ### Completion log
 
@@ -14960,14 +21882,12 @@ Supported persistent statuses:
 - `Active`
 - `Victory`
 - `Defeat`
-- `Abandoned`
 
 Supported defeat reasons:
 
 - `PlayerHealthDepleted`
 - `TurnLimitExceeded`
 
-M5 does not create new abandoned sessions, but historical abandoned sessions remain retrievable.
 
 The database enforces:
 
@@ -15224,7 +22144,6 @@ The following remain outside M5:
 - active buffs and debuffs,
 - damage and healing over time,
 - escape,
-- combat abandonment.
 
 ---
 
@@ -17952,7 +24871,7 @@ CombatSessions
 
 ## PURPOSE
 
-Stores active, completed, defeated, and abandoned combat encounters.
+Stores active, victorious, and defeated combat encounters.
 
 Acts as the authoritative server-side persistent combat state.
 
@@ -17975,7 +24894,6 @@ Supported values:
 - `Active`
 - `Victory`
 - `Defeat`
-- `Abandoned`
 
 `DefeatReason`
 
@@ -18038,13 +24956,6 @@ Supported values:
 - The session cannot accept another combat action.
 - `PlayerHealthDepleted` requires Character Health to equal zero.
 - `TurnLimitExceeded` requires both combatants to remain alive on turn `100`.
-
-### Abandoned
-
-- `EndedAt` is required.
-- The session cannot accept another combat action.
-- M5 does not create new abandoned sessions.
-- Historical abandoned sessions remain retrievable.
 
 ## TURN RULES
 
@@ -18243,7 +25154,6 @@ Not implemented in M5:
 - active buffs and debuffs,
 - damage or healing over time,
 - escape,
-- combat abandonment.
 ```
 
 # ============================================================
@@ -18856,6 +25766,7 @@ database\migrations\083_add_monster_energy_cost.sql
 database\migrations\084_task_status_refactor.sql
 database\migrations\085_unique_monster_task_boss.sql
 database\migrations\088_persistent_combat_api.sql
+database\migrations\089_victory_death_progression.sql
 database-design\achievements\achievement-progress.md
 database-design\bestiary\bestiary-entries.md
 database-design\bestiary\bestiary-statistics.md
@@ -18944,6 +25855,11 @@ src\modules\monsters\http\monster-http.handler.ts
 src\modules\monsters\http\monster-http.request.ts
 src\modules\monsters\infrastructure\postgres-monster.mapper.ts
 src\modules\monsters\infrastructure\postgres-monster-discovery.repository.ts
+src\modules\progression\domain\defeat-settlement.ts
+src\modules\progression\domain\gold-roll.ts
+src\modules\progression\domain\progression.ts
+src\modules\progression\domain\victory-rewards.ts
+src\modules\progression\domain\victory-settlement.ts
 tests\integration\characters\postgres-character.repository.test.ts
 tests\integration\characters\postgres-character-achievements.repository.test.ts
 tests\integration\characters\postgres-character-buffs.repository.test.ts
@@ -18951,6 +25867,7 @@ tests\integration\characters\postgres-character-set-bonuses.repository.test.ts
 tests\integration\characters\postgres-character-statistics.repository.test.ts
 tests\integration\characters\postgres-equipment.repository.test.ts
 tests\integration\combat\combat-retrieval.integration.test.ts
+tests\integration\combat\daily-boss-start.integration.test.ts
 tests\integration\combat\persistent-combat-schema.test.ts
 tests\integration\combat\resolve-combat-action.integration.test.ts
 tests\integration\combat\start-combat.integration.test.ts
@@ -18994,6 +25911,12 @@ tests\unit\monsters\get-monster-list.service.test.ts
 tests\unit\monsters\monster-cooldown.test.ts
 tests\unit\monsters\monster-eligibility.test.ts
 tests\unit\monsters\task-boss-discovery.service.test.ts
+tests\unit\progression\combat-statistics-aggregation.test.ts
+tests\unit\progression\defeat-settlement.test.ts
+tests\unit\progression\gold-roll.test.ts
+tests\unit\progression\progression.test.ts
+tests\unit\progression\victory-rewards.test.ts
+tests\unit\progression\victory-settlement.test.ts
 ```
 
 # ============================================================
@@ -19073,10 +25996,10 @@ database-design/combat/combat-session-events.md:290:- monster cooldown writes,
 database-design/combat/combat-session-events.md:291:- Bestiary progression,
 database-design/combat/combat-sessions.md:30:Γö£ΓöÇΓöÇ CombatSpellCooldowns (1:N)
 database-design/combat/combat-sessions.md:38:- `CombatSpellCooldowns.CombatSessionId`
-database-design/combat/combat-sessions.md:318:- Experience rewards,
-database-design/combat/combat-sessions.md:322:- Blessing consumption,
-database-design/combat/combat-sessions.md:325:- monster cooldown writes,
-database-design/combat/combat-sessions.md:326:- Bestiary progression,
+database-design/combat/combat-sessions.md:310:- Experience rewards,
+database-design/combat/combat-sessions.md:314:- Blessing consumption,
+database-design/combat/combat-sessions.md:317:- monster cooldown writes,
+database-design/combat/combat-sessions.md:318:- Bestiary progression,
 database-design/combat/combat-spells-cooldowns.md:1:ENTITY: CombatSpellCooldowns
 database-design/combat/combat-spells-cooldowns.md:5:CombatSpellCooldownId
 database-design/combat/combat-spells-cooldowns.md:18:ΓööΓöÇΓöÇ CombatSpellCooldowns (1:N)
@@ -19524,6 +26447,24 @@ database/migrations/084_task_status_refactor.sql:20:ALTER TABLE bestiary_statist
 database/migrations/084_task_status_refactor.sql:21:ADD CONSTRAINT chk_bestiary_statistics_task_status
 database/migrations/084_task_status_refactor.sql:23:    task_status IN (
 database/migrations/084_task_status_refactor.sql:30:ALTER TABLE bestiary_statistics
+database/migrations/089_victory_death_progression.sql:9:    ADD COLUMN experience_reward BIGINT NOT NULL DEFAULT 0,
+database/migrations/089_victory_death_progression.sql:10:    ADD CONSTRAINT chk_monsters_experience_reward
+database/migrations/089_victory_death_progression.sql:11:        CHECK (experience_reward >= 0);
+database/migrations/089_victory_death_progression.sql:14:    ADD COLUMN settled_at TIMESTAMPTZ,
+database/migrations/089_victory_death_progression.sql:15:    ADD COLUMN monster_experience_reward BIGINT NOT NULL DEFAULT 0,
+database/migrations/089_victory_death_progression.sql:20:SET settled_at = ended_at
+database/migrations/089_victory_death_progression.sql:32:            monster_experience_reward >= 0
+database/migrations/089_victory_death_progression.sql:41:                AND settled_at IS NULL
+database/migrations/089_victory_death_progression.sql:47:                AND settled_at IS NOT NULL
+database/migrations/089_victory_death_progression.sql:49:                AND settled_at >= started_at
+database/migrations/089_victory_death_progression.sql:55:                AND settled_at IS NOT NULL
+database/migrations/089_victory_death_progression.sql:57:                AND settled_at >= started_at
+database/migrations/089_victory_death_progression.sql:62:CREATE TABLE character_blessings (
+database/migrations/089_victory_death_progression.sql:63:    character_blessing_id UUID
+database/migrations/089_victory_death_progression.sql:70:    CONSTRAINT fk_character_blessings_character
+database/migrations/089_victory_death_progression.sql:75:    CONSTRAINT ux_character_blessings_character
+database/migrations/089_victory_death_progression.sql:84:CREATE INDEX ix_combat_logs_character_recent
+database/migrations/089_victory_death_progression.sql:85:    ON combat_logs (
 database/schema-v1.sql:65:    reward_experience_percent NUMERIC(8, 4) NOT NULL DEFAULT 0,
 database/schema-v1.sql:84:    CONSTRAINT chk_achievements_reward_experience_percent
 database/schema-v1.sql:85:        CHECK (reward_experience_percent >= 0)
@@ -20023,55 +26964,55 @@ documentation/game-design/MASTER_PROJECT_PLAN.md:1804:- write monster cooldowns,
 documentation/game-design/MASTER_PROJECT_PLAN.md:1805:- update Bestiary,
 documentation/game-design/MASTER_PROJECT_PLAN.md:1816:Victory, defeat, cooldown recording, Bestiary progression, kill statistics, and Task Boss progression belong to M6 or later milestones.
 documentation/game-design/MASTER_PROJECT_PLAN.md:2038:- write cooldowns, Bestiary, kill, or Task Boss progress,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2121:Persistent combat sessions, combat HTTP endpoints, authentication, ownership, expected-turn concurrency, Energy deduction, persistent events and logs, rewards, progression, cooldown writes, Bestiary updates, Task Boss progression, spells, consumables, monster abilities, active effects, multiple targets, escape, and abandonment remain outside M4.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2374:The M5 endpoint does not read from the older `combat_logs` table.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2376:`combat_logs` remains reserved for final whole-combat summaries and recent-history retention in M6 or a later milestone.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2518:- Experience awards,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2522:- promotion death modifiers,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2523:- Blessing death modifiers and consumption,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2524:- final summaries in `combat_logs`,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2526:- monster cooldown writes,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2527:- Bestiary progression,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2553:- Experience awards
-documentation/game-design/MASTER_PROJECT_PLAN.md:2557:- Death Experience loss
-documentation/game-design/MASTER_PROJECT_PLAN.md:2558:- Promotion modifier
-documentation/game-design/MASTER_PROJECT_PLAN.md:2559:- Blessing modifier
-documentation/game-design/MASTER_PROJECT_PLAN.md:2563:- Monster cooldown recording
-documentation/game-design/MASTER_PROJECT_PLAN.md:2564:- Bestiary updates
-documentation/game-design/MASTER_PROJECT_PLAN.md:2570:2. Grant Experience.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2577:9. Update Bestiary.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2579:11. Record monster cooldown.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2586:- Promoted: 8%
-documentation/game-design/MASTER_PROJECT_PLAN.md:2588:- Promoted and Blessed: 4%
-documentation/game-design/MASTER_PROJECT_PLAN.md:2595:- Promotion and Blessing modify death loss correctly.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2596:- Blessing is consumed exactly once.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2715:- Cooldowns
-documentation/game-design/MASTER_PROJECT_PLAN.md:2729:- Cooldowns work.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2766:- Potion cooldowns
-documentation/game-design/MASTER_PROJECT_PLAN.md:2826:- Promotion
-documentation/game-design/MASTER_PROJECT_PLAN.md:2830:- Blessing purchase and activation
-documentation/game-design/MASTER_PROJECT_PLAN.md:2841:- NPC cooldowns survive restarts.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2893:- Crafting Experience and levels
-documentation/game-design/MASTER_PROJECT_PLAN.md:2933:- Mini-boss cooldowns
-documentation/game-design/MASTER_PROJECT_PLAN.md:2955:## M18: BESTIARY AND ACHIEVEMENTS
-documentation/game-design/MASTER_PROJECT_PLAN.md:2959:- First-kill Bestiary unlock
-documentation/game-design/MASTER_PROJECT_PLAN.md:2972:- Bestiary is character-specific.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3042:- Experience leaderboard
-documentation/game-design/MASTER_PROJECT_PLAN.md:3181:3. Experience progression
-documentation/game-design/MASTER_PROJECT_PLAN.md:3221:- Experience and levels work.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3229:- Bestiary and achievements work.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3264:18. M18 Bestiary and Achievements
-documentation/game-design/MASTER_PROJECT_PLAN.md:3357:The backend does not yet settle victory rewards, death penalties, Experience, Gold, loot, cooldowns, Bestiary progress, kill statistics, or Task Boss progress.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3369:- victory settlement,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3370:- defeat settlement,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3371:- Experience awards,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3376:- death Experience loss,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3378:- promotion death modifiers,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3379:- Blessing state and consumption,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3380:- exactly-once reward settlement,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3383:- Bestiary updates,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3385:- monster cooldown recording,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3386:- final `combat_logs` summaries,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2121:Persistent combat sessions, combat HTTP endpoints, authentication, ownership, expected-turn concurrency, Energy deduction, persistent events and logs, rewards, progression, cooldown writes, Bestiary updates, Task Boss progression, spells, consumables, monster abilities, active effects, multiple targets, and escape remain outside M4.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2372:The M5 endpoint does not read from the older `combat_logs` table.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2374:`combat_logs` remains reserved for final whole-combat summaries and recent-history retention in M6 or a later milestone.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2516:- Experience awards,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2520:- promotion death modifiers,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2521:- Blessing death modifiers and consumption,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2522:- final summaries in `combat_logs`,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2524:- monster cooldown writes,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2525:- Bestiary progression,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2550:- Experience awards
+documentation/game-design/MASTER_PROJECT_PLAN.md:2554:- Death Experience loss
+documentation/game-design/MASTER_PROJECT_PLAN.md:2555:- Promotion modifier
+documentation/game-design/MASTER_PROJECT_PLAN.md:2556:- Blessing modifier
+documentation/game-design/MASTER_PROJECT_PLAN.md:2560:- Monster cooldown recording
+documentation/game-design/MASTER_PROJECT_PLAN.md:2561:- Bestiary updates
+documentation/game-design/MASTER_PROJECT_PLAN.md:2567:2. Grant Experience.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2574:9. Update Bestiary.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2576:11. Record monster cooldown.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2583:- Promoted: 8%
+documentation/game-design/MASTER_PROJECT_PLAN.md:2585:- Promoted and Blessed: 4%
+documentation/game-design/MASTER_PROJECT_PLAN.md:2592:- Promotion and Blessing modify death loss correctly.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2593:- Blessing is consumed exactly once.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2712:- Cooldowns
+documentation/game-design/MASTER_PROJECT_PLAN.md:2726:- Cooldowns work.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2763:- Potion cooldowns
+documentation/game-design/MASTER_PROJECT_PLAN.md:2823:- Promotion
+documentation/game-design/MASTER_PROJECT_PLAN.md:2827:- Blessing purchase and activation
+documentation/game-design/MASTER_PROJECT_PLAN.md:2838:- NPC cooldowns survive restarts.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2890:- Crafting Experience and levels
+documentation/game-design/MASTER_PROJECT_PLAN.md:2930:- Mini-boss cooldowns
+documentation/game-design/MASTER_PROJECT_PLAN.md:2952:## M18: BESTIARY AND ACHIEVEMENTS
+documentation/game-design/MASTER_PROJECT_PLAN.md:2956:- First-kill Bestiary unlock
+documentation/game-design/MASTER_PROJECT_PLAN.md:2969:- Bestiary is character-specific.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3039:- Experience leaderboard
+documentation/game-design/MASTER_PROJECT_PLAN.md:3178:3. Experience progression
+documentation/game-design/MASTER_PROJECT_PLAN.md:3218:- Experience and levels work.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3226:- Bestiary and achievements work.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3261:18. M18 Bestiary and Achievements
+documentation/game-design/MASTER_PROJECT_PLAN.md:3354:The backend does not yet settle victory rewards, death penalties, Experience, Gold, loot, cooldowns, Bestiary progress, kill statistics, or Task Boss progress.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3366:- victory settlement,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3367:- defeat settlement,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3368:- Experience awards,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3373:- death Experience loss,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3375:- promotion death modifiers,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3376:- Blessing state and consumption,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3377:- exactly-once reward settlement,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3380:- Bestiary updates,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3382:- monster cooldown recording,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3383:- final `combat_logs` summaries,
 src/modules/characters/domain/character.constants.ts:17:  experience: 0n,
 src/modules/characters/domain/character.constants.ts:34:  craftingExperience: 0n,
 src/modules/characters/domain/character.constants.ts:37:  gatheringExperience: 0n,
@@ -20131,21 +27072,424 @@ src/modules/characters/infrastructure/postgres-character.mapper.ts:241:      pro
 src/modules/characters/infrastructure/postgres-character.repository.ts:64:  experience,
 src/modules/characters/infrastructure/postgres-character.repository.ts:78:    c.experience,
 src/modules/characters/infrastructure/postgres-character.repository.ts:98:    u.is_promoted,
+src/modules/combat/application/combat-session.models.ts:44:    monsterExperienceReward: bigint;
+src/modules/combat/application/combat-session.models.ts:50:  settledAt: Date | null;
+src/modules/combat/application/combat-session.models.ts:63:export type CombatSettlementOutcome =
+src/modules/combat/application/combat-session.models.ts:67:export type CombatSettlementExperience = {
+src/modules/combat/application/combat-session.models.ts:74:export type CombatSettlementGold = {
+src/modules/combat/application/combat-session.models.ts:81:export type CombatSettlementLevel = {
+src/modules/combat/application/combat-session.models.ts:87:export type CombatSettlementBestiary = {
+src/modules/combat/application/combat-session.models.ts:92:export type CombatSettlementTaskBoss = {
+src/modules/combat/application/combat-session.models.ts:97:export type CombatSettlementCooldown = {
+src/modules/combat/application/combat-session.models.ts:102:export type CombatSettlementDailyBoss = {
+src/modules/combat/application/combat-session.models.ts:107:export type CombatSettlementStatistics = {
+src/modules/combat/application/combat-session.models.ts:115:  outcome: CombatSettlementOutcome;
+src/modules/combat/application/combat-session.models.ts:121:export type CombatSettlement = {
+src/modules/combat/application/combat-session.models.ts:122:  outcome: CombatSettlementOutcome;
+src/modules/combat/application/combat-session.models.ts:123:  experience: CombatSettlementExperience;
+src/modules/combat/application/combat-session.models.ts:124:  gold: CombatSettlementGold;
+src/modules/combat/application/combat-session.models.ts:125:  level: CombatSettlementLevel;
+src/modules/combat/application/combat-session.models.ts:126:  blessingConsumed: boolean;
+src/modules/combat/application/combat-session.models.ts:127:  bestiary: CombatSettlementBestiary;
+src/modules/combat/application/combat-session.models.ts:128:  taskBoss: CombatSettlementTaskBoss;
+src/modules/combat/application/combat-session.models.ts:129:  cooldown: CombatSettlementCooldown;
+src/modules/combat/application/combat-session.models.ts:130:  dailyBoss: CombatSettlementDailyBoss;
+src/modules/combat/application/combat-session.models.ts:131:  statistics: CombatSettlementStatistics;
+src/modules/combat/application/combat-session.models.ts:137:  settlement: CombatSettlement | null;
+src/modules/combat/application/combat-session.repository.ts:14:  CombatSettlement,
+src/modules/combat/application/combat-session.repository.ts:43:  experienceReward: bigint;
+src/modules/combat/application/combat-session.repository.ts:69:  monsterExperienceReward: bigint;
+src/modules/combat/application/combat-session.repository.ts:119:export type CombatSettlementCharacter = {
+src/modules/combat/application/combat-session.repository.ts:122:  experience: bigint;
+src/modules/combat/application/combat-session.repository.ts:127:export type CombatSettlementStatistics = {
+src/modules/combat/application/combat-session.repository.ts:152:export type CombatSettlementMonster = {
+src/modules/combat/application/combat-session.repository.ts:156:  cooldownSeconds: number;
+src/modules/combat/application/combat-session.repository.ts:163:  additionalCooldownSeconds: number;
+src/modules/combat/application/combat-session.repository.ts:166:export type CombatSettlementTask = {
+src/modules/combat/application/combat-session.repository.ts:178:export type CombatSettlementDailyBoss = {
+src/modules/combat/application/combat-session.repository.ts:188:export type CombatSettlementFightBuff = {
+src/modules/combat/application/combat-session.repository.ts:195:export type CombatSettlementContext = {
+src/modules/combat/application/combat-session.repository.ts:196:  character: CombatSettlementCharacter;
+src/modules/combat/application/combat-session.repository.ts:197:  promoted: boolean;
+src/modules/combat/application/combat-session.repository.ts:199:  statistics: CombatSettlementStatistics;
+src/modules/combat/application/combat-session.repository.ts:202:    experienceBonusPercent: number;
+src/modules/combat/application/combat-session.repository.ts:204:  monster: CombatSettlementMonster;
+src/modules/combat/application/combat-session.repository.ts:206:  task: CombatSettlementTask | null;
+src/modules/combat/application/combat-session.repository.ts:209:    CombatSettlementDailyBoss | null;
+src/modules/combat/application/combat-session.repository.ts:212:    readonly CombatSettlementFightBuff[];
+src/modules/combat/application/combat-session.repository.ts:218:export type ApplyVictorySettlementInput = {
+src/modules/combat/application/combat-session.repository.ts:219:  context: CombatSettlementContext;
+src/modules/combat/application/combat-session.repository.ts:226:  baseExperience: bigint;
+src/modules/combat/application/combat-session.repository.ts:229:  experienceBonusBasisPoints: bigint;
+src/modules/combat/application/combat-session.repository.ts:232:  experienceAwarded: bigint;
+src/modules/combat/application/combat-session.repository.ts:235:  experienceAfter: bigint;
+src/modules/combat/application/combat-session.repository.ts:265:export type ApplyDefeatSettlementInput = {
+src/modules/combat/application/combat-session.repository.ts:266:  context: CombatSettlementContext;
+src/modules/combat/application/combat-session.repository.ts:275:  experienceLost: bigint;
+src/modules/combat/application/combat-session.repository.ts:276:  experienceAfter: bigint;
+src/modules/combat/application/combat-session.repository.ts:284:  blessingConsumed: boolean;
+src/modules/combat/application/combat-session.repository.ts:304:  loadSettlementContext():
+src/modules/combat/application/combat-session.repository.ts:305:    Promise<CombatSettlementContext>;
+src/modules/combat/application/combat-session.repository.ts:307:  applyVictorySettlement(
+src/modules/combat/application/combat-session.repository.ts:308:    input: ApplyVictorySettlementInput
+src/modules/combat/application/combat-session.repository.ts:309:  ): Promise<CombatSettlement>;
+src/modules/combat/application/combat-session.repository.ts:311:  applyDefeatSettlement(
+src/modules/combat/application/combat-session.repository.ts:312:    input: ApplyDefeatSettlementInput
+src/modules/combat/application/combat-session.repository.ts:313:  ): Promise<CombatSettlement>;
+src/modules/combat/application/get-active-combat.service.ts:33:      settlement: null,
+src/modules/combat/application/get-combat-session.service.ts:31:      settlement: null,
+src/modules/combat/application/resolve-combat-action.service.ts:8:  planDefeatSettlement,
+src/modules/combat/application/resolve-combat-action.service.ts:9:} from "../../progression/domain/defeat-settlement.js";
+src/modules/combat/application/resolve-combat-action.service.ts:11:  planVictorySettlement,
+src/modules/combat/application/resolve-combat-action.service.ts:12:} from "../../progression/domain/victory-settlement.js";
+src/modules/combat/application/resolve-combat-action.service.ts:73:        let settlement = null;
+src/modules/combat/application/resolve-combat-action.service.ts:81:              .loadSettlementContext();
+src/modules/combat/application/resolve-combat-action.service.ts:91:            planVictorySettlement(
+src/modules/combat/application/resolve-combat-action.service.ts:100:          settlement =
+src/modules/combat/application/resolve-combat-action.service.ts:102:              .applyVictorySettlement({
+src/modules/combat/application/resolve-combat-action.service.ts:113:                baseExperience:
+src/modules/combat/application/resolve-combat-action.service.ts:114:                  victoryPlan.baseExperience,
+src/modules/combat/application/resolve-combat-action.service.ts:118:                experienceBonusBasisPoints:
+src/modules/combat/application/resolve-combat-action.service.ts:120:                    .experienceBonusBasisPoints,
+src/modules/combat/application/resolve-combat-action.service.ts:125:                experienceAwarded:
+src/modules/combat/application/resolve-combat-action.service.ts:127:                    .experienceAwarded,
+src/modules/combat/application/resolve-combat-action.service.ts:132:                experienceAfter:
+src/modules/combat/application/resolve-combat-action.service.ts:134:                    .experienceAfter,
+src/modules/combat/application/resolve-combat-action.service.ts:183:              .loadSettlementContext();
+src/modules/combat/application/resolve-combat-action.service.ts:193:            planDefeatSettlement(
+src/modules/combat/application/resolve-combat-action.service.ts:201:          settlement =
+src/modules/combat/application/resolve-combat-action.service.ts:203:              .applyDefeatSettlement({
+src/modules/combat/application/resolve-combat-action.service.ts:221:                experienceLost:
+src/modules/combat/application/resolve-combat-action.service.ts:223:                    .experienceLost,
+src/modules/combat/application/resolve-combat-action.service.ts:225:                experienceAfter:
+src/modules/combat/application/resolve-combat-action.service.ts:227:                    .experienceAfter,
+src/modules/combat/application/resolve-combat-action.service.ts:243:                blessingConsumed:
+src/modules/combat/application/resolve-combat-action.service.ts:245:                    .blessingConsumed,
+src/modules/combat/application/resolve-combat-action.service.ts:313:          settledAt:
+src/modules/combat/application/resolve-combat-action.service.ts:319:          settlement,
+src/modules/combat/application/start-combat.service.ts:121:            monsterExperienceReward:
+src/modules/combat/application/start-combat.service.ts:122:              monster.experienceReward,
+src/modules/combat/application/start-combat.service.ts:133:          settlement: null,
 src/modules/combat/infrastructure/postgres-combat-session.repository.ts:24:  calculateMonsterCooldown,
 src/modules/combat/infrastructure/postgres-combat-session.repository.ts:25:} from "../../monsters/domain/monster-cooldown.js";
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:113:  cooldown_available_at: Date | null;
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:114:  task_status: TaskStatus | null;
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:389:              AS cooldown_available_at,
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:391:            task_statistics.task_status,
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:414:          LEFT JOIN character_cooldowns AS cc
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:417:            AND cc.cooldown_type = 'Monster'
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:428:          LEFT JOIN bestiary_statistics
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:480:    const cooldown =
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:481:      calculateMonsterCooldown(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:482:        row.cooldown_available_at,
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:505:        cooldownActive:
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:506:          cooldown.isActive,
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:507:        taskStatus: row.task_status,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:44:  type CombatSettlement,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:51:  ApplyDefeatSettlementInput,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:52:  ApplyVictorySettlementInput,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:56:  CombatSettlementContext,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:108:type SettlementCharacterRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:111:  experience: string;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:122:type SettlementUnlockRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:123:  is_promoted: boolean;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:126:type SettlementBlessingRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:127:  character_blessing_id: string;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:130:type SettlementStatisticsRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:155:type SettlementMonsterRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:159:  cooldown_seconds: number;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:162:  additional_cooldown_seconds: number | null;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:165:type SettlementTaskDefinitionRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:172:type SettlementTaskProgressRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:174:  task_status: TaskStatus;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:177:type SettlementDailyDefinitionRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:183:type SettlementDailyProgressRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:190:type SettlementFightBuffRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:203:  experience_reward: string;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:209:  cooldown_available_at: Date | null;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:210:  task_status: TaskStatus | null;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:515:            m.experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:523:              AS cooldown_available_at,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:525:            task_statistics.task_status,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:554:          LEFT JOIN character_cooldowns AS cc
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:557:            AND cc.cooldown_type = 'Monster'
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:568:          LEFT JOIN bestiary_statistics
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:620:    const cooldown =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:621:      calculateMonsterCooldown(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:622:        row.cooldown_available_at,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:645:        cooldownActive:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:646:          cooldown.isActive,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:647:        taskStatus: row.task_status,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:671:      experienceReward:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:673:          row.experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:674:          "monster.experience_reward"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:876:              monster_experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:920:              monster_experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:925:              settled_at
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:940:            input.monsterExperienceReward.toString(),
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:974:export type CombatSettlementFailurePoint =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:978:  | "victory.bestiary"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:981:  | "victory.cooldown"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:989:  | "defeat.blessing"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:996:export type CombatSettlementFailureInjector = (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:997:  point: CombatSettlementFailurePoint
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1001:  settlementFailureInjector?:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1002:    CombatSettlementFailureInjector;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1012:    private readonly settlementFailureInjector?:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1013:      CombatSettlementFailureInjector
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1016:  private async injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1017:    point: CombatSettlementFailurePoint
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1019:    await this.settlementFailureInjector?.(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1024:  public async loadSettlementContext():
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1025:  Promise<CombatSettlementContext> {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1028:        SettlementCharacterRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1034:            experience,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1063:        SettlementUnlockRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1066:          SELECT is_promoted
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1082:    const blessingResult =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1084:        SettlementBlessingRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1087:          SELECT character_blessing_id
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1088:          FROM character_blessings
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1097:        SettlementStatisticsRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1152:        SettlementMonsterRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1159:            m.cooldown_seconds,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1162:            b.additional_cooldown_seconds
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1180:        "Settlement monster was not found."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1186:        SettlementTaskDefinitionRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1214:        "Settlement monster matched multiple Task definitions."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1222:      SettlementTaskProgressRow | null =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1228:          SettlementTaskProgressRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1233:              task_status
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1234:            FROM bestiary_statistics
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1252:        SettlementDailyDefinitionRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1291:      SettlementDailyProgressRow | null =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1297:          SettlementDailyProgressRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1326:        SettlementFightBuffRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1402:                "Settlement boss type is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1412:          "settlement.character.level",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1415:        experience:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1417:            character.experience,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1418:            "settlement.character.experience"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1423:            "settlement.character.gold"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1428:            "settlement.character.current_health"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1432:            "settlement.character.max_health",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1437:            "settlement.character.current_mana"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1441:            "settlement.character.max_mana"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1445:            "settlement.character.current_energy"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1449:            "settlement.character.max_energy",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1455:              "settlement.character.resources_updated_at"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1460:      promoted: unlock.is_promoted,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1463:        blessingResult.rows.length === 1,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1469:            "settlement.statistics.total_gold_earned"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1474:            "settlement.statistics.highest_gold_owned"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1479:            "settlement.statistics.total_monsters_killed"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1484:            "settlement.statistics.total_bosses_killed"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1489:            "settlement.statistics.total_daily_bosses_killed"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1494:            "settlement.statistics.total_deaths"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1499:            "settlement.statistics.total_damage_dealt"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1504:            "settlement.statistics.total_damage_taken"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1509:            "settlement.statistics.highest_physical_hit"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1524:                "settlement.statistics.strongest_monster_power_score"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1539:                "settlement.statistics.strongest_boss_power_score"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1545:            "settlement.statistics.current_no_death_streak"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1550:            "settlement.statistics.longest_no_death_streak"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1558:        experienceBonusPercent:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1560:            .experienceBonusPercent,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1573:            "settlement.monster.power_score"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1575:        cooldownSeconds:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1577:            monster.cooldown_seconds,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1578:            "settlement.monster.cooldown_seconds"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1582:        additionalCooldownSeconds:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1583:          monster.additional_cooldown_seconds ===
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1587:                monster.additional_cooldown_seconds,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1588:                "settlement.monster.additional_cooldown_seconds"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1609:                  "settlement.task.required_kills"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1617:                      "settlement.task.current_progress"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1622:                  : taskProgress.task_status,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1637:                "settlement.daily_boss.tier",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1646:                      "settlement.daily_boss.attempts_used_in_rotation"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1654:                      "settlement.daily_boss.total_attempts"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1662:                      "settlement.daily_boss.total_victories"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1678:              "settlement.fight_buff.value"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1683:                "settlement.fight_buff.duration_remaining",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1697:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1705:            experience = $3,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1718:            AND experience = $13
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1725:          input.experienceAfter
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1743:            .experience.toString(),
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1751:        "Victory character state changed after settlement loading."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1757:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1853:        "Victory statistics changed after settlement loading."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1859:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1875:        "Victory settlement character does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1884:        "Victory settlement monster does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1901:            experience = $3,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1918:          input.experienceAfter
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1944:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2011:        "Victory settlement could not update character statistics."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2015:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2021:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2023:    bestiary: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2031:    cooldown: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2040:    const bestiaryEntryInsert =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2043:          INSERT INTO bestiary_entries (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2060:          RETURNING bestiary_entry_id
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2071:    const bestiaryStatistics =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2075:        task_status: string;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2078:          INSERT INTO bestiary_statistics (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2085:            task_status,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2107:              bestiary_statistics.kill_count + 1,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2113:            task_status
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2124:    const bestiaryRow =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2125:      bestiaryStatistics.rows[0];
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2127:    if (!bestiaryRow) {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2129:        "Victory settlement could not update Bestiary statistics."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2133:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2134:      "victory.bestiary"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2154:          task_status: string;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2157:            UPDATE bestiary_statistics
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2163:              task_status =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2170:                  ELSE task_status
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2175:              AND task_status = 'ACTIVE'
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2178:              task_status
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2196:          progressRow.task_status;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2207:          task_status: string;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2210:            UPDATE bestiary_statistics
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2212:              task_status =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2217:              AND task_status = 'UNLOCKED'
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2218:            RETURNING task_status
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2234:          bossRow.task_status;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2237:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2291:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2296:    let cooldownApplied = false;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2297:    let cooldownAvailableAt:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2310:          .cooldownSeconds;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2315:              .additionalCooldownSeconds
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2329:          "Victory cooldown duration is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2334:        cooldownAvailableAt =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2342:            cooldownAvailableAt.getTime()
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2346:            "Victory cooldown timestamp is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2350:        const cooldownWrite =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2353:              INSERT INTO character_cooldowns (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2355:                cooldown_type,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2373:              WHERE cooldown_type = 'Monster'
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2386:              cooldownAvailableAt,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2391:        if (cooldownWrite.rowCount !== 1) {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2393:            "Victory cooldown could not be persisted."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2397:        cooldownApplied = true;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2399:        await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2400:          "victory.cooldown"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2434:        await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2470:      bestiary: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2472:          bestiaryEntryInsert.rowCount ===
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2476:            bestiaryRow.kill_count,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2477:            "victory.bestiary.kill_count"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2484:      cooldown: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2485:        applied: cooldownApplied,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2487:          cooldownAvailableAt,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2498:  public async applyVictorySettlement(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2499:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2500:  ): Promise<CombatSettlement> {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2506:        "Victory settlement requires a player Victory state."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2514:        "Victory settlement cannot contain a defeat reason."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2525:        "Victory settlement time is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2535:        "Victory settlement cannot predate combat start."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2543:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2552:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2597:        baseExperience:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2598:          input.baseExperience
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2600:        finalExperience:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2601:          input.experienceAwarded
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2609:        experienceBonusBasisPoints:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2610:          input.experienceBonusBasisPoints
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2618:        experienceBefore:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2620:            .experience
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2622:        experienceAfter:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2623:          input.experienceAfter
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2637:        experienceLost: "0",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2640:      blessingConsumed: false,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2641:      bestiary:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2642:        consequences.bestiary,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2646:      cooldown: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2648:          consequences.cooldown
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2651:          consequences.cooldown
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2668:          INSERT INTO combat_logs (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2718:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2724:        DELETE FROM combat_logs
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2727:          FROM combat_logs
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2741:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2756:            settled_at = $5,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2761:            AND settled_at IS NULL
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2781:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2788:      experience: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2791:            .experience,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2793:          input.experienceAwarded,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2796:          input.experienceAfter,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2823:      blessingConsumed: false,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2825:      bestiary:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2826:        consequences.bestiary,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2831:      cooldown:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2832:        consequences.cooldown,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2863:    input: ApplyDefeatSettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2887:        "Defeat settlement character does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2896:        "Defeat settlement monster does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2901:      input.blessingConsumed !==
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2905:        "Defeat Blessing result does not match the locked settlement context."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2922:            experience = $3,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2939:          input.experienceAfter
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2965:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3012:        "Defeat settlement could not update character statistics."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3016:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3020:    if (input.blessingConsumed) {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3021:      const blessingDeletion =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3024:            DELETE FROM character_blessings
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3034:        blessingDeletion.rowCount !== 1
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3037:          "Defeat Blessing could not be consumed."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3041:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3042:        "defeat.blessing"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3075:        await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3111:  public async applyDefeatSettlement(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3112:    input: ApplyDefeatSettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3113:  ): Promise<CombatSettlement> {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3119:        "Defeat settlement requires a player Defeat state."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3127:        "Defeat settlement requires a defeat reason."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3138:        "Defeat settlement time is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3148:        "Defeat settlement cannot predate combat start."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3163:        "Defeat settlement could not map the terminal state."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3171:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3218:        baseExperience: "0",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3219:        finalExperience: "0",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3222:        experienceBonusBasisPoints: "0",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3227:        experienceBefore:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3229:            .experience
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3231:        experienceAfter:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3232:          input.experienceAfter
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3234:        experienceLost:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3235:          input.experienceLost
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3237:        experienceLossPercent:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3255:      blessingConsumed:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3256:        input.blessingConsumed,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3258:      bestiary: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3271:      cooldown: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3289:          INSERT INTO combat_logs (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3339:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3345:        DELETE FROM combat_logs
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3348:          FROM combat_logs
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3362:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3377:            settled_at = $6,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3382:            AND settled_at IS NULL
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3403:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3410:      experience: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3413:            .experience,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3416:          input.experienceLost,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3418:          input.experienceAfter,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3443:      blessingConsumed:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3444:        input.blessingConsumed,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3446:      bestiary: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3459:      cooldown: {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3631:        "Terminal combat must use settlement persistence."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3742:                cs.monster_experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3747:                cs.settled_at
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3788:              .settlementFailureInjector
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3821:            cs.monster_experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3826:            cs.settled_at
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3879:            cs.monster_experience_reward,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3884:            cs.settled_at
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:43:  monster_experience_reward: unknown;
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:48:  settled_at: unknown;
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:366:      monsterExperienceReward: mapBigInt(
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:367:        row.monster_experience_reward,
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:368:        "monster_experience_reward"
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:387:    settledAt: mapNullableDate(
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:388:      row.settled_at,
+src/modules/combat/infrastructure/postgres-combat.mapper.ts:389:      "settled_at"
 src/modules/monsters/application/get-monster-details.service.ts:8:  calculateMonsterCooldown,
 src/modules/monsters/application/get-monster-details.service.ts:9:} from "../domain/monster-cooldown.js";
 src/modules/monsters/application/get-monster-details.service.ts:44:    const cooldown =
@@ -20212,6 +27556,96 @@ src/modules/monsters/infrastructure/postgres-monster.mapper.ts:154:    cooldownA
 src/modules/monsters/infrastructure/postgres-monster.mapper.ts:155:      row.cooldown_available_at,
 src/modules/monsters/infrastructure/postgres-monster.mapper.ts:156:      "cooldown_available_at"
 src/modules/monsters/infrastructure/postgres-monster.mapper.ts:160:      row.task_status
+src/modules/progression/domain/defeat-settlement.ts:2:  CombatSettlementContext,
+src/modules/progression/domain/defeat-settlement.ts:25:export type DefeatSettlementPlan = {
+src/modules/progression/domain/defeat-settlement.ts:28:  experienceBefore: bigint;
+src/modules/progression/domain/defeat-settlement.ts:29:  experienceLost: bigint;
+src/modules/progression/domain/defeat-settlement.ts:30:  experienceAfter: bigint;
+src/modules/progression/domain/defeat-settlement.ts:41:  blessingConsumed: boolean;
+src/modules/progression/domain/defeat-settlement.ts:70:export function planDefeatSettlement(
+src/modules/progression/domain/defeat-settlement.ts:71:  context: CombatSettlementContext,
+src/modules/progression/domain/defeat-settlement.ts:75:): DefeatSettlementPlan {
+src/modules/progression/domain/defeat-settlement.ts:102:      context.character.experience,
+src/modules/progression/domain/defeat-settlement.ts:103:      context.promoted,
+src/modules/progression/domain/defeat-settlement.ts:159:    experienceBefore:
+src/modules/progression/domain/defeat-settlement.ts:160:      context.character.experience,
+src/modules/progression/domain/defeat-settlement.ts:161:    experienceLost:
+src/modules/progression/domain/defeat-settlement.ts:162:      deathLoss.experienceLost,
+src/modules/progression/domain/defeat-settlement.ts:163:    experienceAfter:
+src/modules/progression/domain/defeat-settlement.ts:164:      deathLoss.remainingExperience,
+src/modules/progression/domain/defeat-settlement.ts:178:    blessingConsumed:
+src/modules/progression/domain/progression.ts:47:function rawExperienceThreshold(
+src/modules/progression/domain/progression.ts:60:export function experienceThreshold(
+src/modules/progression/domain/progression.ts:73:    rawExperienceThreshold(BigInt(level));
+src/modules/progression/domain/progression.ts:77:    "Experience threshold"
+src/modules/progression/domain/progression.ts:83:export function levelFromExperience(
+src/modules/progression/domain/progression.ts:84:  experience: bigint
+src/modules/progression/domain/progression.ts:87:    experience,
+src/modules/progression/domain/progression.ts:88:    "Experience"
+src/modules/progression/domain/progression.ts:95:    rawExperienceThreshold(upper) <=
+src/modules/progression/domain/progression.ts:96:    experience
+src/modules/progression/domain/progression.ts:107:      rawExperienceThreshold(middle) <=
+src/modules/progression/domain/progression.ts:108:      experience
+src/modules/progression/domain/progression.ts:177:  experience: bigint,
+src/modules/progression/domain/progression.ts:178:  promoted: boolean,
+src/modules/progression/domain/progression.ts:182:  experienceLost: bigint;
+src/modules/progression/domain/progression.ts:183:  remainingExperience: bigint;
+src/modules/progression/domain/progression.ts:187:    experience,
+src/modules/progression/domain/progression.ts:188:    "Experience"
+src/modules/progression/domain/progression.ts:192:    promoted
+src/modules/progression/domain/progression.ts:200:  const experienceLost =
+src/modules/progression/domain/progression.ts:201:    experience *
+src/modules/progression/domain/progression.ts:205:  const remainingExperience =
+src/modules/progression/domain/progression.ts:206:    experience - experienceLost;
+src/modules/progression/domain/progression.ts:210:    experienceLost,
+src/modules/progression/domain/progression.ts:211:    remainingExperience,
+src/modules/progression/domain/progression.ts:213:      levelFromExperience(
+src/modules/progression/domain/progression.ts:214:        remainingExperience
+src/modules/progression/domain/victory-rewards.ts:13:  baseExperience: bigint;
+src/modules/progression/domain/victory-rewards.ts:16:  experienceBonusPercent: number;
+src/modules/progression/domain/victory-rewards.ts:21:  baseExperience: bigint;
+src/modules/progression/domain/victory-rewards.ts:22:  finalExperience: bigint;
+src/modules/progression/domain/victory-rewards.ts:25:  experienceBonusBasisPoints: bigint;
+src/modules/progression/domain/victory-rewards.ts:87:  const experienceBonusBasisPoints =
+src/modules/progression/domain/victory-rewards.ts:89:      input.experienceBonusPercent
+src/modules/progression/domain/victory-rewards.ts:105:    baseExperience:
+src/modules/progression/domain/victory-rewards.ts:106:      input.baseExperience,
+src/modules/progression/domain/victory-rewards.ts:108:    finalExperience:
+src/modules/progression/domain/victory-rewards.ts:110:        input.baseExperience,
+src/modules/progression/domain/victory-rewards.ts:111:        experienceBonusBasisPoints
+src/modules/progression/domain/victory-rewards.ts:122:    experienceBonusBasisPoints,
+src/modules/progression/domain/victory-settlement.ts:2:  CombatSettlementContext,
+src/modules/progression/domain/victory-settlement.ts:17:  levelFromExperience,
+src/modules/progression/domain/victory-settlement.ts:39:export type VictorySettlementPlan = {
+src/modules/progression/domain/victory-settlement.ts:40:  baseExperience: bigint;
+src/modules/progression/domain/victory-settlement.ts:42:  experienceBonusBasisPoints: bigint;
+src/modules/progression/domain/victory-settlement.ts:44:  experienceAwarded: bigint;
+src/modules/progression/domain/victory-settlement.ts:46:  experienceBefore: bigint;
+src/modules/progression/domain/victory-settlement.ts:47:  experienceAfter: bigint;
+src/modules/progression/domain/victory-settlement.ts:85:export function planVictorySettlement(
+src/modules/progression/domain/victory-settlement.ts:87:  context: CombatSettlementContext,
+src/modules/progression/domain/victory-settlement.ts:91:): VictorySettlementPlan {
+src/modules/progression/domain/victory-settlement.ts:97:      "Settlement character does not match combat session."
+src/modules/progression/domain/victory-settlement.ts:106:      "Settlement monster does not match combat session."
+src/modules/progression/domain/victory-settlement.ts:110:  const baseExperience =
+src/modules/progression/domain/victory-settlement.ts:112:      .monsterExperienceReward;
+src/modules/progression/domain/victory-settlement.ts:123:  const experienceBonusBasisPoints =
+src/modules/progression/domain/victory-settlement.ts:126:        .experienceBonusPercent
+src/modules/progression/domain/victory-settlement.ts:135:  const experienceAwarded =
+src/modules/progression/domain/victory-settlement.ts:137:      baseExperience,
+src/modules/progression/domain/victory-settlement.ts:138:      experienceBonusBasisPoints
+src/modules/progression/domain/victory-settlement.ts:147:  const experienceAfter =
+src/modules/progression/domain/victory-settlement.ts:149:      context.character.experience,
+src/modules/progression/domain/victory-settlement.ts:150:      experienceAwarded,
+src/modules/progression/domain/victory-settlement.ts:151:      "Experience after Victory"
+src/modules/progression/domain/victory-settlement.ts:162:    levelFromExperience(
+src/modules/progression/domain/victory-settlement.ts:163:      experienceAfter
+src/modules/progression/domain/victory-settlement.ts:331:    baseExperience,
+src/modules/progression/domain/victory-settlement.ts:333:    experienceBonusBasisPoints,
+src/modules/progression/domain/victory-settlement.ts:335:    experienceAwarded,
+src/modules/progression/domain/victory-settlement.ts:337:    experienceBefore:
+src/modules/progression/domain/victory-settlement.ts:338:      context.character.experience,
+src/modules/progression/domain/victory-settlement.ts:339:    experienceAfter,
 tests/integration/characters/postgres-character-achievements.repository.test.ts:72:          reward_gold_percent, reward_experience_percent
 tests/integration/characters/postgres-character-achievements.repository.test.ts:119:      experienceBonusPercent: 4.5,
 tests/integration/characters/postgres-character-buffs.repository.test.ts:72:          ($1, 'ExperienceBoost', 'System', 4.5, 'Fights', 2,
@@ -20222,8 +27656,165 @@ tests/integration/characters/postgres-character.repository.test.ts:77:      expe
 tests/integration/characters/postgres-character.repository.test.ts:80:      craftingExperience: 0n,
 tests/integration/characters/postgres-character.repository.test.ts:82:      gatheringExperience: 0n,
 tests/integration/characters/postgres-character.repository.test.ts:95:      promoted: false,
-tests/integration/combat/resolve-combat-action.integration.test.ts:457:          await Promise.allSettled([
-tests/integration/combat/start-combat.integration.test.ts:472:          await Promise.allSettled([
+tests/integration/combat/combat-retrieval.integration.test.ts:431:              settled_at = $2
+tests/integration/combat/daily-boss-start.integration.test.ts:114:          cooldown_seconds,
+tests/integration/combat/daily-boss-start.integration.test.ts:122:          experience_reward
+tests/integration/combat/daily-boss-start.integration.test.ts:143:          experience_reward
+tests/integration/combat/daily-boss-start.integration.test.ts:782:          await Promise.allSettled([
+tests/integration/combat/persistent-combat-schema.test.ts:47:  settledAt?: Date | null;
+tests/integration/combat/persistent-combat-schema.test.ts:48:  monsterExperienceReward?: number;
+tests/integration/combat/persistent-combat-schema.test.ts:68:  const settledAt =
+tests/integration/combat/persistent-combat-schema.test.ts:69:    overrides.settledAt !== undefined
+tests/integration/combat/persistent-combat-schema.test.ts:70:      ? overrides.settledAt
+tests/integration/combat/persistent-combat-schema.test.ts:96:        settled_at,
+tests/integration/combat/persistent-combat-schema.test.ts:97:        monster_experience_reward,
+tests/integration/combat/persistent-combat-schema.test.ts:126:      settledAt,
+tests/integration/combat/persistent-combat-schema.test.ts:127:      overrides.monsterExperienceReward ?? 0,
+tests/integration/combat/persistent-combat-schema.test.ts:230:  it("contains the M6 settlement schema", async () => {
+tests/integration/combat/persistent-combat-schema.test.ts:245:            'character_blessings',
+tests/integration/combat/persistent-combat-schema.test.ts:284:      "combat_sessions.settled_at"
+tests/integration/combat/persistent-combat-schema.test.ts:287:      "combat_sessions.monster_experience_reward"
+tests/integration/combat/persistent-combat-schema.test.ts:296:      "monsters.experience_reward"
+tests/integration/combat/persistent-combat-schema.test.ts:299:      "character_blessings.character_id"
+tests/integration/combat/persistent-combat-schema.test.ts:406:        settledAt: null,
+tests/integration/combat/persistent-combat-schema.test.ts:415:        settledAt: null,
+tests/integration/combat/persistent-combat-schema.test.ts:432:        monsterExperienceReward: -1,
+tests/integration/combat/persistent-combat-schema.test.ts:450:  it("enforces one active Blessing per character", async () => {
+tests/integration/combat/persistent-combat-schema.test.ts:453:        INSERT INTO character_blessings (
+tests/integration/combat/persistent-combat-schema.test.ts:465:          INSERT INTO character_blessings (
+tests/integration/combat/persistent-combat-schema.test.ts:479:        DELETE FROM character_blessings
+tests/integration/combat/persistent-combat-schema.test.ts:502:          SET experience_reward = -1
+tests/integration/combat/persistent-combat-schema.test.ts:533:          AND tablename = 'combat_logs'
+tests/integration/combat/persistent-combat-schema.test.ts:535:            'ix_combat_logs_character_recent'
+tests/integration/combat/resolve-combat-action.integration.test.ts:28:  type CombatSettlementFailurePoint,
+tests/integration/combat/resolve-combat-action.integration.test.ts:224:  settled_at: Date | null;
+tests/integration/combat/resolve-combat-action.integration.test.ts:226:  experience: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:237:  bestiary_entry_count: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:238:  bestiary_statistics_count: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:239:  cooldown_count: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:240:  blessing_count: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:259:          cs.settled_at,
+tests/integration/combat/resolve-combat-action.integration.test.ts:261:          character.experience,
+tests/integration/combat/resolve-combat-action.integration.test.ts:279:            FROM combat_logs
+tests/integration/combat/resolve-combat-action.integration.test.ts:285:            FROM bestiary_entries
+tests/integration/combat/resolve-combat-action.integration.test.ts:290:          ) AS bestiary_entry_count,
+tests/integration/combat/resolve-combat-action.integration.test.ts:293:            FROM bestiary_statistics
+tests/integration/combat/resolve-combat-action.integration.test.ts:298:          ) AS bestiary_statistics_count,
+tests/integration/combat/resolve-combat-action.integration.test.ts:301:            FROM character_cooldowns
+tests/integration/combat/resolve-combat-action.integration.test.ts:306:          ) AS cooldown_count,
+tests/integration/combat/resolve-combat-action.integration.test.ts:309:            FROM character_blessings
+tests/integration/combat/resolve-combat-action.integration.test.ts:312:          ) AS blessing_count,
+tests/integration/combat/resolve-combat-action.integration.test.ts:412:      "loads authoritative settlement context under transaction locks",
+tests/integration/combat/resolve-combat-action.integration.test.ts:429:                  .loadSettlementContext()
+tests/integration/combat/resolve-combat-action.integration.test.ts:437:            experience: 0n,
+tests/integration/combat/resolve-combat-action.integration.test.ts:440:          promoted: false,
+tests/integration/combat/resolve-combat-action.integration.test.ts:444:            experienceBonusPercent: 0,
+tests/integration/combat/resolve-combat-action.integration.test.ts:464:          context.monster.cooldownSeconds
+tests/integration/combat/resolve-combat-action.integration.test.ts:679:              experience = 220,
+tests/integration/combat/resolve-combat-action.integration.test.ts:721:          settledAt: observedAt,
+tests/integration/combat/resolve-combat-action.integration.test.ts:727:          settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:730:            experience: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:747:            blessingConsumed: false,
+tests/integration/combat/resolve-combat-action.integration.test.ts:756:            settled_at: Date | null;
+tests/integration/combat/resolve-combat-action.integration.test.ts:760:            experience: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:770:                cs.settled_at,
+tests/integration/combat/resolve-combat-action.integration.test.ts:776:                c.experience,
+tests/integration/combat/resolve-combat-action.integration.test.ts:789:              LEFT JOIN combat_logs AS logs
+tests/integration/combat/resolve-combat-action.integration.test.ts:810:          settled_at: observedAt,
+tests/integration/combat/resolve-combat-action.integration.test.ts:814:          experience: "198",
+tests/integration/combat/resolve-combat-action.integration.test.ts:870:                  settled_at,
+tests/integration/combat/resolve-combat-action.integration.test.ts:871:                  monster_experience_reward,
+tests/integration/combat/resolve-combat-action.integration.test.ts:893:                  monster_experience_reward,
+tests/integration/combat/resolve-combat-action.integration.test.ts:924:              INSERT INTO combat_logs (
+tests/integration/combat/resolve-combat-action.integration.test.ts:1016:          result.settlement
+tests/integration/combat/resolve-combat-action.integration.test.ts:1042:              FROM combat_logs
+tests/integration/combat/resolve-combat-action.integration.test.ts:1206:                    settled_at,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1207:                    monster_experience_reward,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1229:                    monster_experience_reward,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1256:                INSERT INTO combat_logs (
+tests/integration/combat/resolve-combat-action.integration.test.ts:1362:              FROM combat_logs
+tests/integration/combat/resolve-combat-action.integration.test.ts:1411:              FROM combat_logs
+tests/integration/combat/resolve-combat-action.integration.test.ts:1467:      "rolls back every main Victory settlement phase",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1470:          CombatSettlementFailurePoint[] = [
+tests/integration/combat/resolve-combat-action.integration.test.ts:1474:            "victory.bestiary",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1499:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:1537:      "rolls back every main Defeat settlement phase",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1540:          CombatSettlementFailurePoint[] = [
+tests/integration/combat/resolve-combat-action.integration.test.ts:1558:                experience = 220,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1600:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:1638:      "rolls back Victory when cooldown persistence is followed by failure",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1646:            cooldown_seconds: number;
+tests/integration/combat/resolve-combat-action.integration.test.ts:1651:                monster.cooldown_seconds
+tests/integration/combat/resolve-combat-action.integration.test.ts:1672:            "Cooldown rollback monster was not found."
+tests/integration/combat/resolve-combat-action.integration.test.ts:1680:              SET cooldown_seconds = 30
+tests/integration/combat/resolve-combat-action.integration.test.ts:1694:            before.cooldown_count
+tests/integration/combat/resolve-combat-action.integration.test.ts:1699:              "Injected failure at victory.cooldown."
+tests/integration/combat/resolve-combat-action.integration.test.ts:1706:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:1710:                      "victory.cooldown"
+tests/integration/combat/resolve-combat-action.integration.test.ts:1738:            after.cooldown_count
+tests/integration/combat/resolve-combat-action.integration.test.ts:1754:              SET cooldown_seconds = $2
+tests/integration/combat/resolve-combat-action.integration.test.ts:1759:              monsterRow.cooldown_seconds,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1787:              'ExperienceBoost',
+tests/integration/combat/resolve-combat-action.integration.test.ts:1828:              settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:1879:      "rolls back conditional Defeat Blessing and fight-buff phases",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1882:          CombatSettlementFailurePoint[] = [
+tests/integration/combat/resolve-combat-action.integration.test.ts:1883:            "defeat.blessing",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1896:                experience = 220,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1926:              INSERT INTO character_blessings (
+tests/integration/combat/resolve-combat-action.integration.test.ts:1981:            before.blessing_count
+tests/integration/combat/resolve-combat-action.integration.test.ts:2001:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2036:            after.blessing_count
+tests/integration/combat/resolve-combat-action.integration.test.ts:2110:            INSERT INTO bestiary_statistics (
+tests/integration/combat/resolve-combat-action.integration.test.ts:2117:              task_status,
+tests/integration/combat/resolve-combat-action.integration.test.ts:2139:              task_status = 'UNLOCKED',
+tests/integration/combat/resolve-combat-action.integration.test.ts:2155:            task_status: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:2160:                task_status: string;
+tests/integration/combat/resolve-combat-action.integration.test.ts:2165:                    task_status
+tests/integration/combat/resolve-combat-action.integration.test.ts:2166:                  FROM bestiary_statistics
+tests/integration/combat/resolve-combat-action.integration.test.ts:2197:          task_status: "UNLOCKED",
+tests/integration/combat/resolve-combat-action.integration.test.ts:2209:              settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2251:          afterTask.task_status
+tests/integration/combat/resolve-combat-action.integration.test.ts:2314:                    cooldown_seconds,
+tests/integration/combat/resolve-combat-action.integration.test.ts:2322:                    experience_reward
+tests/integration/combat/resolve-combat-action.integration.test.ts:2343:                    experience_reward
+tests/integration/combat/resolve-combat-action.integration.test.ts:2686:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2850:          await Promise.allSettled([
+tests/integration/combat/start-combat.integration.test.ts:118:          experience_reward,
+tests/integration/combat/start-combat.integration.test.ts:328:          monsterExperienceReward: 75n,
+tests/integration/combat/start-combat.integration.test.ts:335:            monster_experience_reward: string;
+tests/integration/combat/start-combat.integration.test.ts:341:                monster_experience_reward,
+tests/integration/combat/start-combat.integration.test.ts:354:          monster_experience_reward: "75",
+tests/integration/combat/start-combat.integration.test.ts:510:          await Promise.allSettled([
+tests/integration/http/combat.http.test.ts:113:        experience_reward,
+tests/integration/http/combat.http.test.ts:515:      "returns a terminal Victory settlement with string amounts",
+tests/integration/http/combat.http.test.ts:565:              experience_reward =
+tests/integration/http/combat.http.test.ts:632:              settlement: {
+tests/integration/http/combat.http.test.ts:634:                experience: {
+tests/integration/http/combat.http.test.ts:646:                bestiary: {
+tests/integration/http/combat.http.test.ts:672:          body.data.settlement
+tests/integration/http/combat.http.test.ts:676:          experience: {
+tests/integration/http/combat.http.test.ts:695:          bestiary: {
+tests/integration/http/combat.http.test.ts:708:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:713:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:718:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:726:              body.data.settlement
+tests/integration/http/combat.http.test.ts:735:              body.data.settlement
+tests/integration/http/combat.http.test.ts:744:      "returns a terminal Defeat settlement with string amounts",
+tests/integration/http/combat.http.test.ts:774:              experience = 0,
+tests/integration/http/combat.http.test.ts:798:              experience_reward = 75,
+tests/integration/http/combat.http.test.ts:864:              settlement: {
+tests/integration/http/combat.http.test.ts:866:                experience: {
+tests/integration/http/combat.http.test.ts:904:          body.data.settlement
+tests/integration/http/combat.http.test.ts:908:          experience: {
+tests/integration/http/combat.http.test.ts:933:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:934:            .experience.lost
+tests/integration/http/combat.http.test.ts:938:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:939:            .experience.after
+tests/integration/http/combat.http.test.ts:943:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:948:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:953:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:961:              body.data.settlement
+tests/integration/http/combat.http.test.ts:970:              body.data.settlement
 tests/integration/http/monster-discovery.http.test.ts:277:          cooldown: {
 tests/integration/http/monster-discovery.http.test.ts:281:          bestiaryVisible:
 tests/integration/monsters/daily-boss-discovery.repository.test.ts:110:          cooldown_seconds,
@@ -20293,8 +27884,50 @@ tests/unit/characters/postgres-character.mapper.test.ts:260:        experience: 
 tests/unit/characters/postgres-character.mapper.test.ts:267:    expect(result.progression.experience).toBe(
 tests/unit/characters/postgres-character.mapper.test.ts:275:    expect(result.progression.craftingExperience).toBe(
 tests/unit/characters/postgres-character.mapper.test.ts:279:    expect(result.progression.gatheringExperience).toBe(
-tests/unit/combat/start-combat.service.test.ts:124:      experienceBonusPercent: 0,
-tests/unit/combat/start-combat.service.test.ts:441:        experienceBonusPercent: 0,
+tests/unit/combat/combat-retrieval.services.test.ts:46:      monsterExperienceReward: 50n,
+tests/unit/combat/combat-retrieval.services.test.ts:53:    settledAt: null,
+tests/unit/combat/combat-retrieval.services.test.ts:94:      settlement: null,
+tests/unit/combat/combat-retrieval.services.test.ts:135:      settlement: null,
+tests/unit/combat/combat-retrieval.services.test.ts:167:      settlement: null,
+tests/unit/combat/postgres-combat.mapper.test.ts:45:    monster_experience_reward: "50",
+tests/unit/combat/postgres-combat.mapper.test.ts:51:    settled_at: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:97:      monsterExperienceReward: 50n,
+tests/unit/combat/resolve-combat-action.service.test.ts:106:        settledAt: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:110:    loadSettlementContext:
+tests/unit/combat/resolve-combat-action.service.test.ts:115:          experience: 0n,
+tests/unit/combat/resolve-combat-action.service.test.ts:132:        promoted: false,
+tests/unit/combat/resolve-combat-action.service.test.ts:161:          experienceBonusPercent: 0,
+tests/unit/combat/resolve-combat-action.service.test.ts:168:          cooldownSeconds: 30,
+tests/unit/combat/resolve-combat-action.service.test.ts:171:          additionalCooldownSeconds: 0,
+tests/unit/combat/resolve-combat-action.service.test.ts:180:    applyVictorySettlement:
+tests/unit/combat/resolve-combat-action.service.test.ts:184:        experience: {
+tests/unit/combat/resolve-combat-action.service.test.ts:187:              .experience,
+tests/unit/combat/resolve-combat-action.service.test.ts:189:            input.experienceAwarded,
+tests/unit/combat/resolve-combat-action.service.test.ts:192:            input.experienceAfter,
+tests/unit/combat/resolve-combat-action.service.test.ts:219:        blessingConsumed: false,
+tests/unit/combat/resolve-combat-action.service.test.ts:221:        bestiary: {
+tests/unit/combat/resolve-combat-action.service.test.ts:231:        cooldown: {
+tests/unit/combat/resolve-combat-action.service.test.ts:269:    applyDefeatSettlement:
+tests/unit/combat/resolve-combat-action.service.test.ts:273:        experience: {
+tests/unit/combat/resolve-combat-action.service.test.ts:276:              .experience,
+tests/unit/combat/resolve-combat-action.service.test.ts:279:            input.experienceLost,
+tests/unit/combat/resolve-combat-action.service.test.ts:281:            input.experienceAfter,
+tests/unit/combat/resolve-combat-action.service.test.ts:306:        blessingConsumed:
+tests/unit/combat/resolve-combat-action.service.test.ts:307:          input.blessingConsumed,
+tests/unit/combat/resolve-combat-action.service.test.ts:309:        bestiary: {
+tests/unit/combat/resolve-combat-action.service.test.ts:319:        cooldown: {
+tests/unit/combat/resolve-combat-action.service.test.ts:450:        settledAt: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:451:        settlement: null,
+tests/unit/combat/start-combat.service.test.ts:87:      monsterExperienceReward: 50n,
+tests/unit/combat/start-combat.service.test.ts:93:    settledAt: null,
+tests/unit/combat/start-combat.service.test.ts:111:      experienceReward: 50n,
+tests/unit/combat/start-combat.service.test.ts:133:      experienceBonusPercent: 0,
+tests/unit/combat/start-combat.service.test.ts:262:      monsterExperienceReward: 50n,
+tests/unit/combat/start-combat.service.test.ts:321:      experienceReward: 50n,
+tests/unit/combat/start-combat.service.test.ts:425:      experienceReward: 50n,
+tests/unit/combat/start-combat.service.test.ts:464:        experienceBonusPercent: 0,
+tests/unit/combat/start-combat.service.test.ts:507:      experienceReward: 100n,
+tests/unit/combat/start-combat.service.test.ts:578:      experienceReward: 100n,
 tests/unit/http/character-http.handler.test.ts:38:    experience: 0n,
 tests/unit/http/character-http.handler.test.ts:56:      experience: 0n,
 tests/unit/http/character-http.handler.test.ts:59:      craftingExperience: 0n,
@@ -20302,10 +27935,42 @@ tests/unit/http/character-http.handler.test.ts:61:      gatheringExperience: 0n,
 tests/unit/http/character-http.handler.test.ts:81:      promoted: false,
 tests/unit/http/character-http.handler.test.ts:235:          experience: "0",
 tests/unit/http/character-http.handler.test.ts:263:          experience: "0",
+tests/unit/http/combat-http.handler.test.ts:69:    settledAt: null,
+tests/unit/http/combat-http.handler.test.ts:71:    settlement: null,
+tests/unit/http/combat-http.handler.test.ts:302:  it("returns settlement null for a continuing action", async () => {
+tests/unit/http/combat-http.handler.test.ts:323:          settlement:
+tests/unit/http/combat-http.handler.test.ts:329:      body.data.settlement
+tests/unit/http/combat-http.handler.test.ts:333:  it("serializes a terminal settlement with bigint amounts", async () => {
+tests/unit/http/combat-http.handler.test.ts:347:    const cooldownAt =
+tests/unit/http/combat-http.handler.test.ts:357:        settledAt: endedAt,
+tests/unit/http/combat-http.handler.test.ts:358:        settlement: {
+tests/unit/http/combat-http.handler.test.ts:361:          experience: {
+tests/unit/http/combat-http.handler.test.ts:386:          blessingConsumed: false,
+tests/unit/http/combat-http.handler.test.ts:388:          bestiary: {
+tests/unit/http/combat-http.handler.test.ts:399:          cooldown: {
+tests/unit/http/combat-http.handler.test.ts:401:            availableAt: cooldownAt,
+tests/unit/http/combat-http.handler.test.ts:446:          settlement: unknown;
+tests/unit/http/combat-http.handler.test.ts:451:      body.data.settlement
+tests/unit/http/combat-http.handler.test.ts:455:      experience: {
+tests/unit/http/combat-http.handler.test.ts:479:      blessingConsumed: false,
+tests/unit/http/combat-http.handler.test.ts:481:      bestiary: {
+tests/unit/http/combat-http.handler.test.ts:492:      cooldown: {
+tests/unit/http/combat-http.handler.test.ts:495:          cooldownAt.toISOString(),
 tests/unit/http/http-json.test.ts:27:        experience: 123456789012345n,
 tests/unit/http/http-json.test.ts:33:      '{"experience":"123456789012345","nested":{"gold":"9876543210"}}'
 tests/unit/http/monster-http.handler.test.ts:48:    cooldown: {
 tests/unit/http/monster-http.handler.test.ts:53:    bestiaryVisible: false,
+tests/unit/import-game-data.test.ts:8:  validateMonsterExperienceReward,
+tests/unit/import-game-data.test.ts:11:describe("monster Experience reward import validation", () => {
+tests/unit/import-game-data.test.ts:13:    [null, "experience_reward is required."],
+tests/unit/import-game-data.test.ts:14:    ["", "experience_reward is required."],
+tests/unit/import-game-data.test.ts:15:    ["abc", "experience_reward must be a non-negative integer."],
+tests/unit/import-game-data.test.ts:16:    ["1.5", "experience_reward must be a non-negative integer."],
+tests/unit/import-game-data.test.ts:17:    ["-1", "experience_reward must be a non-negative integer."],
+tests/unit/import-game-data.test.ts:18:    [0, "experience_reward must be between 1 and PostgreSQL BIGINT maximum."],
+tests/unit/import-game-data.test.ts:21:      "experience_reward must be between 1 and PostgreSQL BIGINT maximum.",
+tests/unit/import-game-data.test.ts:27:        validateMonsterExperienceReward(value)
+tests/unit/import-game-data.test.ts:41:        validateMonsterExperienceReward(value)
 tests/unit/monsters/daily-boss-discovery.service.test.ts:75:    bestiaryVisible: false,
 tests/unit/monsters/daily-boss-discovery.service.test.ts:76:    cooldownAvailableAt: null,
 tests/unit/monsters/daily-boss-discovery.service.test.ts:187:    it("ignores ordinary cooldown when evaluating a Daily Boss", async () => {
@@ -20370,5 +28035,93 @@ tests/unit/monsters/task-boss-discovery.service.test.ts:187:    it("ignores cool
 tests/unit/monsters/task-boss-discovery.service.test.ts:192:        cooldownAvailableAt: new Date(
 tests/unit/monsters/task-boss-discovery.service.test.ts:221:        cooldown: {
 tests/unit/monsters/task-boss-discovery.service.test.ts:224:            record.cooldownAvailableAt,
+tests/unit/progression/defeat-settlement.test.ts:8:  CombatSettlementContext,
+tests/unit/progression/defeat-settlement.test.ts:18:  planDefeatSettlement,
+tests/unit/progression/defeat-settlement.test.ts:19:} from "../../../src/modules/progression/domain/defeat-settlement.js";
+tests/unit/progression/defeat-settlement.test.ts:22:CombatSettlementContext {
+tests/unit/progression/defeat-settlement.test.ts:27:      experience: 220n,
+tests/unit/progression/defeat-settlement.test.ts:43:    promoted: false,
+tests/unit/progression/defeat-settlement.test.ts:68:      experienceBonusPercent: 0,
+tests/unit/progression/defeat-settlement.test.ts:75:      cooldownSeconds: 30,
+tests/unit/progression/defeat-settlement.test.ts:78:      additionalCooldownSeconds: 0,
+tests/unit/progression/defeat-settlement.test.ts:108:  "M6 Defeat settlement plan",
+tests/unit/progression/defeat-settlement.test.ts:111:      "applies unpromoted death loss and resets the streak",
+tests/unit/progression/defeat-settlement.test.ts:114:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:123:          experienceBefore: 220n,
+tests/unit/progression/defeat-settlement.test.ts:124:          experienceLost: 22n,
+tests/unit/progression/defeat-settlement.test.ts:125:          experienceAfter: 198n,
+tests/unit/progression/defeat-settlement.test.ts:130:          blessingConsumed: false,
+tests/unit/progression/defeat-settlement.test.ts:161:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:186:      "uses modifier promoted=%s blessed=%s",
+tests/unit/progression/defeat-settlement.test.ts:188:        promoted,
+tests/unit/progression/defeat-settlement.test.ts:194:        context.promoted = promoted;
+tests/unit/progression/defeat-settlement.test.ts:198:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:209:          result.blessingConsumed
+tests/unit/progression/defeat-settlement.test.ts:218:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:240:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:256:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:278:          planDefeatSettlement(
+tests/unit/progression/progression.test.ts:13:  experienceThreshold,
+tests/unit/progression/progression.test.ts:14:  levelFromExperience,
+tests/unit/progression/progression.test.ts:32:        experienceThreshold(level)
+tests/unit/progression/progression.test.ts:38:    expect(levelFromExperience(0n)).toBe(1);
+tests/unit/progression/progression.test.ts:39:    expect(levelFromExperience(99n)).toBe(1);
+tests/unit/progression/progression.test.ts:40:    expect(levelFromExperience(100n)).toBe(2);
+tests/unit/progression/progression.test.ts:41:    expect(levelFromExperience(199n)).toBe(2);
+tests/unit/progression/progression.test.ts:42:    expect(levelFromExperience(200n)).toBe(3);
+tests/unit/progression/progression.test.ts:43:    expect(levelFromExperience(4_200n)).toBe(8);
+tests/unit/progression/progression.test.ts:44:    expect(levelFromExperience(15_694_800n)).toBe(100);
+tests/unit/progression/progression.test.ts:47:  it("supports large valid Experience efficiently", () => {
+tests/unit/progression/progression.test.ts:49:      levelFromExperience(
+tests/unit/progression/progression.test.ts:58:      experienceThreshold(0)
+tests/unit/progression/progression.test.ts:62:      experienceThreshold(1.5)
+tests/unit/progression/progression.test.ts:66:      levelFromExperience(-1n)
+tests/unit/progression/progression.test.ts:70:      levelFromExperience(
+tests/unit/progression/progression.test.ts:135:    "uses death modifier promoted=%s blessed=%s",
+tests/unit/progression/progression.test.ts:136:    (promoted, blessed, expectedPercent) => {
+tests/unit/progression/progression.test.ts:140:          promoted,
+tests/unit/progression/progression.test.ts:147:      expect(result.experienceLost)
+tests/unit/progression/progression.test.ts:154:      expect(result.remainingExperience)
+tests/unit/progression/progression.test.ts:157:          result.experienceLost
+tests/unit/progression/victory-rewards.test.ts:65:  it("calculates final Experience and Gold", () => {
+tests/unit/progression/victory-rewards.test.ts:69:          baseExperience: 101n,
+tests/unit/progression/victory-rewards.test.ts:72:          experienceBonusPercent: 12.5,
+tests/unit/progression/victory-rewards.test.ts:79:      baseExperience: 101n,
+tests/unit/progression/victory-rewards.test.ts:80:      finalExperience: 113n,
+tests/unit/progression/victory-rewards.test.ts:83:      experienceBonusBasisPoints:
+tests/unit/progression/victory-rewards.test.ts:93:          baseExperience: 0n,
+tests/unit/progression/victory-rewards.test.ts:96:          experienceBonusPercent: 0,
+tests/unit/progression/victory-rewards.test.ts:102:      finalExperience: 0n,
+tests/unit/progression/victory-rewards.test.ts:149:        baseExperience: 50n,
+tests/unit/progression/victory-rewards.test.ts:152:        experienceBonusPercent: 0,
+tests/unit/progression/victory-settlement.test.ts:13:  CombatSettlementContext,
+tests/unit/progression/victory-settlement.test.ts:26:  planVictorySettlement,
+tests/unit/progression/victory-settlement.test.ts:27:} from "../../../src/modules/progression/domain/victory-settlement.js";
+tests/unit/progression/victory-settlement.test.ts:53:      monsterExperienceReward: 200n,
+tests/unit/progression/victory-settlement.test.ts:60:    settledAt: null,
+tests/unit/progression/victory-settlement.test.ts:65:CombatSettlementContext {
+tests/unit/progression/victory-settlement.test.ts:70:      experience: 0n,
+tests/unit/progression/victory-settlement.test.ts:83:    promoted: false,
+tests/unit/progression/victory-settlement.test.ts:104:      experienceBonusPercent: 10,
+tests/unit/progression/victory-settlement.test.ts:110:      cooldownSeconds: 30,
+tests/unit/progression/victory-settlement.test.ts:113:      additionalCooldownSeconds: 0,
+tests/unit/progression/victory-settlement.test.ts:141:describe("M6 Victory settlement plan", () => {
+tests/unit/progression/victory-settlement.test.ts:149:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:158:      baseExperience: 200n,
+tests/unit/progression/victory-settlement.test.ts:160:      experienceAwarded: 220n,
+tests/unit/progression/victory-settlement.test.ts:162:      experienceBefore: 0n,
+tests/unit/progression/victory-settlement.test.ts:163:      experienceAfter: 220n,
+tests/unit/progression/victory-settlement.test.ts:202:      monsterExperienceReward: 0n,
+tests/unit/progression/victory-settlement.test.ts:213:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:221:    expect(result.experienceAwarded)
+tests/unit/progression/victory-settlement.test.ts:242:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:253:      "Settlement monster does not match combat session."
+tests/unit/progression/victory-settlement.test.ts:264:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:304:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:334:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:375:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:420:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:448:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:470:      planVictorySettlement(
 ```
 
