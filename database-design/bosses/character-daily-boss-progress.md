@@ -59,3 +59,17 @@ UX_CharacterDailyBossProgress
 
 IX_CharacterDailyBossProgress_CharacterId
 IX_CharacterDailyBossProgress_DailyBossDefinitionId
+
+## M6 DAILY BOSS SETTLEMENT
+
+The attempt is consumed when Daily Boss combat starts, not when it ends.
+
+A successful Daily Boss Victory settlement:
+
+- increments `TotalVictories`,
+- writes `LastVictoryAt`,
+- raises `HighestTierDefeated` when the defeated tier is higher.
+
+Defeat does not record a Daily Boss Victory.
+
+Daily Boss progression is scoped to the Character, Daily Boss definition, and active rotation. Daily Boss encounters do not receive the Normal Monster or Mini Boss cooldown.

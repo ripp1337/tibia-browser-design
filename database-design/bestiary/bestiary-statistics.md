@@ -74,3 +74,15 @@ IX_BestiaryStatistics_CharacterId
 IX_BestiaryStatistics_MonsterId
 
 IX_BestiaryStatistics_KillCount
+
+## M6 VICTORY PROGRESSION
+
+A Victory records the monster kill and updates Bestiary timestamps and counters transactionally.
+
+When the defeated monster is the progress monster for an active task:
+
+- task progress increases by one,
+- progress is capped at the task's required kill count,
+- reaching the required count changes the task status to `UNLOCKED`.
+
+These updates are committed atomically with the rest of Victory settlement.

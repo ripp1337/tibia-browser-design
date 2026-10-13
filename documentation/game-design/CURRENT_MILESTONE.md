@@ -337,3 +337,31 @@ The following remain outside M5:
 M5 Persistent Combat API completed and verified.
 
 The next milestone is M6: Victory, Death, and Progression.
+
+## M6 implemented behavior
+
+M6 implements transactional Victory, Death, and Progression settlement.
+
+Implemented behavior includes:
+
+- Experience and Gold rewards after Victory,
+- the canonical Experience curve from the progression domain,
+- level recalculation after Experience changes,
+- death Experience loss,
+- Blessing consumption when applicable,
+- resource handling after Victory and Defeat,
+- monster kill statistics,
+- Bestiary progression,
+- Task progress and Task Boss state transitions,
+- Daily Boss Victory progression,
+- Normal Monster and Mini Boss cooldowns,
+- fight-based buff consumption,
+- final combat summaries,
+- retention of the ten newest final logs per character,
+- exactly-once settlement under the combat-session transaction.
+
+M6 does not generate loot.
+
+Combat cannot be abandoned. An unfinished fight remains active and can be retrieved after reconnecting. A character with an active fight cannot start another fight.
+
+The final M6 verification result will be recorded during Phase 18.

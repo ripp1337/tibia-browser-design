@@ -324,3 +324,25 @@ Not implemented in M5:
 - active buffs and debuffs,
 - damage or healing over time,
 - escape,
+
+## M6 SETTLEMENT CONTRACT
+
+A combat session is the authoritative snapshot used for combat resolution and terminal settlement.
+
+Supported statuses:
+
+- `Active`
+- `Victory`
+- `Defeat`
+
+Combat cannot be abandoned.
+
+An unfinished session remains `Active` when the client disconnects. It can be retrieved after reconnecting, and the character cannot start another fight while that session remains active.
+
+Combat-ready Character and Monster statistics are snapshotted when combat starts. Monster Experience and Gold reward values used by settlement are also persisted in the session snapshot.
+
+Victory and Defeat settlement execute in the same PostgreSQL transaction as terminal session persistence. Settlement is exactly once: a stale or already-terminal session cannot produce a second reward or penalty.
+
+Normal Monster and Mini Boss cooldowns are written after both Victory and Defeat. Task Boss and Daily Boss encounters are excluded from this cooldown write.
+
+Daily Boss attempts are consumed when the fight starts. Daily Boss Victory progression is written only when the fight settles as Victory.

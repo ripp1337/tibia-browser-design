@@ -176,3 +176,16 @@ The precise implementation belongs to M6: Victory, Death, and Progression, or a 
 - Bestiary progression.
 - Monster kill statistics.
 - Task Boss progression.
+
+## M6 FINAL LOG RULES
+
+`CombatLogs` stores one final summary for a terminal combat session.
+
+It is separate from `CombatSessionEvents`:
+
+- events describe ordered actions within resolved turns,
+- the final log describes the completed encounter and settlement result.
+
+A final log is created in the same transaction as Victory or Defeat settlement.
+
+Retention is scoped per character. Only the ten newest final combat logs are retained for that character. Removing an old final log does not remove its combat session or incremental combat-session events.

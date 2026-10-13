@@ -79,3 +79,14 @@ IX_CharacterCooldowns_AvailableAt
 - Defeating a monster starts a new cooldown
 
 - Using the NPC healer starts a new cooldown
+
+## M6 COMBAT COOLDOWN RULES
+
+A configured monster cooldown is written after terminal settlement for:
+
+- Normal Monsters,
+- Mini Bosses.
+
+The cooldown is applied after both Victory and Defeat.
+
+Task Bosses and Daily Bosses are excluded from this monster-cooldown write because their availability is controlled by their own progression or rotation systems.

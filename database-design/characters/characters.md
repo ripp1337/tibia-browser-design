@@ -144,3 +144,20 @@ current_energy <= max_energy
 
 Application services are responsible for clamping values before persistence.
 Database constraints provide final protection.
+
+## M6 PROGRESSION AND DEATH RULES
+
+Victory applies Experience and Gold rewards and then derives the resulting level from the canonical progression-domain Experience curve.
+
+Defeat removes a percentage of current Experience:
+
+- not promoted and not Blessed: 10%,
+- promoted and not Blessed: 8%,
+- not promoted and Blessed: 6%,
+- promoted and Blessed: 4%.
+
+The loss uses integer arithmetic. The resulting level is recalculated from remaining Experience.
+
+After a level change, level-dependent maximum Health, Mana, and Energy are recalculated through the canonical progression-domain functions. Current resources are persisted according to the implemented Victory or Defeat settlement rules.
+
+A Blessing that modifies the death penalty is consumed in the same Defeat settlement transaction.

@@ -124,3 +124,11 @@ IX_CharacterBuffs_IsPositive
 - Percentage-based buff values are percentage-point modifiers.
 - The active modifier is combined additively with compatible percentage modifiers from other sources.
 - CharacterBuffs does not calculate or store final character statistics.
+
+## M6 FIGHT-BASED CONSUMPTION
+
+Fight-based Character buffs are consumed during terminal settlement.
+
+Consumption occurs after Victory or Defeat according to the implemented buff contract and is persisted in the same transaction as the combat result.
+
+If settlement fails, buff consumption is rolled back with the rest of the transaction.

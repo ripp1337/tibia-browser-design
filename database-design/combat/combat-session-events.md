@@ -291,3 +291,15 @@ Not implemented in M5:
 - Bestiary progression,
 - monster kill statistics,
 - Task Boss progression.
+
+## M6 EVENT AND FINAL-LOG BOUNDARY
+
+Combat-session events are ordered incremental records created while resolving turns.
+
+They are not the final combat summary.
+
+When combat becomes terminal:
+
+- ordered turn events remain attached to the combat session,
+- a separate final record is written to `CombatLogs`,
+- settlement and terminal persistence remain atomic.

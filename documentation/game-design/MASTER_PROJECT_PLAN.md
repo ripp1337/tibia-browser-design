@@ -3397,3 +3397,44 @@ M6 must preserve the existing M5 guarantees:
 - persistent sessions recoverable after application restarts.
 
 Do not begin M6 implementation until its source audit, approved decisions, schema implications, implementation plan, and master prompt are complete.
+
+### Implemented M6 settlement contract
+
+M6 settles terminal combat outcomes transactionally and exactly once.
+
+Victory may update:
+
+- Character Experience, level, Gold, and resources,
+- combat and character statistics,
+- Bestiary kill and task progress,
+- Task Boss state,
+- Daily Boss Victory progress,
+- Normal Monster or Mini Boss cooldown,
+- fight-based buff consumption,
+- final combat log and retention,
+- terminal combat-session state.
+
+Defeat may update:
+
+- Character Experience, level, and resources,
+- death and combat statistics,
+- Blessing consumption,
+- fight-based buff consumption,
+- final combat log and retention,
+- terminal combat-session state.
+
+M6 does not generate loot.
+
+Combat statuses are limited to:
+
+- `Active`
+- `Victory`
+- `Defeat`
+
+Combat cannot be abandoned. An active session survives reconnecting and blocks starting another fight.
+
+Settlement uses the reward values persisted in the combat-session snapshot. Combat-ready Character and Monster statistics are snapshotted when combat starts. Settlement-specific progression and reward modifiers are evaluated in the authoritative settlement transaction.
+
+Normal Monsters and Mini Bosses receive their configured cooldown after both Victory and Defeat. Task Bosses and Daily Bosses do not receive that monster cooldown.
+
+Daily Boss attempts are consumed when combat starts. Victory recording happens only when the Daily Boss fight is settled as Victory.

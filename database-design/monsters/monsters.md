@@ -94,3 +94,17 @@ UX_Monsters_Name
 IX_Monsters_FamilyId
 IX_Monsters_Level
 IX_Monsters_Type
+
+## M6 REWARD DATA
+
+Monster data contains the base Experience reward used by M6 Victory settlement.
+
+M6 uses:
+
+- `ExperienceReward`,
+- minimum Gold reward,
+- maximum Gold reward.
+
+Reward values required by an encounter are copied into the combat-session snapshot when combat starts. Later edits to Monster data do not change an already-active encounter.
+
+M6 does not generate loot.
