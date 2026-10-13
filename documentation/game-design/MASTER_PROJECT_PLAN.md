@@ -3474,3 +3474,53 @@ The M7 discovery and planning package must inspect and resolve:
 M7 must preserve every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
 
 Do not begin M7 implementation until its source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt are approved.
+
+### M7 TRANSITION AND DEVELOPER UI POLICY
+
+M6 Victory, Death, and Progression is completed and verified.
+
+The current implementation milestone is:
+
+M7: Item and Loot Generation
+
+M7 must prepare and implement:
+
+- the canonical item generator,
+- item-level determination,
+- rarity rolls,
+- affix-count rules,
+- eligible-affix selection,
+- affix value rolls,
+- Item Score,
+- regular equipment rewards,
+- other loot rewards,
+- transactional persistence,
+- deterministic randomness,
+- exactly-once integration with M6 settlement,
+- rollback and concurrency protection.
+
+From M7 onward, every gameplay milestone must expose its implemented player-facing behavior through a maintained Developer UI before the milestone may be closed.
+
+The Developer UI is an integration surface, not the final visual frontend.
+
+The M7 Developer UI checkpoint must allow a human to:
+
+- select or create a development Character,
+- discover eligible Monsters,
+- start combat,
+- submit basic attacks,
+- view Victory or Defeat settlement,
+- inspect Experience, Gold, and level changes,
+- inspect generated loot.
+
+M8 must extend the Developer UI into the first complete playable vertical slice:
+
+Fight
+→ Gain Rewards
+→ Receive Equipment
+→ Inspect Inventory
+→ Equip Equipment
+→ Observe Statistics Change
+→ Fight Again
+
+The immediate next task is to prepare and approve the M7 source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt.
