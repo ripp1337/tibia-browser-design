@@ -3438,3 +3438,25 @@ Settlement uses the reward values persisted in the combat-session snapshot. Comb
 Normal Monsters and Mini Bosses receive their configured cooldown after both Victory and Defeat. Task Bosses and Daily Bosses do not receive that monster cooldown.
 
 Daily Boss attempts are consumed when combat starts. Victory recording happens only when the Daily Boss fight is settled as Victory.
+
+### M6 final verification evidence
+
+M6 Victory, Death, and Progression completed all mandatory verification gates.
+
+Verified results:
+
+- 89 migrations applied and 0 pending,
+- migrations 001 through 089 verified on a newly created empty database,
+- 81 public database tables,
+- workbook validation passed for 29 worksheets and 248 rows,
+- game-data dry run completed and rolled back,
+- full regression passed with 68 test files and 470 tests,
+- focused M6 unit coverage passed with 169 tests,
+- PostgreSQL integration passed with 78 tests,
+- authenticated HTTP integration passed with 9 tests,
+- concurrency coverage passed,
+- rollback coverage passed,
+- typecheck passed,
+- production build passed,
+- no active combat-abandonment contract remains,
+- the final branch state is committed, pushed, and clean.

@@ -364,4 +364,30 @@ M6 does not generate loot.
 
 Combat cannot be abandoned. An unfinished fight remains active and can be retrieved after reconnecting. A character with an active fight cannot start another fight.
 
-The final M6 verification result will be recorded during Phase 18.
+## M6 final verification
+
+M6 Victory, Death, and Progression completed and verified.
+
+Final evidence:
+
+- PostgreSQL connection: PASS
+- migrations on the development database: 89 applied, 0 pending
+- clean-database migrations: migrations 001 through 089 applied successfully
+- public database tables: 81
+- workbook validation: 29 content worksheets and 248 content rows
+- game-data import dry run: PASS with transaction rollback
+- import unit tests: 11 passed
+- full regression: 68 test files and 470 tests passed
+- focused M6 unit tests: 18 test files and 169 tests passed
+- PostgreSQL integration: 14 test files and 78 tests passed
+- authenticated combat and monster HTTP integration: 2 test files and 9 tests passed
+- concurrency verification: 3 tests passed
+- rollback verification: 8 tests passed
+- TypeScript typecheck: PASS
+- production build: PASS
+- active combat status contract: `Active`, `Victory`, and `Defeat`
+- stale active `Abandoned` contract: none
+- temporary M6 test data: none
+- clean verification database: removed after verification
+
+All mandatory V1 through V25 verification gates passed.
