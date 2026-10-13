@@ -2544,58 +2544,150 @@ The next milestone is M6: Victory, Death, and Progression.
 
 ## M6: VICTORY, DEATH, AND PROGRESSION
 
-### Deliverables
+#### Status
 
-- Victory resolution
-- Experience awards
-- Gold awards
-- Character-level calculation
-- Level-up resource increases
-- Death Experience loss
-- Promotion modifier
-- Blessing modifier
-- Combat statistics
-- Monster kill statistics
-- Recent combat logs
-- Monster cooldown recording
-- Bestiary updates
-- Task progress updates
+Completed.
 
-### Victory transaction
+#### Objective
 
-1. Complete combat.
-2. Grant Experience.
-3. Recalculate level.
-4. Apply level rewards.
-5. Grant Gold.
-6. Generate loot.
-7. Update lifetime statistics.
-8. Update monster kill count.
-9. Update Bestiary.
-10. Update task-boss progress.
-11. Record monster cooldown.
-12. Save combat log.
-13. Commit everything.
+Convert terminal combat results into authoritative Character progression, rewards, penalties, statistics, discovery progress, cooldown state, and final combat summaries. Settlement occurs exactly once inside the same PostgreSQL transaction as the combat-ending action.
 
-### Death penalties
+#### Implemented scope
+- Transactional Victory and Defeat settlement.
+- Experience and Gold rewards.
+- Canonical Experience curve and efficient level lookup.
+- Multiple-level gains and losses.
+- Level-dependent resource recalculation.
+- Promotion and Blessing death modifiers.
+- Blessing consumption after Defeat.
+- Character lifetime statistics.
+- Bestiary kill progression.
+- Task progress and Task Boss transitions.
+- Daily Boss attempt consumption at combat start.
+- Daily Boss Victory progression.
+- Normal Monster and Mini Boss cooldown recording.
+- Fight-based boost consumption.
+- Compact final combat logs.
+- Per-character retention of the ten newest final logs.
+- Settlement data in the authenticated combat-action response.
+- Exactly-once concurrency and rollback protection.
+- Persistent active-combat recovery after reconnecting.
 
+#### Core progression rules
+
+Experience is stored as total lifetime combat Experience.
+
+```text
+XP(L) = (50L^3 - 300L^2 + 850L - 600) / 3
+```
+
+Level is the highest L whose threshold does not exceed total Experience. Calculations use bigint, final percentage-adjusted values round down, level cannot fall below 1, and Experience cannot fall below 0.
+
+Death Experience loss:
 - Normal: 10%
 - Promoted: 8%
 - Blessed: 6%
 - Promoted and Blessed: 4%
 
-### Definition of done
+Blessing is consumed after every Defeat when active, including when the rounded Experience loss equals 0. Promotion is permanent.
 
-- Victory rewards are granted exactly once.
-- Multiple levels can be gained.
-- Death can reduce one or more levels.
+#### Victory settlement
+
+Victory settlement may atomically:
+- persist ending-action events,
+- grant snapshotted Experience and Gold rewards,
+- read current authoritative reward bonuses,
+- recalculate level and resources,
+- update Character lifetime statistics,
+- update Bestiary and ordinary task progress,
+- transition a defeated Task Boss to `WAITING_FOR_REUNLOCK`,
+- update Daily Boss Victory progress,
+- write a standard cooldown for Normal Monsters and Mini Bosses,
+- consume fight-based boosts after applying their bonuses,
+- preserve active Blessing,
+- create one compact final combat log,
+- retain only the ten newest final logs,
+- write terminal combat-session state last,
+- return the committed settlement through HTTP.
+
+M6 does not generate loot. Item and loot generation belongs to M7.
+
+#### Defeat settlement
+
+Defeat settlement may atomically:
+- persist ending-action events,
+- apply the approved Experience loss,
+- recalculate level and resources,
+- update death and combat statistics,
+- consume active Blessing exactly once,
+- write a standard cooldown for Normal Monsters and Mini Bosses,
+- consume fight-based boosts,
+- create and retain the final combat log,
+- write terminal combat-session state last,
+- return the committed settlement through HTTP.
+
+Defeat grants no Experience or Gold and does not update Bestiary or Task Boss kill progress.
+
+Health handling:
+- `PlayerHealthDepleted` stores Health as 0.
+- `TurnLimitExceeded` preserves the remaining Health after turn 100.
+
+#### Combat-session contract
+
+Supported persistent statuses:
+- `Active`
+- `Victory`
+- `Defeat`
+
+Combat cannot be abandoned. Closing the client leaves the session active for retrieval after reconnecting and prevents another fight from starting.
+
+At combat start, the session snapshots Monster Experience, the Gold range, and combat-ready Character and Monster statistics. At settlement, the transaction reads current authoritative reward bonuses. Monster balance changes affect new fights only.
+
+#### Cooldowns and bosses
+
+Normal Monsters receive their configured cooldown after Victory and Defeat. Mini Bosses receive the Monster cooldown plus the additional Boss cooldown. Task Bosses and Daily Bosses do not use the standard cooldown.
+
+Daily Boss attempts are consumed when combat starts. Defeat does not refund an attempt. Victory fields update only after Daily Boss Victory settlement.
+
+#### Logs, exactly-once behavior, and rollback
+
+`combat_session_events` stores the detailed ordered event stream. `combat_logs` stores one compact final summary per completed session. Retention keeps only the ten newest final logs per Character without deleting sessions or incremental events.
+
+The terminal action, events, rewards or penalties, progression changes, statistics, Bestiary and task changes, cooldowns, boosts, Blessing consumption, Daily Boss progress, final log, and terminal session state commit or roll back together. Concurrent requests cannot settle one fight twice.
+
+#### Verification result
+
+M6 completed with:
+- PostgreSQL connection passing,
+- 89 migrations applied and 0 pending,
+- migrations 001 through 089 passing on an empty database,
+- 81 public database tables,
+- workbook validation passing for 29 worksheets and 248 rows,
+- full regression passing with 68 test files and 470 tests,
+- focused M6 unit coverage passing with 169 tests,
+- PostgreSQL integration passing with 78 tests,
+- authenticated HTTP integration passing with 9 tests,
+- concurrency and rollback verification passing,
+- TypeScript typecheck and production build passing,
+- no active `Abandoned` contract remaining.
+
+#### Completion commit
+
+```text
+8a83b30 complete M6 victory death and progression
+```
+
+#### Definition of done
+- Victory rewards and Defeat penalties are applied exactly once.
+- Multiple levels can be gained or lost.
 - Promotion and Blessing modify death loss correctly.
-- Blessing is consumed exactly once.
-- Failed reward generation rolls back the complete victory.
-- Only the newest ten combat logs are retained.
-- Victory and death tests pass.
-
----
+- Blessing is consumed exactly once after Defeat.
+- Failed settlement rolls back the complete terminal action.
+- Only the newest ten final combat logs are retained per Character.
+- Combat cannot be abandoned.
+- Settlement is returned by the authenticated combat-action endpoint.
+- M1 through M5 guarantees remain intact.
+- All mandatory V1 through V25 gates pass.
 
 ## M7: ITEM AND LOOT GENERATION
 
@@ -3272,38 +3364,29 @@ Start Gathering
 
 ## CURRENT PROJECT STATUS
 
-### Completed milestones
-
+#### Completed milestones
 - M1: Character Foundation
 - M2: Effective Character Statistics
 - M3: Monster Discovery and Eligibility
 - M4: Pure Combat Engine
 - M5: Persistent Combat API
+- M6: Victory, Death, and Progression
 
-### Completed platform foundations
-
+#### Completed platform foundations
 - Database architecture established.
-- Production migrations implemented through migration `088`.
-- Authored-content tables available.
-- Stable content codes added.
-- Development workbook created.
-- Synthetic development content populated.
-- Workbook validation implemented.
-- Transactional game-data importer implemented.
-- Transactional dry run verified.
-- Complete content import committed.
-- Repeat import verified.
-- Foreign-key relationships verified.
+- Production migrations implemented through migration 089.
+- Stable authored-content codes and workbook pipeline implemented.
+- Transactional game-data importer and dry run verified.
 - Character ownership isolation implemented.
-- Effective Character Statistics calculator implemented.
+- Effective Character Statistics implemented.
 - Monster discovery and eligibility implemented.
 - Pure deterministic combat engine implemented.
-- Persistent combat sessions implemented.
-- Authenticated combat HTTP API implemented.
+- Persistent authenticated combat API implemented.
+- Exactly-once Victory and Defeat settlement implemented.
+- Experience, Gold, level, death, Bestiary, Task Boss, Daily Boss, cooldown, boost, Blessing, and final-log settlement implemented.
 - Combat concurrency and rollback protection verified.
 
-### Current development content
-
+#### Current development content
 - 29 authored-content worksheets.
 - 248 authored-content records.
 - 10 materials.
@@ -3317,146 +3400,77 @@ Start Gathering
 
 Development definitions remain synthetic fixtures rather than final production content.
 
-### Current technical state
+#### Current technical state
 
 ```text
-Database schema: Ready through M5
-Database migrations: 88 applied, 0 pending
-Database tables: 80
+Database schema: Ready through M6
+Database migrations: 89 applied, 0 pending
+Database tables: 81
 Character foundation: Implemented
 Effective statistics: Implemented
 Monster discovery: Implemented
 Pure combat engine: Implemented
 Persistent combat API: Implemented
+Victory and Defeat settlement: Implemented
+Experience, Gold, level, and death progression: Implemented
+Bestiary and Task progression: Implemented
+Daily Boss attempt and Victory progression: Implemented
+Final combat logs and retention: Implemented
 Authenticated combat routes: Implemented
 Combat integration flow: Verified
-Test files: 60 passing
-Tests: 361 passing
+Test files: 68 passing
+Tests: 470 passing
 TypeScript typecheck: Passing
 Production build: Passing
-Current milestone: M6 Victory, Death, and Progression
+Current milestone: M7 Item and Loot Generation
 ```
 
-### Current playable backend flow
+#### Current playable backend flow
 
 ```text
 Create Character
 → Discover Eligible Monsters
 → Start Authenticated Combat
 → Deduct Energy Exactly Once
+→ Consume Daily Boss Attempt When Applicable
+→ Snapshot Combat Statistics and Base Rewards
 → Persist Combat Session
 → Submit Expected-Turn Actions
 → Persist State and Ordered Events
-→ Retrieve Active or Completed Session
-→ Retrieve Ordered Combat Event Log
+→ Settle Victory or Defeat Exactly Once
+→ Apply Experience, Gold, Levels, Death Penalties, and Resources
+→ Update Statistics, Bestiary, Tasks, Boss Progress, Cooldowns, and Boosts
+→ Persist Final Combat Summary and Ten-Log Retention
+→ Return Committed Settlement Through HTTP
+→ Retrieve Active or Completed Session and Ordered Events
 ```
 
-The backend does not yet settle victory rewards, death penalties, Experience, Gold, loot, cooldowns, Bestiary progress, kill statistics, or Task Boss progress.
+The backend does not yet generate equipment, materials, consumables, uniques, sets, or other loot from combat. Those rewards belong to M7 and later milestones.
 
 ## IMMEDIATE NEXT TASK
 
-Prepare and approve the M6 implementation context for:
+Prepare and approve the implementation context for:
 
 ```text
-M6: Victory, Death, and Progression
+M7: Item and Loot Generation
 ```
 
-The M6 discovery and planning package must inspect and resolve:
+The M7 discovery and planning package must inspect and resolve:
+- existing item, affix, inventory, and loot-definition schemas,
+- the authoritative item and loot workbook pipeline,
+- the canonical deterministic item generator,
+- item-level and rarity selection,
+- rarity-to-affix-count rules,
+- eligible-affix filtering and duplicate-affix behavior,
+- affix value rolling and Item Score calculation,
+- regular equipment, material, and consumable drops,
+- unique and set reward boundaries relative to M19,
+- inventory-capacity behavior,
+- integration with M6 terminal settlement,
+- exactly-once persistence and rollback,
+- deterministic randomness and ownership isolation,
+- reuse by future chests, gambling, bosses, milestones, and administration.
 
-- victory settlement,
-- defeat settlement,
-- Experience awards,
-- Gold awards,
-- level recalculation,
-- multiple level gains,
-- level-up resource changes,
-- death Experience loss,
-- multiple level losses,
-- promotion death modifiers,
-- Blessing state and consumption,
-- exactly-once reward settlement,
-- combat statistics,
-- monster kill statistics,
-- Bestiary updates,
-- Task Boss progression,
-- monster cooldown recording,
-- final `combat_logs` summaries,
-- recent-log retention,
-- rollback behavior,
-- concurrency behavior,
-- interaction with future M7 item and loot generation.
+M7 must preserve every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
 
-M6 must preserve the existing M5 guarantees:
-
-- one active combat per character,
-- expected-turn concurrency control,
-- atomic combat state and event persistence,
-- ownership isolation,
-- server-controlled randomness and time,
-- no client-authored rewards or outcomes,
-- persistent sessions recoverable after application restarts.
-
-Do not begin M6 implementation until its source audit, approved decisions, schema implications, implementation plan, and master prompt are complete.
-
-### Implemented M6 settlement contract
-
-M6 settles terminal combat outcomes transactionally and exactly once.
-
-Victory may update:
-
-- Character Experience, level, Gold, and resources,
-- combat and character statistics,
-- Bestiary kill and task progress,
-- Task Boss state,
-- Daily Boss Victory progress,
-- Normal Monster or Mini Boss cooldown,
-- fight-based buff consumption,
-- final combat log and retention,
-- terminal combat-session state.
-
-Defeat may update:
-
-- Character Experience, level, and resources,
-- death and combat statistics,
-- Blessing consumption,
-- fight-based buff consumption,
-- final combat log and retention,
-- terminal combat-session state.
-
-M6 does not generate loot.
-
-Combat statuses are limited to:
-
-- `Active`
-- `Victory`
-- `Defeat`
-
-Combat cannot be abandoned. An active session survives reconnecting and blocks starting another fight.
-
-Settlement uses the reward values persisted in the combat-session snapshot. Combat-ready Character and Monster statistics are snapshotted when combat starts. Settlement-specific progression and reward modifiers are evaluated in the authoritative settlement transaction.
-
-Normal Monsters and Mini Bosses receive their configured cooldown after both Victory and Defeat. Task Bosses and Daily Bosses do not receive that monster cooldown.
-
-Daily Boss attempts are consumed when combat starts. Victory recording happens only when the Daily Boss fight is settled as Victory.
-
-### M6 final verification evidence
-
-M6 Victory, Death, and Progression completed all mandatory verification gates.
-
-Verified results:
-
-- 89 migrations applied and 0 pending,
-- migrations 001 through 089 verified on a newly created empty database,
-- 81 public database tables,
-- workbook validation passed for 29 worksheets and 248 rows,
-- game-data dry run completed and rolled back,
-- full regression passed with 68 test files and 470 tests,
-- focused M6 unit coverage passed with 169 tests,
-- PostgreSQL integration passed with 78 tests,
-- authenticated HTTP integration passed with 9 tests,
-- concurrency coverage passed,
-- rollback coverage passed,
-- typecheck passed,
-- production build passed,
-- no active combat-abandonment contract remains,
-- the final branch state is committed, pushed, and clean.
+Do not begin M7 implementation until its source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt are approved.
