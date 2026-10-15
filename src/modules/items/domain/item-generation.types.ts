@@ -65,6 +65,35 @@ export type GenerateCompleteRegularItemInput = {
   coefficients: ItemScoreCoefficients;
 };
 
+export type OtherLootCandidate = {
+  otherLootTableId: string;
+  materialId: string | null;
+  consumableDefinitionId: string | null;
+  minimumQuantity: bigint;
+  maximumQuantity: bigint;
+  selectionWeight: bigint;
+  isEnabled: boolean;
+};
+
+export type GeneratedOtherLoot =
+  | {
+      kind: "Material";
+      otherLootTableId: string;
+      materialId: string;
+      quantity: bigint;
+    }
+  | {
+      kind: "Consumable";
+      otherLootTableId: string;
+      consumableDefinitionId: string;
+      quantity: bigint;
+    };
+
+export type GenerateOtherLootInput = {
+  isBoss: boolean;
+  candidates: readonly OtherLootCandidate[];
+};
+
 export type GeneratedAffix = {
   affixTemplateId: string;
   affixPosition: number;
