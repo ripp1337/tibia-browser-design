@@ -130,10 +130,9 @@ export function generateRegularItem(
   );
   const affixCount = AFFIX_COUNT_BY_RARITY[rarity];
   const affixes: GeneratedAffix[] = [];
-  const eligibleAffixPool = filterEligibleAffixes(
-    input.affixPool,
-    input.base.itemLevel
-  );
+  const eligibleAffixPool = affixCount > 0
+    ? filterEligibleAffixes(input.affixPool, input.base.itemLevel)
+    : [];
   if (affixCount > 0 && eligibleAffixPool.length === 0) {
     throw new ItemGenerationConfigurationError(
       "Regular Item rarity requires a non-empty eligible affix pool."

@@ -98,6 +98,32 @@ describe("item generator", () => {
     });
   });
 
+  it("does not inspect or consume the Affix pool for Common rarity", () => {
+    const invalidUnusedAffixPool = [{
+      value: {
+        affixTemplateId: "unused-common-affix",
+        statType: "Attack" as const,
+        minimumValue: 10n,
+        maximumValue: 20n,
+        requiredItemLevel: 0,
+        isEnabled: false,
+      },
+      selectionWeight: 0n,
+    }];
+    const result = generateRegularItem(
+      {
+        base,
+        rarityProfile,
+        affixPool: invalidUnusedAffixPool,
+        coefficients,
+      },
+      new SequenceRandomSource([1n])
+    );
+    expect(result.rarity).toBe("Common");
+    expect(result.affixes).toEqual([]);
+    expect(result.itemScore).toBe(232n);
+  });
+
   it("maps every rarity to the authoritative affix count", () => {
     const cases = [
       { rarityRoll: 1n, expected: 0 },
