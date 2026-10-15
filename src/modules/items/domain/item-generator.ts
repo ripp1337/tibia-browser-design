@@ -2,6 +2,7 @@ import type { RandomSource } from "../../combat/ports/random-source.js";
 import { AFFIX_COUNT_BY_RARITY } from "./item-generation.constants.js";
 import { ItemGenerationConfigurationError } from "./item-generation.errors.js";
 import { rollInclusiveBigInt, selectWeighted } from "./item-random.js";
+import { filterEligibleAffixes } from "./item-rarity-affix.js";
 import { calculateItemScore } from "./item-score.js";
 import type {
   AffixGenerationTemplate,
@@ -129,14 +130,18 @@ export function generateRegularItem(
   );
   const affixCount = AFFIX_COUNT_BY_RARITY[rarity];
   const affixes: GeneratedAffix[] = [];
-  if (affixCount > 0 && input.affixPool.length === 0) {
+  const eligibleAffixPool = filterEligibleAffixes(
+    input.affixPool,
+    input.base.itemLevel
+  );
+  if (affixCount > 0 && eligibleAffixPool.length === 0) {
     throw new ItemGenerationConfigurationError(
-      "Regular Item rarity requires a non-empty affix pool."
+      "Regular Item rarity requires a non-empty eligible affix pool."
     );
   }
   for (let index = 0; index < affixCount; index += 1) {
     const template = selectWeighted(
-      input.affixPool,
+      eligibleAffixPool,
       randomSource
     );
     affixes.push(

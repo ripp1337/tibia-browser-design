@@ -209,6 +209,23 @@ describe("item generator", () => {
     )).toThrow(ItemGenerationConfigurationError);
   });
 
+  it("rejects a rarity when every Affix is above the rolled Item Level", () => {
+    const ineligiblePool = [{
+      value: {
+        affixTemplateId: "future-affix",
+        statType: "Attack" as const,
+        minimumValue: 10n,
+        maximumValue: 20n,
+        requiredItemLevel: 13,
+      },
+      selectionWeight: 1n,
+    }];
+    expect(() => generateRegularItem(
+      { base, rarityProfile, affixPool: ineligiblePool, coefficients },
+      new SequenceRandomSource([2n])
+    )).toThrow("Regular Item rarity requires a non-empty eligible affix pool.");
+  });
+
   it("rejects Special Items without fixed stats", () => {
     expect(() => generateSpecialItem(
       { base, fixedStatRanges: [], coefficients },

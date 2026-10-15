@@ -82,6 +82,8 @@ export type AffixGenerationTemplate = {
   statType: ItemStatType;
   minimumValue: bigint;
   maximumValue: bigint;
+  requiredItemLevel?: number;
+  isEnabled?: boolean;
 };
 
 export type FixedStatGenerationRange = {
