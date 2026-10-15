@@ -1,4 +1,5 @@
 import type {
+  EQUIPMENT_SLOT,
   ITEM_RARITY,
   ITEM_SCORE_COMPONENT,
   ITEM_STAT_TYPE,
@@ -13,11 +14,42 @@ export type ItemStatType =
 export type ItemScoreComponent =
   (typeof ITEM_SCORE_COMPONENT)[keyof typeof ITEM_SCORE_COMPONENT];
 
+export type EquipmentSlot =
+  (typeof EQUIPMENT_SLOT)[keyof typeof EQUIPMENT_SLOT];
+
 export type ItemStatValues = Record<ItemStatType, bigint>;
 
 export type WeightedEntry<T> = {
   value: T;
   selectionWeight: bigint;
+};
+
+export type ItemLootContext = {
+  monsterLevel: number;
+  bossBonusLootLevel: number;
+  isBoss: boolean;
+};
+
+export type ItemLevelRange = {
+  effectiveLootLevel: number;
+  minimumItemLevel: number;
+  maximumItemLevel: number;
+};
+
+export type RegularItemBaseCandidate = {
+  itemBaseId: string;
+  itemLevel: number;
+  slot: EquipmentSlot;
+  selectionWeight: bigint;
+  isEnabled: boolean;
+  isUnique: boolean;
+  isSet: boolean;
+};
+
+export type SelectedRegularItemBase = {
+  slot: EquipmentSlot;
+  itemBase: RegularItemBaseCandidate;
+  requiredLevel: number;
 };
 
 export type GeneratedAffix = {
