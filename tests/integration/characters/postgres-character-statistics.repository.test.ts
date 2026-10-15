@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -97,7 +97,9 @@ describe("PostgresCharacterStatisticsRepository integration", () => {
             gold_percent, experience_percent
           )
           VALUES ($1, $2, 'Integration test item', 1, 1, $3,
-            $4, $4, $4, $4, $4, $4, $4, $4)
+            $4::integer, $4::integer, $4::integer,
+            $4::bigint, $4::bigint, $4::integer,
+            $4::numeric, $4::numeric)
           RETURNING item_base_id
         `,
         [`${input.namePrefix.toLowerCase()}_${randomUUID().replaceAll("-", "")}`, `${input.namePrefix} ${randomUUID()}`, input.slot, input.value]
@@ -115,8 +117,10 @@ describe("PostgresCharacterStatisticsRepository integration", () => {
     async function createItem(itemBaseId: string): Promise<string> {
       const result = await testPool.query<{ item_id: string }>(
         `
-          INSERT INTO items (item_base_id, item_level, rarity, item_score)
-          VALUES ($1, 1, 'Common', 0)
+          INSERT INTO items (
+            item_base_id, item_level, required_level, rarity, item_score
+          )
+          VALUES ($1, 1, 1, 'Common', 0)
           RETURNING item_id
         `,
         [itemBaseId]
@@ -186,11 +190,12 @@ describe("PostgresCharacterStatisticsRepository integration", () => {
         INSERT INTO item_affixes (
           item_id,
           affix_template_id,
+          affix_position,
           roll_value
         )
         VALUES
-          ($1, $3, 7),
-          ($2, $3, 500)
+          ($1, $3, 1, 7),
+          ($2, $3, 1, 500)
       `,
       [
         equippedItemId,

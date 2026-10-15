@@ -77,6 +77,23 @@ const CONFIGS: TableConfig[] = [
     ]
   },
   {
+    sheet: "item_base_affix_weights",
+    table: "item_base_affix_weights",
+    keys: ["item_base_id", "affix_template_id"],
+    references: [
+      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+    ]
+  },
+  {
+    sheet: "item_base_fixed_stat_ranges",
+    table: "item_base_fixed_stat_ranges",
+    keys: ["item_base_id", "stat_position"],
+    references: [
+      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+    ]
+  },
+  { sheet: "item_score_coefficients", table: "item_score_coefficients", keys: ["score_component"] },
+  {
     sheet: "monsters",
     table: "monsters",
     keys: ["code"],
@@ -106,6 +123,17 @@ const CONFIGS: TableConfig[] = [
     keys: ["monster_id", "item_base_id"],
     references: [
       { workbookColumn: "monster_code", databaseColumn: "monster_id", target: "monsters" },
+      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+    ]
+  },
+  {
+    sheet: "special_item_sources",
+    table: "special_item_sources",
+    keys: ["monster_id", "monster_family_id", "item_base_id"],
+    allowNullKeys: true,
+    references: [
+      { workbookColumn: "monster_code", databaseColumn: "monster_id", target: "monsters", optional: true },
+      { workbookColumn: "monster_family_code", databaseColumn: "monster_family_id", target: "monster_families", optional: true },
       { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
     ]
   },
@@ -178,6 +206,61 @@ function isBlank(value: unknown): boolean {
 
 function normalizedString(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+export function validatePositiveInteger(
+  value: unknown,
+  fieldName: string
+): string | null {
+  const text = normalizedString(value);
+  if (!/^[0-9]+$/.test(text) || BigInt(text) <= 0n) {
+    return `${fieldName} must be a positive integer.`;
+  }
+  if (BigInt(text) > 9223372036854775807n) {
+    return `${fieldName} must not exceed PostgreSQL BIGINT maximum.`;
+  }
+  return null;
+}
+
+export function validateNonNegativeInteger(
+  value: unknown,
+  fieldName: string
+): string | null {
+  const text = normalizedString(value);
+  if (!/^[0-9]+$/.test(text)) {
+    return `${fieldName} must be a non-negative integer.`;
+  }
+  if (BigInt(text) > 9223372036854775807n) {
+    return `${fieldName} must not exceed PostgreSQL BIGINT maximum.`;
+  }
+  return null;
+}
+
+export function validateInclusiveIntegerRange(
+  minimum: unknown,
+  maximum: unknown
+): string | null {
+  const minimumText = normalizedString(minimum);
+  const maximumText = normalizedString(maximum);
+  if (!/^[0-9]+$/.test(minimumText) || !/^[0-9]+$/.test(maximumText)) {
+    return "min_value and max_value must be non-negative integers.";
+  }
+  if (BigInt(minimumText) > BigInt(maximumText)) {
+    return "min_value must not exceed max_value.";
+  }
+  return null;
+}
+
+export function validateSpecialItemSourceOwner(
+  monsterCode: unknown,
+  monsterFamilyCode: unknown
+): string | null {
+  const ownerCount = [monsterCode, monsterFamilyCode]
+    .map(normalizedString)
+    .filter(Boolean).length;
+  return ownerCount === 1
+    ? null
+    : "exactly one of monster_code or monster_family_code is required.";
 }
 
 export function validateMonsterExperienceReward(
@@ -279,9 +362,42 @@ function parseMode(): { mode: Mode; workbookPath: string } {
 }
 
 function workbookIdentity(config: TableConfig, row: WorkbookRow): string {
+  if (config.table === "item_base_affix_weights") {
+    return ["item_base_code", "affix_type", "affix_tier"]
+      .map((column) => normalizedString(row[column]))
+      .join("|");
+  }
+
   const refs = new Map((config.references ?? []).map((rule) => [rule.databaseColumn, rule.workbookColumn]));
   return config.keys.map((key) => normalizedString(row[refs.get(key) ?? key])).join("|");
 }
+
+const ITEM_SCORE_COMPONENTS = [
+  "ItemLevel",
+  "Attack",
+  "Defense",
+  "SpellPower",
+  "Health",
+  "Mana",
+  "Energy",
+  "GoldPercent",
+  "ExperiencePercent"
+] as const;
+
+const RETIRED_WORKBOOK_COLUMNS: Record<string, string[]> = {
+  loot_tables: [
+    "drop_chance_percent",
+    "min_item_level",
+    "max_item_level",
+    "loot_level_modifier"
+  ],
+  other_loot_tables: ["drop_chance_percent"],
+  unique_templates: [
+    "min_attack", "max_attack", "min_defense", "max_defense",
+    "min_spell_power", "max_spell_power", "min_health", "max_health",
+    "min_mana", "max_mana", "min_energy", "max_energy"
+  ]
+};
 
 function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]> {
   const rowsBySheet = new Map<string, WorkbookRow[]>();
@@ -334,6 +450,54 @@ function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]
           }
         });
       }
+
+      const retiredColumns = RETIRED_WORKBOOK_COLUMNS[config.sheet] ?? [];
+      for (const retiredColumn of retiredColumns) {
+        if (rows.some((row) => Object.hasOwn(row, retiredColumn))) {
+          problems.push(`${config.sheet}: retired column ${retiredColumn} must be removed.`);
+        }
+      }
+
+      if (["loot_tables", "other_loot_tables", "item_base_affix_weights", "special_item_sources"].includes(config.table)) {
+        rows.forEach((row, index) => {
+          const problem = validatePositiveInteger(row.selection_weight, "selection_weight");
+          if (problem) problems.push(`${config.sheet} row ${index + 2}: ${problem}`);
+        });
+      }
+
+      if (config.table === "item_score_coefficients") {
+        rows.forEach((row, index) => {
+          const problem = validateNonNegativeInteger(row.coefficient, "coefficient");
+          if (problem) problems.push(`${config.sheet} row ${index + 2}: ${problem}`);
+        });
+      }
+
+      if (config.table === "item_base_fixed_stat_ranges") {
+        rows.forEach((row, index) => {
+          const positionProblem = validatePositiveInteger(row.stat_position, "stat_position");
+          const rangeProblem = validateInclusiveIntegerRange(row.min_value, row.max_value);
+          if (positionProblem) problems.push(`${config.sheet} row ${index + 2}: ${positionProblem}`);
+          if (rangeProblem) problems.push(`${config.sheet} row ${index + 2}: ${rangeProblem}`);
+        });
+      }
+
+      if (config.table === "special_item_sources") {
+        rows.forEach((row, index) => {
+          const problem = validateSpecialItemSourceOwner(row.monster_code, row.monster_family_code);
+          if (problem) problems.push(`${config.sheet} row ${index + 2}: ${problem}`);
+        });
+      }
+
+      if (config.table === "item_base_affix_weights") {
+        rows.forEach((row, index) => {
+          if (!normalizedString(row.affix_type)) {
+            problems.push(`${config.sheet} row ${index + 2}: affix_type is required.`);
+          }
+          const tierProblem = validatePositiveInteger(row.affix_tier, "affix_tier");
+          if (tierProblem) problems.push(`${config.sheet} row ${index + 2}: ${tierProblem}`);
+        });
+      }
+
       const codes = new Set(rows.map((row) => normalizedString(row.code)).filter(Boolean));
       if (codes.size > 0) codeSets.set(config.table, codes);
       if (config.table === "chest_definitions") {
@@ -361,6 +525,91 @@ function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]
       }
     }
   }
+
+  const itemBases = rowsBySheet.get("item_bases") ?? [];
+  const itemBaseByCode = new Map(
+    itemBases.map((row) => [normalizedString(row.code), row])
+  );
+  const regularItemBaseCodes = new Set(
+    itemBases
+      .filter((row) => row.is_unique !== true && row.is_set !== true)
+      .map((row) => normalizedString(row.code))
+  );
+  const specialItemBaseCodes = new Set(
+    itemBases
+      .filter((row) => row.is_unique === true || row.is_set === true)
+      .map((row) => normalizedString(row.code))
+  );
+
+  const affixWeights = rowsBySheet.get("item_base_affix_weights") ?? [];
+  const affixPoolCodes = new Set(affixWeights.map((row) => normalizedString(row.item_base_code)));
+  for (const code of regularItemBaseCodes) {
+    if (!affixPoolCodes.has(code)) problems.push(`item_bases: regular Item Base "${code}" has no affix pool.`);
+  }
+  affixWeights.forEach((row, index) => {
+    const code = normalizedString(row.item_base_code);
+    if (specialItemBaseCodes.has(code)) {
+      problems.push(`item_base_affix_weights row ${index + 2}: special Item Base "${code}" cannot use normal affixes.`);
+    }
+  });
+
+  const fixedRanges = rowsBySheet.get("item_base_fixed_stat_ranges") ?? [];
+  const fixedRangesByBase = new Map<string, WorkbookRow[]>();
+  fixedRanges.forEach((row, index) => {
+    const code = normalizedString(row.item_base_code);
+    if (regularItemBaseCodes.has(code)) {
+      problems.push(`item_base_fixed_stat_ranges row ${index + 2}: regular Item Base "${code}" cannot use fixed stats.`);
+    }
+    const list = fixedRangesByBase.get(code) ?? [];
+    list.push(row);
+    fixedRangesByBase.set(code, list);
+  });
+  for (const code of specialItemBaseCodes) {
+    const ranges = fixedRangesByBase.get(code) ?? [];
+    if (ranges.length === 0) {
+      problems.push(`item_bases: special Item Base "${code}" has no fixed-stat ranges.`);
+      continue;
+    }
+    const positions = ranges
+      .map((row) => Number(normalizedString(row.stat_position)))
+      .sort((left, right) => left - right);
+    positions.forEach((position, index) => {
+      if (position !== index + 1) {
+        problems.push(`item_base_fixed_stat_ranges: Item Base "${code}" must use contiguous stat_position values starting at 1.`);
+      }
+    });
+  }
+
+  const specialSources = rowsBySheet.get("special_item_sources") ?? [];
+  specialSources.forEach((row, index) => {
+    const code = normalizedString(row.item_base_code);
+    if (!specialItemBaseCodes.has(code)) {
+      problems.push(`special_item_sources row ${index + 2}: Item Base "${code}" is not Unique or Set.`);
+    }
+  });
+  for (const code of specialItemBaseCodes) {
+    if (!specialSources.some((row) => normalizedString(row.item_base_code) === code)) {
+      problems.push(`item_bases: special Item Base "${code}" has no special-item source.`);
+    }
+  }
+
+  const coefficientRows = rowsBySheet.get("item_score_coefficients") ?? [];
+  const coefficientComponents = new Set(
+    coefficientRows.map((row) => normalizedString(row.score_component))
+  );
+  for (const component of ITEM_SCORE_COMPONENTS) {
+    if (!coefficientComponents.has(component)) {
+      problems.push(`item_score_coefficients: missing component "${component}".`);
+    }
+  }
+  coefficientRows.forEach((row, index) => {
+    const component = normalizedString(row.score_component);
+    if (!(ITEM_SCORE_COMPONENTS as readonly string[]).includes(component)) {
+      problems.push(`item_score_coefficients row ${index + 2}: unknown score_component "${component}".`);
+    }
+  });
+
+  void itemBaseByCode;
 
   if (problems.length > 0) throw new Error(`Workbook validation failed:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
   return rowsBySheet;
@@ -497,9 +746,25 @@ async function mapRow(
   for (const [workbookColumn, rawValue] of Object.entries(row)) {
     if (!workbookColumn || referenceColumns.has(workbookColumn)) continue;
     const column = metadata.get(workbookColumn);
-    if (!column) continue;
+    if (!column) {
+      if (config.table === "item_base_affix_weights" && ["affix_type", "affix_tier"].includes(workbookColumn)) continue;
+      throw new Error(`${workbookColumn}: column does not exist in ${config.table}.`);
+    }
     if (isBlank(rawValue) && column.column_default !== null) continue;
     mapped[workbookColumn] = convertValue(rawValue, column);
+  }
+
+  if (config.table === "item_base_affix_weights") {
+    const affixType = normalizedString(row.affix_type);
+    const affixTier = normalizedString(row.affix_tier);
+    const result = await client.query<{ id: string }>(
+      `SELECT affix_template_id AS id FROM affix_templates WHERE affix_type = $1 AND tier = $2`,
+      [affixType, Number(affixTier)]
+    );
+    if (result.rows.length !== 1) {
+      throw new Error(`Could not resolve affix_templates reference "${affixType} Tier ${affixTier}".`);
+    }
+    mapped.affix_template_id = result.rows[0].id;
   }
 
   for (const rule of config.references ?? []) {

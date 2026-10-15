@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -125,8 +125,10 @@ describe("set bonuses integration", () => {
 
       const itemResult = await testPool.query<{ item_id: string }>(
         `
-          INSERT INTO items (item_base_id, item_level, rarity, item_score)
-          VALUES ($1, 1, 'Common', 0)
+          INSERT INTO items (
+            item_base_id, item_level, required_level, rarity, item_score
+          )
+          VALUES ($1, 1, 1, 'Common', 0)
           RETURNING item_id
         `,
         [itemBaseId]
