@@ -52,6 +52,19 @@ export type SelectedRegularItemBase = {
   requiredLevel: number;
 };
 
+export type CompleteRegularItemBaseCandidate =
+  RegularItemBaseCandidate & {
+    baseItemScore: bigint;
+    baseStats: ItemStatValues;
+    affixPool: readonly WeightedEntry<AffixGenerationTemplate>[];
+  };
+
+export type GenerateCompleteRegularItemInput = {
+  context: ItemLootContext;
+  itemBaseCandidates: readonly CompleteRegularItemBaseCandidate[];
+  coefficients: ItemScoreCoefficients;
+};
+
 export type GeneratedAffix = {
   affixTemplateId: string;
   affixPosition: number;
