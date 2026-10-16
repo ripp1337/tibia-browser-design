@@ -94,6 +94,56 @@ export type GenerateOtherLootInput = {
   candidates: readonly OtherLootCandidate[];
 };
 
+export type SpecialItemCategory = "Unique" | "Set";
+
+export type SpecialItemCandidate = {
+  specialItemSourceId: string;
+  monsterId: string | null;
+  monsterFamilyId: string | null;
+  selectionWeight: bigint;
+  isEnabled: boolean;
+  category: SpecialItemCategory;
+  isBossExclusive: boolean;
+  progressionEligible: boolean;
+  base: ItemGenerationBase;
+  fixedStatRanges: readonly FixedStatGenerationRange[];
+};
+
+export type UniquePityState = {
+  eligibleKillCount: number;
+  chancePerMille: number;
+};
+
+export type GenerateSpecialItemRewardInput = {
+  defeatedMonsterId: string;
+  defeatedMonsterFamilyId: string | null;
+  defeatedSourceIsBoss: boolean;
+  rolledItemLevel: number;
+  pity: UniquePityState;
+  candidates: readonly SpecialItemCandidate[];
+  coefficients: ItemScoreCoefficients;
+};
+
+export type SpecialItemRewardResult =
+  | {
+      outcome: "Ineligible";
+      item: null;
+      selectedCategory: null;
+      nextPity: UniquePityState;
+    }
+  | {
+      outcome: "Failed";
+      item: null;
+      selectedCategory: null;
+      nextPity: UniquePityState;
+    }
+  | {
+      outcome: "Generated";
+      item: GeneratedSpecialItem;
+      selectedCategory: SpecialItemCategory;
+      nextPity: UniquePityState;
+    };
+
 export type GeneratedAffix = {
   affixTemplateId: string;
   affixPosition: number;
