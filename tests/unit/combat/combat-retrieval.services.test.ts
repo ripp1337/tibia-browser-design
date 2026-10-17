@@ -1,4 +1,4 @@
-import {
+﻿import {
   describe,
   expect,
   it,
@@ -92,6 +92,7 @@ describe("Combat retrieval services", () => {
       events: [],
 
       settlement: null,
+      loot: null,
     });
 
     expect(
@@ -133,6 +134,7 @@ describe("Combat retrieval services", () => {
       events: [],
 
       settlement: null,
+      loot: null,
     });
 
     expect(

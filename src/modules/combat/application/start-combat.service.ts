@@ -131,6 +131,7 @@ export class StartCombatService {
           ...session,
           events: [],
           settlement: null,
+          loot: null,
         };
       }
     );

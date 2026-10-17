@@ -1,8 +1,11 @@
-﻿import type {
+import type {
   CombatEvent,
   CombatState,
   PlayerAction,
 } from "../domain/combat.types.js";
+import type {
+  LootSettlementResult,
+} from "../../items/application/loot-settlement.service.js";
 
 export const PERSISTENT_COMBAT_STATUS = {
   active: "Active",
@@ -135,6 +138,7 @@ export type CombatSettlement = {
 export type CombatSessionView = CombatSessionSnapshot & {
   events: readonly CombatEvent[];
   settlement: CombatSettlement | null;
+  loot: LootSettlementResult | null;
 };
 
 export type StartCombatInput = {

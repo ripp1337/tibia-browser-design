@@ -31,6 +31,7 @@ export class GetActiveCombatService {
       ...session,
       events: [],
       settlement: null,
+      loot: null,
     };
   }
 }

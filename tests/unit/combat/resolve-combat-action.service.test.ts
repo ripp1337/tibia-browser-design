@@ -74,6 +74,31 @@ function createFixture(
   const persistAction = vi.fn<
     CombatActionTransaction["persistAction"]
   >(async () => []);
+  const withLootSettlement = vi.fn(async (
+    _context,
+    operation
+  ) => operation({
+    character: {
+      characterId: "character-1",
+      inventoryCapacity: 20,
+      occupiedInventoryPositions: [],
+      pity: { eligibleKillCount: 0, chancePerMille: 1 },
+    },
+    loadCatalog: vi.fn(async () => ({
+      regularItemBases: [],
+      otherLootCandidates: [],
+      specialItemCandidates: [],
+      itemScoreCoefficients: {
+        ItemLevel: 1n, Attack: 1n, Defense: 1n, SpellPower: 1n,
+        Health: 1n, Mana: 1n, Energy: 1n, GoldPercent: 1n,
+        ExperiencePercent: 1n,
+      },
+    })),
+    persistRegularItem: vi.fn(),
+    persistSpecialItem: vi.fn(),
+    applyOtherLoot: vi.fn(),
+    updateUniquePity: vi.fn(),
+  }));
 
   const transaction:
   CombatActionTransaction = {
@@ -107,6 +132,7 @@ function createFixture(
       },
       combatState: state,
     },
+    withLootSettlement,
     loadSettlementContext:
       vi.fn(async () => ({
         character: {
@@ -163,7 +189,9 @@ function createFixture(
 
         monster: {
           monsterId: "monster-1",
+          monsterFamilyId: "family-1",
           monsterType: "Normal" as const,
+          level: 1,
           powerScore: 10n,
           cooldownSeconds: 30,
           bossId: null,
@@ -391,6 +419,7 @@ function createFixture(
     clock,
     randomSource,
     persistAction,
+    withLootSettlement,
     withActionTransaction,
   };
 }
@@ -449,6 +478,7 @@ describe(
         endedAt: null,
         settledAt: null,
         settlement: null,
+        loot: null,
       });
 
       expect(
@@ -497,7 +527,12 @@ describe(
         state,
         {
           nextFloat: vi.fn(() => 0),
-          nextInt: vi.fn(() => 20),
+          nextInt: vi.fn((
+            minimum: number,
+            maximum: number
+          ) => maximum === 1000
+            ? maximum
+            : Math.max(minimum, maximum)),
         }
       );
 
@@ -514,6 +549,12 @@ describe(
         monster: {
           currentHealth: 0,
         },
+      });
+
+      expect(fixture.withLootSettlement).toHaveBeenCalledOnce();
+      expect(result.loot).toMatchObject({
+        specialRollOutcome: "Ineligible",
+        otherLoot: null,
       });
 
       expect(
@@ -563,7 +604,9 @@ describe(
         player: {
           currentHealth: 0,
         },
+        loot: null,
       });
+      expect(fixture.withLootSettlement).not.toHaveBeenCalled();
     });
 
     it("returns defeat through the turn limit", async () => {

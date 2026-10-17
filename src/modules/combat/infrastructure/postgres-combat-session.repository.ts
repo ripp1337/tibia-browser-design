@@ -161,7 +161,9 @@ type SettlementStatisticsRow = {
 
 type SettlementMonsterRow = {
   monster_id: string;
+  monster_family_id: string | null;
   monster_type: string;
+  level: number;
   power_score: string;
   cooldown_seconds: number;
   boss_id: string | null;
@@ -1183,7 +1185,9 @@ class PostgresCombatActionTransaction
         `
           SELECT
             m.monster_id,
+            m.monster_family_id,
             m.monster_type,
+            m.level,
             m.power_score,
             m.cooldown_seconds,
             b.boss_id,
@@ -1592,10 +1596,17 @@ class PostgresCombatActionTransaction
       monster: {
         monsterId:
           monster.monster_id,
+        monsterFamilyId:
+          monster.monster_family_id,
         monsterType:
           mapMonsterType(
             monster.monster_type
           ),
+        level: mapSafeInteger(
+          monster.level,
+          "settlement.monster.level",
+          1
+        ),
         powerScore:
           mapNonNegativeBigInt(
             monster.power_score,

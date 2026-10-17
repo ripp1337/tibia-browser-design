@@ -29,6 +29,7 @@ export class GetCombatSessionService {
       ...session,
       events: [],
       settlement: null,
+      loot: null,
     };
   }
 }

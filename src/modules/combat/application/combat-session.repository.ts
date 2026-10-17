@@ -155,7 +155,9 @@ export type CombatSettlementStatistics = {
 
 export type CombatSettlementMonster = {
   monsterId: string;
+  monsterFamilyId: string | null;
   monsterType: MonsterType;
+  level: number;
   powerScore: bigint;
   cooldownSeconds: number;
   bossId: string | null;

@@ -1,4 +1,4 @@
-﻿import {
+import {
   describe,
   expect,
   it,
@@ -70,7 +70,9 @@ CombatSettlementContext {
 
     monster: {
       monsterId: "monster-1",
+      monsterFamilyId: null,
       monsterType: "Normal",
+      level: 1,
       powerScore: 10n,
       cooldownSeconds: 30,
       bossId: null,

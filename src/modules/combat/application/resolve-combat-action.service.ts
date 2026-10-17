@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   Clock,
 } from "../../../application/ports/clock.js";
 import type {
@@ -28,6 +28,13 @@ import {
 import type {
   CombatSessionRepository,
 } from "./combat-session.repository.js";
+import {
+  LootSettlementService,
+  type LootSettlementResult,
+} from "../../items/application/loot-settlement.service.js";
+import type {
+  LootRepository,
+} from "../../items/application/loot.repository.js";
 
 export class ResolveCombatActionService {
   public constructor(
@@ -71,6 +78,7 @@ export class ResolveCombatActionService {
           );
 
         let settlement = null;
+        let loot: LootSettlementResult | null = null;
 
         if (
           resolution.state.status ===
@@ -165,6 +173,34 @@ export class ResolveCombatActionService {
                   victoryPlan
                     .statisticsAfter,
               });
+
+          if (transaction.withLootSettlement === undefined) {
+            throw new Error(
+              "Combat transaction does not support Loot settlement."
+            );
+          }
+
+          const lootRepository: LootRepository = {
+            withSettlementTransaction: async (
+              context,
+              operation
+            ) => transaction.withLootSettlement!(
+              context,
+              operation
+            ),
+          };
+          const lootService = new LootSettlementService(
+            lootRepository,
+            this.randomSource
+          );
+          loot = await lootService.settle({
+            characterId: victoryContext.character.characterId,
+            monsterId: victoryContext.monster.monsterId,
+            monsterFamilyId: victoryContext.monster.monsterFamilyId,
+            monsterLevel: victoryContext.monster.level,
+            bossBonusLootLevel: 0,
+            isBoss: victoryContext.monster.monsterType !== "Normal",
+          });
         } else if (
           resolution.state.status ===
           COMBAT_STATUS.playerDefeat
@@ -317,6 +353,7 @@ export class ResolveCombatActionService {
               : observedAt,
           events: resolution.events,
           settlement,
+          loot,
         };
       }
     );
