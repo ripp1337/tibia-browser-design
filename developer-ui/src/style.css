@@ -218,3 +218,54 @@ pre {
 .delta { color: #526071; text-align: right; }
 .timestamp { margin: 0; font-size: 13px; }
 @media (max-width: 700px) { .stat-grid { grid-template-columns: 1fr; } .resource { grid-template-columns: 70px 1fr; } .resource .delta { grid-column: 2; text-align: left; } }
+.monster-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.monster-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.monster-row {
+  display: grid;
+  grid-template-columns: 2fr 110px 1.5fr 1.5fr;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border-color: #d7dde6;
+  background: #f7f8fa;
+  color: #172033;
+}
+
+.monster-row.selected {
+  border-color: #2057a6;
+  background: #eaf2ff;
+}
+
+.eligible { color: #176128; font-weight: 700; }
+.blocked { color: #8b1e1e; font-weight: 700; }
+
+.monster-details {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid #d7dde6;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.monster-details.empty { display: block; }
+.monster-details h3 { margin-top: 0; }
+.combat-preview { margin-top: 12px; padding: 10px; border-radius: 7px; background: #daf5df; color: #176128; }
+
+@media (max-width: 850px) {
+  .monster-row { grid-template-columns: 1fr 1fr; }
+  .monster-details, .monster-heading { flex-direction: column; }
+}

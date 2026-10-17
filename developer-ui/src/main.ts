@@ -9,6 +9,33 @@ type CharacterSummary = {
   experience: string;
 };
 
+type MonsterListItem = {
+  code: string;
+  name: string;
+  level: number;
+  monsterType: "Normal" | "MiniBoss" | "TaskBoss" | "DailyBoss";
+  energyCost: number;
+  eligibility: {
+    isEligible: boolean;
+    reasons: readonly string[];
+  };
+  cooldown: {
+    isActive: boolean;
+    availableAt: string | null;
+  };
+  bestiaryVisible: boolean;
+};
+
+type MonsterDetails = MonsterListItem & {
+  description: string;
+};
+
+type CombatPreview = {
+  combatSessionId: string;
+  monsterCode: string;
+  status: string;
+  currentTurn: number;
+};
 type Resources = {
   currentHealth: number;
   maximumHealth: number;
@@ -49,6 +76,10 @@ let summaries: readonly CharacterSummary[] = [];
 let selectedId = localStorage.getItem(CHARACTER_KEY);
 let previousSnapshot: CharacterSnapshot | null = null;
 let autoRefreshId: number | null = null;
+let monsters: readonly MonsterListItem[] = [];
+let selectedMonsterCode: string | null = null;
+let monsterServerRefreshId: number | null = null;
+let cooldownDisplayId: number | null = null;
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app element.");
@@ -89,6 +120,18 @@ app.innerHTML = `
     </article>
 
     <article class="card full-width">
+      <div class="monster-heading">
+        <div>
+          <h2>Potwory i cooldowny</h2>
+          <p class="muted">Dostepnosc i cooldown sa potwierdzane przez backend.</p>
+        </div>
+        <button id="refresh-monsters" type="button" disabled>Odswiez potwory</button>
+      </div>
+      <div id="monsters" class="empty">Wybierz postac.</div>
+      <div id="monster-details" class="monster-details empty">Wybierz potwora.</div>
+    </article>
+
+    <article class="card full-width">
       <details><summary>Diagnostyka HTTP</summary><pre id="diagnostics">Brak requestow.</pre></details>
     </article>
   </section>
@@ -106,6 +149,9 @@ const autoRefresh = requireElement<HTMLInputElement>("#auto-refresh");
 const statusElement = requireElement<HTMLElement>("#connection-status");
 const messageElement = requireElement<HTMLElement>("#connection-message");
 const diagnosticsElement = requireElement<HTMLElement>("#diagnostics");
+const monstersElement = requireElement<HTMLElement>("#monsters");
+const monsterDetailsElement = requireElement<HTMLElement>("#monster-details");
+const refreshMonstersButton = requireElement<HTMLButtonElement>("#refresh-monsters");
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) ?? "";
 connectButton.addEventListener("click", () => void connect());
@@ -113,6 +159,7 @@ clearButton.addEventListener("click", disconnect);
 createForm.addEventListener("submit", (event) => { event.preventDefault(); void createCharacter(); });
 refreshButton.addEventListener("click", () => void loadSnapshot());
 autoRefresh.addEventListener("change", configureAutoRefresh);
+refreshMonstersButton.addEventListener("click", () => void loadMonsters());
 
 async function connect(): Promise<void> {
   const token = tokenInput.value.trim();
@@ -124,7 +171,11 @@ async function connect(): Promise<void> {
     await loadCharacters();
     localStorage.setItem(TOKEN_KEY, token);
     setStatus("success", "Polaczono", `Backend odpowiedzial poprawnie. Postacie: ${summaries.length}.`);
-    if (selectedId && summaries.some((item) => item.characterId === selectedId)) await loadSnapshot();
+    if (selectedId && summaries.some((item) => item.characterId === selectedId)) {
+      await loadSnapshot();
+      await loadMonsters();
+      startMonsterRefreshTimers();
+    }
   } catch (error) { handleError(error); }
   finally { connectButton.disabled = false; renderDiagnostics(); }
 }
@@ -150,6 +201,8 @@ async function createCharacter(): Promise<void> {
     previousSnapshot = null;
     await loadCharacters();
     await loadSnapshot();
+    await loadMonsters();
+    startMonsterRefreshTimers();
     setStatus("success", "Utworzono", `Postac ${result.data.name} zostala utworzona.`);
   } catch (error) { handleError(error); }
   finally { renderDiagnostics(); }
@@ -169,6 +222,8 @@ function renderCharacters(): void {
       previousSnapshot = null;
       renderCharacters();
       void loadSnapshot();
+      void loadMonsters();
+      startMonsterRefreshTimers();
     });
     return button;
   }));
@@ -203,6 +258,162 @@ function renderSnapshot(current: CharacterSnapshot, previous: CharacterSnapshot 
     <p class="muted">Wartosci sa potwierdzone przez serwer. UI niczego lokalnie nie regeneruje.</p>`;
 }
 
+async function loadMonsters(): Promise<void> {
+  if (!client || !selectedId) return;
+  refreshMonstersButton.disabled = true;
+
+  try {
+    const result = await client.request<readonly MonsterListItem[]>(
+      "GET",
+      `/characters/${encodeURIComponent(selectedId)}/monsters`
+    );
+    diagnostics.push(result.diagnostic);
+    monsters = result.data;
+    renderMonsters();
+    refreshMonstersButton.disabled = false;
+
+    if (
+      selectedMonsterCode &&
+      monsters.some((monster) => monster.code === selectedMonsterCode)
+    ) {
+      await loadMonsterDetails(selectedMonsterCode);
+    }
+  } catch (error) {
+    handleError(error);
+  } finally {
+    refreshMonstersButton.disabled = false;
+    renderDiagnostics();
+  }
+}
+
+function renderMonsters(): void {
+  if (monsters.length === 0) {
+    monstersElement.className = "empty";
+    monstersElement.textContent = "Backend nie zwrocil potworow dla tej postaci.";
+    return;
+  }
+
+  monstersElement.className = "monster-list";
+  monstersElement.replaceChildren(...monsters.map((monster) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `monster-row ${monster.code === selectedMonsterCode ? "selected" : ""}`;
+
+    const availability = monster.eligibility.isEligible
+      ? "Dostepny"
+      : `Zablokowany: ${monster.eligibility.reasons.join(", ") || "brak powodu"}`;
+
+    const cooldown = formatCooldown(monster.cooldown);
+    card.innerHTML = `
+      <span><strong>${escapeHtml(monster.name)}</strong> | ${escapeHtml(monster.monsterType)} | Level ${monster.level}</span>
+      <span>Energy: ${monster.energyCost}</span>
+      <span class="${monster.eligibility.isEligible ? "eligible" : "blocked"}">${escapeHtml(availability)}</span>
+      <span>${escapeHtml(cooldown)}</span>`;
+
+    card.addEventListener("click", () => {
+      selectedMonsterCode = monster.code;
+      renderMonsters();
+      void loadMonsterDetails(monster.code);
+    });
+
+    return card;
+  }));
+}
+
+async function loadMonsterDetails(code: string): Promise<void> {
+  if (!client || !selectedId) return;
+
+  try {
+    const result = await client.request<MonsterDetails>(
+      "GET",
+      `/characters/${encodeURIComponent(selectedId)}/monsters/${encodeURIComponent(code)}`
+    );
+    diagnostics.push(result.diagnostic);
+    renderMonsterDetails(result.data);
+  } catch (error) {
+    handleError(error);
+  } finally {
+    renderDiagnostics();
+  }
+}
+
+function renderMonsterDetails(monster: MonsterDetails): void {
+  monsterDetailsElement.className = "monster-details";
+  monsterDetailsElement.innerHTML = `
+    <div>
+      <h3>${escapeHtml(monster.name)}</h3>
+      <p>${escapeHtml(monster.description)}</p>
+      <p><strong>Code:</strong> ${escapeHtml(monster.code)}</p>
+      <p><strong>Cooldown:</strong> ${escapeHtml(formatCooldown(monster.cooldown))}</p>
+      <p><strong>availableAt:</strong> <code>${escapeHtml(monster.cooldown.availableAt ?? "null")}</code></p>
+    </div>
+    <button id="start-combat" type="button" ${monster.eligibility.isEligible ? "" : "disabled"}>
+      Rozpocznij walke (${monster.energyCost} Energy)
+    </button>`;
+
+  const startButton = requireElement<HTMLButtonElement>("#start-combat");
+  startButton.addEventListener("click", () => void startCombat(monster));
+}
+
+async function startCombat(monster: MonsterDetails): Promise<void> {
+  if (!client || !selectedId) return;
+
+  try {
+    await loadMonsters();
+    const current = monsters.find((item) => item.code === monster.code);
+
+    if (!current?.eligibility.isEligible) {
+      setStatus("error", "Potwor niedostepny", "Backend nie potwierdza mozliwosci rozpoczecia walki.");
+      return;
+    }
+
+    const result = await client.request<CombatPreview>(
+      "POST",
+      `/characters/${encodeURIComponent(selectedId)}/combat`,
+      { monsterCode: monster.code }
+    );
+    diagnostics.push(result.diagnostic);
+    setStatus(
+      "success",
+      "Walka rozpoczeta",
+      `${monster.name}, sesja ${result.data.combatSessionId}, tura ${result.data.currentTurn}.`
+    );
+    monsterDetailsElement.insertAdjacentHTML(
+      "beforeend",
+      `<p class="combat-preview">Aktywna walka: ${escapeHtml(result.data.status)} | ${escapeHtml(result.data.combatSessionId)}</p>`
+    );
+    await loadSnapshot();
+    await loadMonsters();
+  } catch (error) {
+    handleError(error);
+  } finally {
+    renderDiagnostics();
+  }
+}
+
+function formatCooldown(cooldown: MonsterListItem["cooldown"]): string {
+  if (!cooldown.isActive || cooldown.availableAt === null) return "Brak aktywnego cooldownu";
+  const remainingMs = new Date(cooldown.availableAt).getTime() - Date.now();
+  const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `Aktywny, ok. ${minutes}:${String(seconds).padStart(2, "0")} (do ${cooldown.availableAt})`;
+}
+
+function startMonsterRefreshTimers(): void {
+  if (monsterServerRefreshId !== null) window.clearInterval(monsterServerRefreshId);
+  if (cooldownDisplayId !== null) window.clearInterval(cooldownDisplayId);
+  monsterServerRefreshId = window.setInterval(() => void loadMonsters(), 10_000);
+  cooldownDisplayId = window.setInterval(renderMonsters, 1_000);
+}
+
+function stopMonsterRefreshTimers(): void {
+  if (monsterServerRefreshId !== null) window.clearInterval(monsterServerRefreshId);
+  if (cooldownDisplayId !== null) window.clearInterval(cooldownDisplayId);
+  monsterServerRefreshId = null;
+  cooldownDisplayId = null;
+}
+
 function configureAutoRefresh(): void {
   if (autoRefreshId !== null) { window.clearInterval(autoRefreshId); autoRefreshId = null; }
   if (autoRefresh.checked) autoRefreshId = window.setInterval(() => void loadSnapshot(), 10_000);
@@ -210,9 +421,12 @@ function configureAutoRefresh(): void {
 
 function disconnect(): void {
   localStorage.removeItem(TOKEN_KEY); tokenInput.value = ""; client = null; summaries = []; selectedId = null; previousSnapshot = null;
-  localStorage.removeItem(CHARACTER_KEY); autoRefresh.checked = false; configureAutoRefresh(); autoRefresh.disabled = true; refreshButton.disabled = true;
+  localStorage.removeItem(CHARACTER_KEY); autoRefresh.checked = false; configureAutoRefresh(); stopMonsterRefreshTimers(); autoRefresh.disabled = true; refreshButton.disabled = true; refreshMonstersButton.disabled = true;
   charactersElement.className = "empty"; charactersElement.textContent = "Najpierw polacz sie z backendem.";
   snapshotElement.className = "empty"; snapshotElement.textContent = "Wybierz postac.";
+  monsters = []; selectedMonsterCode = null;
+  monstersElement.className = "empty"; monstersElement.textContent = "Wybierz postac.";
+  monsterDetailsElement.className = "monster-details empty"; monsterDetailsElement.textContent = "Wybierz potwora.";
   setStatus("idle", "Niepolaczony", "Token zostal usuniety.");
 }
 
