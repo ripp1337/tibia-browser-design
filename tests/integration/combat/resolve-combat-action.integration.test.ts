@@ -122,6 +122,32 @@ class VictoryRandomSource
   }
 }
 
+class InvalidLootRandomSource
+  implements RandomSource {
+  private integerCall = 0;
+
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    this.integerCall += 1;
+
+    if (this.integerCall === 1) {
+      return maximum;
+    }
+
+    if (this.integerCall === 2) {
+      return minimum;
+    }
+
+    return maximum + 1;
+  }
+}
+
 async function createFixture(
   monsterHealth = 100
 ): Promise<Fixture> {
@@ -662,6 +688,43 @@ describe(
         expect(
           stored.rows[0]?.current_health
         ).toBe("100");
+      }
+    );
+
+    it(
+      "rolls back Combat settlement when Loot generation fails",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const before =
+          await readRollbackState(
+            fixture
+          );
+
+        const service = createService(
+          new InvalidLootRandomSource()
+        );
+
+        await expect(
+          service.execute(
+            actionInput(fixture)
+          )
+        ).rejects.toThrow(
+          "Random Item Level is outside the canonical inclusive range."
+        );
+
+        const after =
+          await readRollbackState(
+            fixture
+          );
+
+        expect(after).toEqual(before);
+        expect(after.status).toBe("Active");
+        expect(after.event_count).toBe("0");
+        expect(after.log_count).toBe("0");
+        expect(after.bestiary_entry_count).toBe("0");
+        expect(after.bestiary_statistics_count).toBe("0");
       }
     );
 
