@@ -1,4 +1,4 @@
-﻿import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { databasePool } from "../src/database/pool.js";
 
@@ -132,4 +132,3 @@ void main()
   .finally(async () => {
     await databasePool.end();
   });
-
