@@ -205,3 +205,16 @@ pre {
     flex-direction: column;
   }
 }
+.compact { margin-bottom: 16px; }
+.toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.checkbox { display: inline-flex; gap: 6px; align-items: center; margin: 0; font-weight: 400; }
+.character-row { width: 100%; text-align: left; border-color: #d7dde6; background: #f7f8fa; color: #172033; }
+.character-row.selected { border-color: #2057a6; background: #eaf2ff; }
+.snapshot { display: grid; gap: 14px; }
+.snapshot-heading { display: flex; justify-content: space-between; gap: 12px; }
+.stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.resources { display: grid; gap: 8px; }
+.resource { display: grid; grid-template-columns: 90px 1fr 90px; gap: 8px; padding: 9px; border-radius: 7px; background: #f1f4f8; }
+.delta { color: #526071; text-align: right; }
+.timestamp { margin: 0; font-size: 13px; }
+@media (max-width: 700px) { .stat-grid { grid-template-columns: 1fr; } .resource { grid-template-columns: 70px 1fr; } .resource .delta { grid-column: 2; text-align: left; } }
