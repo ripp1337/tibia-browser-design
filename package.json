@@ -21,7 +21,10 @@
         "start": "node dist/server.js",
         "db:migrate": "tsx scripts/run-migrations.ts",
         "db:migrate:status": "tsx scripts/run-migrations.ts --status",
-        "dev:session": "tsx scripts/create-developer-session.ts"
+        "dev:session": "tsx scripts/create-developer-session.ts",
+        "ui:dev": "npm --prefix developer-ui run dev",
+        "ui:typecheck": "npm --prefix developer-ui run typecheck",
+        "ui:build": "npm --prefix developer-ui run build"
     },
     "repository": {
         "type": "git",
@@ -47,6 +50,7 @@
         "@types/pg": "^8.23.1",
         "tsx": "^4.23.15",
         "typescript": "^7.0.2",
+        "vite": "^8.3.4",
         "vitest": "^5.0.3"
     }
 }
