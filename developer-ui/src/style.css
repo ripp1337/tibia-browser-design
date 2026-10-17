@@ -291,3 +291,31 @@ pre {
   .combatants { grid-template-columns: 1fr; }
   .combat-heading { align-items: stretch; flex-direction: column; }
 }
+.settlement {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #d7dde6;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.settlement.empty { padding: 0; border: 0; background: transparent; }
+.settlement-victory { border-color: #80c98d; background: #f0fbf2; }
+.settlement-defeat { border-color: #e0a2a2; background: #fff5f5; }
+.settlement-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.settlement-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.settlement-grid > div, .loot-card { display: grid; gap: 5px; padding: 12px; border: 1px solid #d7dde6; border-radius: 8px; background: white; }
+.settlement-grid small, .loot-card small { color: #637083; }
+.loot { margin-top: 18px; }
+.loot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.loot-card.inventory-full { border-color: #c92a2a; background: #fff0f0; color: #8b1e1e; }
+.loot-card pre, .raw-result pre { max-height: 300px; font-size: 12px; }
+.raw-result { margin-top: 16px; }
+
+@media (max-width: 850px) {
+  .settlement-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .settlement-grid, .loot-grid { grid-template-columns: 1fr; }
+}

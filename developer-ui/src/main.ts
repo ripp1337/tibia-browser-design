@@ -41,6 +41,39 @@ type CombatEvent = {
   turn?: number;
 };
 
+type CombatSettlement = {
+  outcome: "Victory" | "Defeat";
+  experience: { before: string; awarded: string; lost: string; after: string };
+  gold: { before: string; baseRolled: string; awarded: string; after: string };
+  level: { before: number; after: number; levelsChanged: number };
+  blessingConsumed: boolean;
+  bestiary: { discovered: boolean; killCount: string | null };
+  taskBoss: { progressed: boolean; status: string | null };
+  cooldown: { applied: boolean; availableAt: string | null };
+  dailyBoss: { updated: boolean; victoryRecorded: boolean };
+  statistics: { damageDealt: string; damageTaken: string; highestPhysicalHit: string };
+  finalSummary: {
+    combatSessionId: string;
+    outcome: "Victory" | "Defeat";
+    turnCount: number;
+    startedAt: string;
+    endedAt: string;
+  };
+};
+
+type EquipmentSettlement = {
+  generated: Record<string, unknown> | null;
+  persisted: Record<string, unknown> | null;
+  lossReason: string | null;
+};
+
+type LootSettlement = {
+  regularEquipment: EquipmentSettlement;
+  specialEquipment: EquipmentSettlement;
+  specialRollOutcome: string;
+  otherLoot: Record<string, unknown> | null;
+  pity: { eligibleKillCount: number; chancePerMille: number };
+};
 type CombatSession = {
   combatSessionId: string;
   characterId: string;
@@ -65,8 +98,8 @@ type CombatSession = {
   endedAt: string | null;
   settledAt: string | null;
   events: readonly CombatEvent[];
-  settlement: unknown;
-  loot: unknown;
+  settlement: CombatSettlement | null;
+  loot: LootSettlement | null;
 };
 type Resources = {
   currentHealth: number;
@@ -174,6 +207,7 @@ app.innerHTML = `
         <button id="refresh-combat" type="button" disabled>Odswiez walke</button>
       </div>
       <div id="combat" class="empty">Brak wczytanej walki.</div>
+      <div id="settlement" class="settlement empty">Wynik pojawi sie po zakonczeniu walki.</div>
     </article>
 
     <article class="card full-width">
@@ -199,6 +233,7 @@ const monsterDetailsElement = requireElement<HTMLElement>("#monster-details");
 const refreshMonstersButton = requireElement<HTMLButtonElement>("#refresh-monsters");
 const combatElement = requireElement<HTMLElement>("#combat");
 const refreshCombatButton = requireElement<HTMLButtonElement>("#refresh-combat");
+const settlementElement = requireElement<HTMLElement>("#settlement");
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) ?? "";
 connectButton.addEventListener("click", () => void connect());
@@ -500,7 +535,89 @@ function renderCombat(): void {
 
   const attackButton = document.querySelector<HTMLButtonElement>("#basic-attack");
   attackButton?.addEventListener("click", () => void submitBasicAttack());
+  renderSettlement(activeCombat);
   refreshCombatButton.disabled = false;
+}
+
+function renderSettlement(combat: CombatSession): void {
+  if (combat.status === "Active" || combat.settlement === null) {
+    settlementElement.className = "settlement empty";
+    settlementElement.textContent = "Wynik pojawi sie po zakonczeniu walki.";
+    return;
+  }
+
+  const settlement = combat.settlement;
+  settlementElement.className = `settlement settlement-${settlement.outcome.toLowerCase()}`;
+  settlementElement.innerHTML = `
+    <div class="settlement-title">
+      <h3>${escapeHtml(settlement.outcome)}</h3>
+      <span>${settlement.finalSummary.turnCount} tur</span>
+    </div>
+    <div class="settlement-grid">
+      ${metricHtml("Experience", settlement.experience.before, settlement.experience.after, settlement.experience.awarded, settlement.experience.lost)}
+      ${metricHtml("Gold", settlement.gold.before, settlement.gold.after, settlement.gold.awarded, "0")}
+      <div><strong>Level</strong><span>${settlement.level.before} -> ${settlement.level.after}</span><small>Zmiana: ${settlement.level.levelsChanged}</small></div>
+      <div><strong>Statystyki</strong><span>Damage: ${settlement.statistics.damageDealt}</span><small>Taken ${settlement.statistics.damageTaken}, max hit ${settlement.statistics.highestPhysicalHit}</small></div>
+      <div><strong>Bestiary</strong><span>${settlement.bestiary.discovered ? "Odkryto" : "Bez zmiany"}</span><small>Kills: ${settlement.bestiary.killCount ?? "null"}</small></div>
+      <div><strong>Task Boss</strong><span>${settlement.taskBoss.progressed ? "Postep" : "Bez postepu"}</span><small>${escapeHtml(settlement.taskBoss.status ?? "null")}</small></div>
+      <div><strong>Cooldown</strong><span>${settlement.cooldown.applied ? "Zastosowany" : "Brak"}</span><small>${escapeHtml(settlement.cooldown.availableAt ?? "null")}</small></div>
+      <div><strong>Daily Boss</strong><span>${settlement.dailyBoss.updated ? "Zaktualizowano" : "Bez zmiany"}</span><small>Victory: ${settlement.dailyBoss.victoryRecorded}</small></div>
+    </div>
+    ${renderLoot(combat.loot)}
+    <details class="raw-result">
+      <summary>Surowy settlement i loot</summary>
+      <pre>${escapeHtml(JSON.stringify({ settlement: combat.settlement, loot: combat.loot }, null, 2))}</pre>
+    </details>`;
+}
+
+function metricHtml(
+  label: string,
+  before: string,
+  after: string,
+  awarded: string,
+  lost: string
+): string {
+  return `<div><strong>${label}</strong><span>${before} -> ${after}</span><small>+${awarded}${lost !== "0" ? `, -${lost}` : ""}</small></div>`;
+}
+
+function renderLoot(loot: LootSettlement | null): string {
+  if (loot === null) {
+    return '<section class="loot"><h3>Loot</h3><p class="muted">Brak lootu dla tego wyniku.</p></section>';
+  }
+
+  return `<section class="loot">
+    <h3>Loot</h3>
+    <div class="loot-grid">
+      ${equipmentHtml("Regular Equipment", loot.regularEquipment)}
+      ${equipmentHtml("Special Equipment", loot.specialEquipment)}
+      <div class="loot-card"><strong>Special roll</strong><span>${escapeHtml(loot.specialRollOutcome)}</span></div>
+      <div class="loot-card"><strong>Other Loot</strong>${otherLootHtml(loot.otherLoot)}</div>
+      <div class="loot-card"><strong>Pity</strong><span>Eligible kills: ${loot.pity.eligibleKillCount}</span><small>Chance: ${loot.pity.chancePerMille} per mille</small></div>
+    </div>
+  </section>`;
+}
+
+function equipmentHtml(label: string, item: EquipmentSettlement): string {
+  const inventoryFull = item.lossReason === "InventoryFull";
+  let state = "Nie wylosowano";
+
+  if (item.generated !== null && item.persisted !== null) state = "Wylosowano i zapisano";
+  else if (item.generated !== null && inventoryFull) state = "UTRACONO: InventoryFull";
+  else if (item.generated !== null) state = `Wylosowano, nie zapisano: ${item.lossReason ?? "brak powodu"}`;
+
+  return `<div class="loot-card ${inventoryFull ? "inventory-full" : ""}">
+    <strong>${label}</strong>
+    <span>${escapeHtml(state)}</span>
+    ${item.generated === null ? "" : `<details><summary>Generated Item</summary><pre>${escapeHtml(JSON.stringify(item.generated, null, 2))}</pre></details>`}
+    ${item.persisted === null ? "" : `<details><summary>Persisted Item</summary><pre>${escapeHtml(JSON.stringify(item.persisted, null, 2))}</pre></details>`}
+  </div>`;
+}
+
+function otherLootHtml(otherLoot: Record<string, unknown> | null): string {
+  if (otherLoot === null) return '<span>Brak</span>';
+  const kind = typeof otherLoot.kind === "string" ? otherLoot.kind : "Unknown";
+  const quantity = typeof otherLoot.quantity === "string" ? otherLoot.quantity : "?";
+  return `<span>${escapeHtml(kind)} x${escapeHtml(quantity)}</span><details><summary>Szczegoly</summary><pre>${escapeHtml(JSON.stringify(otherLoot, null, 2))}</pre></details>`;
 }
 
 function combatantHtml(
@@ -605,6 +722,7 @@ function disconnect(): void {
   monstersElement.className = "empty"; monstersElement.textContent = "Wybierz postac.";
   monsterDetailsElement.className = "monster-details empty"; monsterDetailsElement.textContent = "Wybierz potwora.";
   combatElement.className = "empty"; combatElement.textContent = "Brak wczytanej walki.";
+  settlementElement.className = "settlement empty"; settlementElement.textContent = "Wynik pojawi sie po zakonczeniu walki.";
   refreshCombatButton.disabled = true;
   setStatus("idle", "Niepolaczony", "Token zostal usuniety.");
 }
