@@ -30,11 +30,43 @@ type MonsterDetails = MonsterListItem & {
   description: string;
 };
 
-type CombatPreview = {
+type CombatEvent = {
+  type: string;
+  actor?: string;
+  target?: string;
+  hit?: boolean;
+  damage?: number;
+  status?: string;
+  defeatReason?: string | null;
+  turn?: number;
+};
+
+type CombatSession = {
   combatSessionId: string;
+  characterId: string;
+  monsterId: string;
   monsterCode: string;
-  status: string;
+  status: "Active" | "Victory" | "Defeat";
+  defeatReason: string | null;
   currentTurn: number;
+  player: {
+    currentHealth: number;
+    maximumHealth: number;
+    attack: number;
+    defense: number;
+  };
+  monster: {
+    currentHealth: number;
+    maximumHealth: number;
+    attack: number;
+    defense: number;
+  };
+  startedAt: string;
+  endedAt: string | null;
+  settledAt: string | null;
+  events: readonly CombatEvent[];
+  settlement: unknown;
+  loot: unknown;
 };
 type Resources = {
   currentHealth: number;
@@ -80,6 +112,8 @@ let monsters: readonly MonsterListItem[] = [];
 let selectedMonsterCode: string | null = null;
 let monsterServerRefreshId: number | null = null;
 let cooldownDisplayId: number | null = null;
+let activeCombat: CombatSession | null = null;
+let combatActionPending = false;
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app element.");
@@ -132,6 +166,17 @@ app.innerHTML = `
     </article>
 
     <article class="card full-width">
+      <div class="combat-heading">
+        <div>
+          <h2>Aktywna walka</h2>
+          <p class="muted">Sesja jest odzyskiwana z backendu po polaczeniu i odswiezeniu strony.</p>
+        </div>
+        <button id="refresh-combat" type="button" disabled>Odswiez walke</button>
+      </div>
+      <div id="combat" class="empty">Brak wczytanej walki.</div>
+    </article>
+
+    <article class="card full-width">
       <details><summary>Diagnostyka HTTP</summary><pre id="diagnostics">Brak requestow.</pre></details>
     </article>
   </section>
@@ -152,6 +197,8 @@ const diagnosticsElement = requireElement<HTMLElement>("#diagnostics");
 const monstersElement = requireElement<HTMLElement>("#monsters");
 const monsterDetailsElement = requireElement<HTMLElement>("#monster-details");
 const refreshMonstersButton = requireElement<HTMLButtonElement>("#refresh-monsters");
+const combatElement = requireElement<HTMLElement>("#combat");
+const refreshCombatButton = requireElement<HTMLButtonElement>("#refresh-combat");
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) ?? "";
 connectButton.addEventListener("click", () => void connect());
@@ -160,6 +207,7 @@ createForm.addEventListener("submit", (event) => { event.preventDefault(); void 
 refreshButton.addEventListener("click", () => void loadSnapshot());
 autoRefresh.addEventListener("change", configureAutoRefresh);
 refreshMonstersButton.addEventListener("click", () => void loadMonsters());
+refreshCombatButton.addEventListener("click", () => void recoverActiveCombat());
 
 async function connect(): Promise<void> {
   const token = tokenInput.value.trim();
@@ -174,6 +222,7 @@ async function connect(): Promise<void> {
     if (selectedId && summaries.some((item) => item.characterId === selectedId)) {
       await loadSnapshot();
       await loadMonsters();
+      await recoverActiveCombat();
       startMonsterRefreshTimers();
     }
   } catch (error) { handleError(error); }
@@ -223,6 +272,7 @@ function renderCharacters(): void {
       renderCharacters();
       void loadSnapshot();
       void loadMonsters();
+      void recoverActiveCombat();
       startMonsterRefreshTimers();
     });
     return button;
@@ -367,26 +417,153 @@ async function startCombat(monster: MonsterDetails): Promise<void> {
       return;
     }
 
-    const result = await client.request<CombatPreview>(
+    const result = await client.request<CombatSession>(
       "POST",
       `/characters/${encodeURIComponent(selectedId)}/combat`,
       { monsterCode: monster.code }
     );
     diagnostics.push(result.diagnostic);
+    activeCombat = result.data;
+    renderCombat();
     setStatus(
       "success",
       "Walka rozpoczeta",
       `${monster.name}, sesja ${result.data.combatSessionId}, tura ${result.data.currentTurn}.`
-    );
-    monsterDetailsElement.insertAdjacentHTML(
-      "beforeend",
-      `<p class="combat-preview">Aktywna walka: ${escapeHtml(result.data.status)} | ${escapeHtml(result.data.combatSessionId)}</p>`
     );
     await loadSnapshot();
     await loadMonsters();
   } catch (error) {
     handleError(error);
   } finally {
+    renderDiagnostics();
+  }
+}
+
+async function recoverActiveCombat(): Promise<void> {
+  if (!client || !selectedId) return;
+  refreshCombatButton.disabled = true;
+
+  try {
+    const result = await client.request<CombatSession>(
+      "GET",
+      `/characters/${encodeURIComponent(selectedId)}/combat`
+    );
+    diagnostics.push(result.diagnostic);
+    activeCombat = result.data;
+    renderCombat();
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.diagnostic.status === 404
+    ) {
+      diagnostics.push(error.diagnostic);
+      activeCombat = null;
+      renderCombat();
+    } else {
+      handleError(error);
+    }
+  } finally {
+    refreshCombatButton.disabled = false;
+    renderDiagnostics();
+  }
+}
+
+function renderCombat(): void {
+  if (activeCombat === null) {
+    combatElement.className = "empty";
+    combatElement.textContent = "Brak aktywnej walki.";
+    refreshCombatButton.disabled = selectedId === null;
+    return;
+  }
+
+  const terminal = activeCombat.status !== "Active";
+  combatElement.className = "combat-panel";
+  combatElement.innerHTML = `
+    <div class="combat-meta">
+      <strong>${escapeHtml(activeCombat.monsterCode)}</strong>
+      <span>Status: ${escapeHtml(activeCombat.status)}</span>
+      <span>Tura: ${activeCombat.currentTurn}</span>
+      <code>${escapeHtml(activeCombat.combatSessionId)}</code>
+    </div>
+    <div class="combatants">
+      ${combatantHtml("Postac", activeCombat.player)}
+      ${combatantHtml("Potwor", activeCombat.monster)}
+    </div>
+    <div class="combat-actions">
+      <button id="basic-attack" type="button" ${terminal || combatActionPending ? "disabled" : ""}>Basic Attack</button>
+      <span>${terminal ? `Walka zakonczona: ${escapeHtml(activeCombat.defeatReason ?? activeCombat.status)}` : "expectedTurn pochodzi z serwera"}</span>
+    </div>
+    <div class="combat-events">
+      <h3>Zdarzenia ostatniej akcji</h3>
+      ${renderEvents(activeCombat.events)}
+    </div>`;
+
+  const attackButton = document.querySelector<HTMLButtonElement>("#basic-attack");
+  attackButton?.addEventListener("click", () => void submitBasicAttack());
+  refreshCombatButton.disabled = false;
+}
+
+function combatantHtml(
+  label: string,
+  combatant: CombatSession["player"]
+): string {
+  const percent = Math.max(
+    0,
+    Math.min(100, (combatant.currentHealth / combatant.maximumHealth) * 100)
+  );
+
+  return `<section class="combatant">
+    <div><strong>${label}</strong><span>${combatant.currentHealth} / ${combatant.maximumHealth} HP</span></div>
+    <div class="health-bar"><span style="width:${percent}%"></span></div>
+    <small>Attack ${combatant.attack} | Defense ${combatant.defense}</small>
+  </section>`;
+}
+
+function renderEvents(events: readonly CombatEvent[]): string {
+  if (events.length === 0) return '<p class="muted">Brak zdarzen.</p>';
+
+  return `<ol>${events.map((event) => {
+    if (event.type === "AttackResolved") {
+      return `<li>${escapeHtml(event.actor ?? "?")} -> ${escapeHtml(event.target ?? "?")}: ${event.hit ? `${event.damage ?? 0} damage` : "miss"}</li>`;
+    }
+    if (event.type === "TurnAdvanced") return `<li>Nowa tura: ${event.turn ?? "?"}</li>`;
+    if (event.type === "CombatEnded") return `<li>Koniec: ${escapeHtml(event.status ?? "?")} ${escapeHtml(event.defeatReason ?? "")}</li>`;
+    return `<li>${escapeHtml(JSON.stringify(event))}</li>`;
+  }).join("")}</ol>`;
+}
+
+async function submitBasicAttack(): Promise<void> {
+  if (!client || !selectedId || !activeCombat || combatActionPending) return;
+  combatActionPending = true;
+  renderCombat();
+
+  try {
+    const result = await client.request<CombatSession>(
+      "POST",
+      `/characters/${encodeURIComponent(selectedId)}/combat/actions`,
+      {
+        expectedTurn: activeCombat.currentTurn,
+        action: { type: "basic_attack" },
+      }
+    );
+    diagnostics.push(result.diagnostic);
+    activeCombat = result.data;
+    setStatus(
+      "success",
+      activeCombat.status === "Active" ? "Tura wykonana" : "Walka zakonczona",
+      `Status ${activeCombat.status}, tura ${activeCombat.currentTurn}.`
+    );
+    await loadSnapshot();
+
+    if (activeCombat.status !== "Active") {
+      await loadMonsters();
+    }
+  } catch (error) {
+    handleError(error);
+    await recoverActiveCombat();
+  } finally {
+    combatActionPending = false;
+    renderCombat();
     renderDiagnostics();
   }
 }
@@ -424,9 +601,11 @@ function disconnect(): void {
   localStorage.removeItem(CHARACTER_KEY); autoRefresh.checked = false; configureAutoRefresh(); stopMonsterRefreshTimers(); autoRefresh.disabled = true; refreshButton.disabled = true; refreshMonstersButton.disabled = true;
   charactersElement.className = "empty"; charactersElement.textContent = "Najpierw polacz sie z backendem.";
   snapshotElement.className = "empty"; snapshotElement.textContent = "Wybierz postac.";
-  monsters = []; selectedMonsterCode = null;
+  monsters = []; selectedMonsterCode = null; activeCombat = null; combatActionPending = false;
   monstersElement.className = "empty"; monstersElement.textContent = "Wybierz postac.";
   monsterDetailsElement.className = "monster-details empty"; monsterDetailsElement.textContent = "Wybierz potwora.";
+  combatElement.className = "empty"; combatElement.textContent = "Brak wczytanej walki.";
+  refreshCombatButton.disabled = true;
   setStatus("idle", "Niepolaczony", "Token zostal usuniety.");
 }
 
