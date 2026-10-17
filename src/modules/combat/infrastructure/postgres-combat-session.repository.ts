@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   Pool,
   PoolClient,
   QueryResult,
@@ -75,6 +75,13 @@ import type {
   CombatEvent,
   CombatState,
 } from "../domain/combat.types.js";
+import type {
+  LootGenerationContext,
+  LootSettlementTransaction,
+} from "../../items/application/loot.repository.js";
+import {
+  createPostgresLootSettlementTransaction,
+} from "../../items/infrastructure/postgres-loot-transaction.js";
 
 
 
@@ -1019,6 +1026,28 @@ class PostgresCombatActionTransaction
     await this.settlementFailureInjector?.(
       point
     );
+  }
+
+  public async withLootSettlement<TResult>(
+    context: LootGenerationContext,
+    operation: (
+      transaction: LootSettlementTransaction
+    ) => Promise<TResult>
+  ): Promise<TResult> {
+    if (
+      context.characterId !== this.locked.session.characterId ||
+      context.monsterId !== this.locked.session.monsterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Loot settlement context does not match the locked Combat session."
+      );
+    }
+
+    const transaction = await createPostgresLootSettlementTransaction(
+      this.client,
+      context
+    );
+    return operation(transaction);
   }
 
   public async loadSettlementContext():

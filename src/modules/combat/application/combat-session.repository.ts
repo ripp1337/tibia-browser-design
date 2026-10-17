@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   EffectiveCharacterStatistics,
 } from "../../characters/domain/effective-character-statistics.js";
 import type {
@@ -20,6 +20,10 @@ import type {
   CombatEvent,
   CombatState,
 } from "../domain/combat.types.js";
+import type {
+  LootGenerationContext,
+  LootSettlementTransaction,
+} from "../../items/application/loot.repository.js";
 
 export type CombatStartTransactionInput = {
   accountId: string;
@@ -303,6 +307,13 @@ export interface CombatActionTransaction {
 
   loadSettlementContext():
     Promise<CombatSettlementContext>;
+
+  withLootSettlement?<TResult>(
+    context: LootGenerationContext,
+    operation: (
+      transaction: LootSettlementTransaction
+    ) => Promise<TResult>
+  ): Promise<TResult>;
 
   applyVictorySettlement(
     input: ApplyVictorySettlementInput
