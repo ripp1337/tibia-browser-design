@@ -319,3 +319,22 @@ pre {
 @media (max-width: 600px) {
   .settlement-grid, .loot-grid { grid-template-columns: 1fr; }
 }
+.session-tools {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(260px, 1fr);
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+
+.session-tools input,
+.session-tools select {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #b8c1cf;
+  border-radius: 7px;
+  background: white;
+}
+
+@media (max-width: 800px) {
+  .session-tools { grid-template-columns: 1fr; }
+}

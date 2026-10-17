@@ -135,6 +135,8 @@ type CharacterSnapshot = {
 
 const TOKEN_KEY = "developer-ui-token";
 const CHARACTER_KEY = "developer-ui-character";
+const SESSION_HISTORY_KEY = "developer-ui-session-history";
+const SESSION_CACHE_KEY = "developer-ui-session-cache";
 const diagnostics: DiagnosticEntry[] = [];
 let client: ApiClient | null = null;
 let summaries: readonly CharacterSummary[] = [];
@@ -147,6 +149,8 @@ let monsterServerRefreshId: number | null = null;
 let cooldownDisplayId: number | null = null;
 let activeCombat: CombatSession | null = null;
 let combatActionPending = false;
+let sessionHistory = readSessionHistory();
+let sessionCache = readSessionCache();
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app element.");
@@ -206,6 +210,13 @@ app.innerHTML = `
         </div>
         <button id="refresh-combat" type="button" disabled>Odswiez walke</button>
       </div>
+      <div class="session-tools">
+        <input id="combat-session-id" placeholder="Combat Session ID" />
+        <button id="open-combat-session" type="button" disabled>Otworz sesje</button>
+        <select id="recent-combat-sessions" disabled>
+          <option value="">Ostatnie lokalne sesje</option>
+        </select>
+      </div>
       <div id="combat" class="empty">Brak wczytanej walki.</div>
       <div id="settlement" class="settlement empty">Wynik pojawi sie po zakonczeniu walki.</div>
     </article>
@@ -234,6 +245,9 @@ const refreshMonstersButton = requireElement<HTMLButtonElement>("#refresh-monste
 const combatElement = requireElement<HTMLElement>("#combat");
 const refreshCombatButton = requireElement<HTMLButtonElement>("#refresh-combat");
 const settlementElement = requireElement<HTMLElement>("#settlement");
+const sessionIdInput = requireElement<HTMLInputElement>("#combat-session-id");
+const openSessionButton = requireElement<HTMLButtonElement>("#open-combat-session");
+const recentSessionsSelect = requireElement<HTMLSelectElement>("#recent-combat-sessions");
 
 tokenInput.value = localStorage.getItem(TOKEN_KEY) ?? "";
 connectButton.addEventListener("click", () => void connect());
@@ -243,6 +257,23 @@ refreshButton.addEventListener("click", () => void loadSnapshot());
 autoRefresh.addEventListener("change", configureAutoRefresh);
 refreshMonstersButton.addEventListener("click", () => void loadMonsters());
 refreshCombatButton.addEventListener("click", () => void recoverActiveCombat());
+sessionIdInput.addEventListener("input", () => {
+  openSessionButton.disabled =
+    client === null ||
+    selectedId === null ||
+    sessionIdInput.value.trim().length === 0;
+});
+
+openSessionButton.addEventListener("click", () =>
+  void openCombatSession(sessionIdInput.value.trim())
+);
+recentSessionsSelect.addEventListener("change", () => {
+  if (recentSessionsSelect.value) {
+    sessionIdInput.value = recentSessionsSelect.value;
+    void openCombatSession(recentSessionsSelect.value);
+  }
+});
+renderSessionHistory();
 
 async function connect(): Promise<void> {
   const token = tokenInput.value.trim();
@@ -305,6 +336,7 @@ function renderCharacters(): void {
       localStorage.setItem(CHARACTER_KEY, item.characterId);
       previousSnapshot = null;
       renderCharacters();
+      renderSessionHistory();
       void loadSnapshot();
       void loadMonsters();
       void recoverActiveCombat();
@@ -459,6 +491,7 @@ async function startCombat(monster: MonsterDetails): Promise<void> {
     );
     diagnostics.push(result.diagnostic);
     activeCombat = result.data;
+    rememberSession(result.data);
     renderCombat();
     setStatus(
       "success",
@@ -474,6 +507,104 @@ async function startCombat(monster: MonsterDetails): Promise<void> {
   }
 }
 
+async function openCombatSession(combatSessionId: string): Promise<void> {
+  if (!client || !selectedId) {
+    setStatus("error", "Brak postaci", "Najpierw polacz sie i wybierz postac.");
+    return;
+  }
+
+  if (!combatSessionId) {
+    setStatus("error", "Brak ID", "Wpisz Combat Session ID.");
+    return;
+  }
+
+  openSessionButton.disabled = true;
+  try {
+    const cached = sessionCache[combatSessionId];
+
+    if (cached && cached.characterId === selectedId) {
+      activeCombat = cached;
+      rememberSession(cached);
+      renderCombat();
+      setStatus("success", "Sesja otwarta lokalnie", `${cached.status}: ${cached.combatSessionId}`);
+      return;
+    }
+
+    const result = await client.request<CombatSession>(
+      "GET",
+      `/characters/${encodeURIComponent(selectedId)}/combat/${encodeURIComponent(combatSessionId)}`
+    );
+    diagnostics.push(result.diagnostic);
+    activeCombat = result.data;
+    rememberSession(result.data);
+    renderCombat();
+    setStatus("success", "Sesja otwarta", `${result.data.status}: ${result.data.combatSessionId}`);
+  } catch (error) {
+    handleError(error);
+  } finally {
+    openSessionButton.disabled = false;
+    renderDiagnostics();
+  }
+}
+
+function rememberSession(combat: CombatSession): void {
+  sessionHistory = [
+    {
+      characterId: combat.characterId,
+      combatSessionId: combat.combatSessionId,
+      monsterCode: combat.monsterCode,
+      status: combat.status,
+    },
+    ...sessionHistory.filter((item) => item.combatSessionId !== combat.combatSessionId),
+  ].slice(0, 20);
+  localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(sessionHistory));
+
+  sessionCache[combat.combatSessionId] = combat;
+  const allowedIds = new Set(sessionHistory.map((item) => item.combatSessionId));
+  sessionCache = Object.fromEntries(
+    Object.entries(sessionCache).filter(([combatSessionId]) => allowedIds.has(combatSessionId))
+  );
+  localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(sessionCache));
+  renderSessionHistory();
+}
+
+function readSessionCache(): Record<string, CombatSession> {
+  try {
+    const value = JSON.parse(localStorage.getItem(SESSION_CACHE_KEY) ?? "{}") as unknown;
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, CombatSession>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function readSessionHistory(): Array<{
+  characterId: string;
+  combatSessionId: string;
+  monsterCode: string;
+  status: string;
+}> {
+  try {
+    const value = JSON.parse(localStorage.getItem(SESSION_HISTORY_KEY) ?? "[]") as unknown;
+    return Array.isArray(value) ? value as Array<{ characterId: string; combatSessionId: string; monsterCode: string; status: string }> : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderSessionHistory(): void {
+  const items = selectedId
+    ? sessionHistory.filter((item) => item.characterId === selectedId)
+    : [];
+  recentSessionsSelect.replaceChildren(
+    new Option("Ostatnie lokalne sesje", ""),
+    ...items.map((item) => new Option(`${item.status} | ${item.monsterCode} | ${item.combatSessionId}`, item.combatSessionId))
+  );
+  recentSessionsSelect.disabled = items.length === 0;
+  openSessionButton.disabled = client === null || selectedId === null;
+}
+
 async function recoverActiveCombat(): Promise<void> {
   if (!client || !selectedId) return;
   refreshCombatButton.disabled = true;
@@ -485,6 +616,7 @@ async function recoverActiveCombat(): Promise<void> {
     );
     diagnostics.push(result.diagnostic);
     activeCombat = result.data;
+    rememberSession(result.data);
     renderCombat();
   } catch (error) {
     if (
@@ -540,9 +672,16 @@ function renderCombat(): void {
 }
 
 function renderSettlement(combat: CombatSession): void {
-  if (combat.status === "Active" || combat.settlement === null) {
+  if (combat.status === "Active") {
     settlementElement.className = "settlement empty";
     settlementElement.textContent = "Wynik pojawi sie po zakonczeniu walki.";
+    return;
+  }
+
+  if (combat.settlement === null) {
+    settlementElement.className = "settlement empty";
+    settlementElement.textContent =
+      "Backend zwrocil zakonczona sesje bez settlementu, lootu i zdarzen. Pelny wynik jest dostepny po odtworzeniu z lokalnej historii zapisanej podczas walki.";
     return;
   }
 
@@ -665,6 +804,7 @@ async function submitBasicAttack(): Promise<void> {
     );
     diagnostics.push(result.diagnostic);
     activeCombat = result.data;
+    rememberSession(result.data);
     setStatus(
       "success",
       activeCombat.status === "Active" ? "Tura wykonana" : "Walka zakonczona",
@@ -724,6 +864,9 @@ function disconnect(): void {
   combatElement.className = "empty"; combatElement.textContent = "Brak wczytanej walki.";
   settlementElement.className = "settlement empty"; settlementElement.textContent = "Wynik pojawi sie po zakonczeniu walki.";
   refreshCombatButton.disabled = true;
+  sessionIdInput.value = "";
+  recentSessionsSelect.disabled = true;
+  openSessionButton.disabled = true;
   setStatus("idle", "Niepolaczony", "Token zostal usuniety.");
 }
 
