@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { Pool } from "pg";
 import {
@@ -4014,6 +4014,121 @@ describe(
       }
     );
 
+    it(
+      "applies cooldown after Victory",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions AS session
+              INNER JOIN monsters AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE session.combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown test monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const service =
+            createService(
+              new VictoryRandomSource()
+            );
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Victory",
+            settlement: {
+              outcome: "Victory",
+              cooldown: {
+                applied: true,
+                availableAt: new Date(
+                  observedAt.getTime() +
+                  30_000
+                ),
+              },
+            },
+          });
+
+          const storedCooldown =
+            await testPool.query<{
+              available_at: Date;
+            }>(
+              `
+                SELECT available_at
+                FROM character_cooldowns
+                WHERE character_id = $1
+                  AND target_id = $2
+              `,
+              [
+                fixture.characterId,
+                monsterRow.monster_id,
+              ]
+            );
+
+          expect(
+            storedCooldown.rows
+          ).toHaveLength(1);
+
+          expect(
+            storedCooldown.rows[0]
+              ?.available_at
+          ).toEqual(
+            new Date(
+              observedAt.getTime() +
+              30_000
+            )
+          );
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
     it(
       "allows only one of two concurrent requests to resolve the turn",
       async () => {
