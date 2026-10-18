@@ -1,4 +1,4 @@
-﻿import {
+import {
   describe,
   expect,
   it,
@@ -233,9 +233,9 @@ describe("StartCombatService", () => {
     expect(
       fixture.updateCharacterResources
     ).toHaveBeenCalledWith({
-      currentHealth: 100,
+      currentHealth: 180,
       maximumHealth: 180,
-      currentMana: 20,
+      currentMana: 35,
       maximumMana: 35,
       currentEnergy: 12,
       maximumEnergy: 100,
@@ -251,8 +251,8 @@ describe("StartCombatService", () => {
     ).toHaveBeenCalledWith({
       characterId: "character-1",
       monsterId: "monster-1",
-      characterHealth: 100,
-      characterMana: 20,
+      characterHealth: 180,
+      characterMana: 35,
       characterMaximumHealth: 180,
       characterAttack: 20,
       characterDefense: 10,
@@ -281,7 +281,7 @@ describe("StartCombatService", () => {
       fixture.createCombatSession
     ).toHaveBeenCalledWith(
       expect.objectContaining({
-        characterHealth: 50,
+        characterHealth: 180,
       })
     );
   });
