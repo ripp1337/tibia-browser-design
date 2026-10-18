@@ -42,7 +42,7 @@ export const INITIAL_CHARACTER = {
 } as const;
 
 export const DEFAULT_RESOURCE_REGENERATION = {
-  healthPerMinute: 0,
-  manaPerMinute: 0,
+  healthPerMinute: 30,
+  manaPerMinute: 10,
   energyPerMinute: 1,
 } as const;

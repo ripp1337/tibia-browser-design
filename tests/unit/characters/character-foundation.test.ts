@@ -52,10 +52,10 @@ describe("character foundation", () => {
     expect(CHARACTER_STATUS.archived).toBe("Archived");
   });
 
-  it("uses only the confirmed energy regeneration rate by default", () => {
+  it("uses the confirmed default resource regeneration rates", () => {
     expect(DEFAULT_RESOURCE_REGENERATION).toEqual({
-      healthPerMinute: 0,
-      manaPerMinute: 0,
+      healthPerMinute: 30,
+      manaPerMinute: 10,
       energyPerMinute: 1,
     });
   });
