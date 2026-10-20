@@ -997,6 +997,7 @@ export type CombatSettlementFailurePoint =
   | "defeat.statistics"
   | "defeat.blessing"
   | "defeat.fightBuff"
+  | "defeat.cooldown"
   | "defeat.core"
   | "defeat.finalLog"
   | "defeat.retention"
@@ -1733,6 +1734,121 @@ class PostgresCombatActionTransaction
     };
   }
 
+  private async persistMonsterCooldown(input: {
+    monsterType: MonsterType;
+    cooldownSeconds: number;
+    additionalCooldownSeconds: number;
+    observedAt: Date;
+  }): Promise<{
+    applied: boolean;
+    availableAt: Date | null;
+  }> {
+    if (
+      input.monsterType !== "Normal" &&
+      input.monsterType !== "MiniBoss"
+    ) {
+      return {
+        applied: false,
+        availableAt: null,
+      };
+    }
+
+    const additionalSeconds =
+      input.monsterType === "MiniBoss"
+        ? input.additionalCooldownSeconds
+        : 0;
+
+    const totalSeconds =
+      input.cooldownSeconds +
+      additionalSeconds;
+
+    if (
+      !Number.isSafeInteger(
+        totalSeconds
+      ) ||
+      totalSeconds < 0
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Cooldown duration is invalid."
+      );
+    }
+
+    if (totalSeconds === 0) {
+      return {
+        applied: false,
+        availableAt: null,
+      };
+    }
+
+    const availableAt =
+      new Date(
+        input.observedAt.getTime() +
+        totalSeconds * 1000
+      );
+
+    if (
+      Number.isNaN(
+        availableAt.getTime()
+      )
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Cooldown timestamp is invalid."
+      );
+    }
+
+    const cooldownWrite =
+      await this.client.query(
+        `
+          INSERT INTO character_cooldowns (
+            character_id,
+            cooldown_type,
+            target_id,
+            available_at,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            'Monster',
+            $2,
+            $3,
+            $4,
+            $4
+          )
+          ON CONFLICT (
+            character_id,
+            target_id
+          )
+          WHERE cooldown_type = 'Monster'
+          DO UPDATE
+          SET
+            available_at =
+              EXCLUDED.available_at,
+            updated_at =
+              EXCLUDED.updated_at
+        `,
+        [
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          availableAt,
+          input.observedAt,
+        ]
+      );
+
+    if (cooldownWrite.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Cooldown could not be persisted."
+      );
+    }
+
+    return {
+      applied: true,
+      availableAt,
+    };
+  }
+
   private async persistVictoryCharacter(
     input: ApplyVictorySettlementInput
   ): Promise<void> {
@@ -2333,113 +2449,24 @@ class PostgresCombatActionTransaction
       );
     }
 
-    let cooldownApplied = false;
-    let cooldownAvailableAt:
-      Date | null = null;
+    const cooldown =
+      await this.persistMonsterCooldown({
+        monsterType:
+          input.context.monster
+            .monsterType,
+        cooldownSeconds:
+          input.context.monster
+            .cooldownSeconds,
+        additionalCooldownSeconds:
+          input.context.monster
+            .additionalCooldownSeconds,
+        observedAt: input.observedAt,
+      });
 
-    const monsterType =
-      input.context.monster
-        .monsterType;
-
-    if (
-      monsterType === "Normal" ||
-      monsterType === "MiniBoss"
-    ) {
-      const baseSeconds =
-        input.context.monster
-          .cooldownSeconds;
-
-      const additionalSeconds =
-        monsterType === "MiniBoss"
-          ? input.context.monster
-              .additionalCooldownSeconds
-          : 0;
-
-      const totalSeconds =
-        baseSeconds +
-        additionalSeconds;
-
-      if (
-        !Number.isSafeInteger(
-          totalSeconds
-        ) ||
-        totalSeconds < 0
-      ) {
-        throw new InvalidPersistentCombatStateError(
-          "Victory cooldown duration is invalid."
-        );
-      }
-
-      if (totalSeconds > 0) {
-        cooldownAvailableAt =
-          new Date(
-            input.observedAt.getTime() +
-            totalSeconds * 1000
-          );
-
-        if (
-          Number.isNaN(
-            cooldownAvailableAt.getTime()
-          )
-        ) {
-          throw new InvalidPersistentCombatStateError(
-            "Victory cooldown timestamp is invalid."
-          );
-        }
-
-        const cooldownWrite =
-          await this.client.query(
-            `
-              INSERT INTO character_cooldowns (
-                character_id,
-                cooldown_type,
-                target_id,
-                available_at,
-                created_at,
-                updated_at
-              )
-              VALUES (
-                $1,
-                'Monster',
-                $2,
-                $3,
-                $4,
-                $4
-              )
-              ON CONFLICT (
-                character_id,
-                target_id
-              )
-              WHERE cooldown_type = 'Monster'
-              DO UPDATE
-              SET
-                available_at =
-                  EXCLUDED.available_at,
-                updated_at =
-                  EXCLUDED.updated_at
-            `,
-            [
-              this.locked.session
-                .characterId,
-              this.locked.session
-                .monsterId,
-              cooldownAvailableAt,
-              input.observedAt,
-            ]
-          );
-
-        if (cooldownWrite.rowCount !== 1) {
-          throw new InvalidPersistentCombatStateError(
-            "Victory cooldown could not be persisted."
-          );
-        }
-
-        cooldownApplied = true;
-
-        await this.injectSettlementFailure(
-          "victory.cooldown"
-        );
-      }
+    if (cooldown.applied) {
+      await this.injectSettlementFailure(
+        "victory.cooldown"
+      );
     }
 
     for (
@@ -2522,9 +2549,9 @@ class PostgresCombatActionTransaction
         status: taskStatus,
       },
       cooldown: {
-        applied: cooldownApplied,
+        applied: cooldown.applied,
         availableAt:
-          cooldownAvailableAt,
+          cooldown.availableAt,
       },
       dailyBoss: {
         updated:
@@ -2901,7 +2928,12 @@ class PostgresCombatActionTransaction
 
   private async persistDefeatCore(
     input: ApplyDefeatSettlementInput
-  ): Promise<void> {
+  ): Promise<{
+    cooldown: {
+      applied: boolean;
+      availableAt: Date | null;
+    };
+  }> {
     if (
       input.state.status !==
       COMBAT_STATUS.playerDefeat
@@ -3146,6 +3178,28 @@ class PostgresCombatActionTransaction
         );
       }
     }
+
+    const cooldown =
+      await this.persistMonsterCooldown({
+        monsterType:
+          input.context.monster
+            .monsterType,
+        cooldownSeconds:
+          input.context.monster
+            .cooldownSeconds,
+        additionalCooldownSeconds:
+          input.context.monster
+            .additionalCooldownSeconds,
+        observedAt: input.observedAt,
+      });
+
+    if (cooldown.applied) {
+      await this.injectSettlementFailure(
+        "defeat.cooldown"
+      );
+    }
+
+    return { cooldown };
   }
 
   public async applyDefeatSettlement(
@@ -3204,9 +3258,10 @@ class PostgresCombatActionTransaction
       );
     }
 
-    await this.persistDefeatCore(
-      input
-    );
+    const consequences =
+      await this.persistDefeatCore(
+        input
+      );
 
     await this.injectSettlementFailure(
       "defeat.core"
@@ -3309,8 +3364,14 @@ class PostgresCombatActionTransaction
       },
 
       cooldown: {
-        applied: false,
-        availableAt: null,
+        applied:
+          consequences.cooldown
+            .applied,
+        availableAt:
+          consequences.cooldown
+            .availableAt
+            ?.toISOString() ??
+          null,
       },
 
       dailyBoss: {
@@ -3496,10 +3557,8 @@ class PostgresCombatActionTransaction
           null,
       },
 
-      cooldown: {
-        applied: false,
-        availableAt: null,
-      },
+      cooldown:
+        consequences.cooldown,
 
       dailyBoss: {
         updated: false,

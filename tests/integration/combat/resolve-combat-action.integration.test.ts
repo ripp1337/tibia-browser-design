@@ -4130,6 +4130,288 @@ describe(
       }
     );
     it(
+      "applies cooldown after Defeat",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET current_health = 5
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET character_health = 5
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions AS session
+              INNER JOIN monsters AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE session.combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown test monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const service =
+            createService(
+              new DefeatRandomSource()
+            );
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Defeat",
+            settlement: {
+              outcome: "Defeat",
+              cooldown: {
+                applied: true,
+                availableAt: new Date(
+                  observedAt.getTime() +
+                  30_000
+                ),
+              },
+            },
+          });
+
+          const storedCooldown =
+            await testPool.query<{
+              available_at: Date;
+            }>(
+              `
+                SELECT available_at
+                FROM character_cooldowns
+                WHERE character_id = $1
+                  AND target_id = $2
+              `,
+              [
+                fixture.characterId,
+                monsterRow.monster_id,
+              ]
+            );
+
+          expect(
+            storedCooldown.rows
+          ).toHaveLength(1);
+
+          expect(
+            storedCooldown.rows[0]
+              ?.available_at
+          ).toEqual(
+            new Date(
+              observedAt.getTime() +
+              30_000
+            )
+          );
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+    it(
+      "rolls back Defeat when cooldown persistence is followed by failure",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET current_health = 5
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET character_health = 5
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions AS session
+              INNER JOIN monsters AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE session.combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown rollback monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            before.cooldown_count
+          ).toBe("0");
+
+          const failure =
+            new Error(
+              "Injected failure at defeat.cooldown."
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (point) => {
+                    if (
+                      point ===
+                      "defeat.cooldown"
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new DefeatRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(after).toEqual(before);
+          expect(
+            after.cooldown_count
+          ).toBe("0");
+          expect(after.status).toBe(
+            "Active"
+          );
+          expect(after.log_count).toBe(
+            "0"
+          );
+          expect(after.event_count).toBe(
+            "0"
+          );
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+    it(
       "allows only one of two concurrent requests to resolve the turn",
       async () => {
         const fixture =
