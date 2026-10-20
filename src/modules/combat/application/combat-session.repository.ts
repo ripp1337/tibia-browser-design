@@ -167,6 +167,7 @@ export type CombatSettlementMonster = {
     | "DailyBoss"
     | null;
   additionalCooldownSeconds: number;
+  lootLevelBonus: number;
 };
 
 export type CombatSettlementTask = {

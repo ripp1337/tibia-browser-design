@@ -113,6 +113,7 @@ CombatSettlementContext {
       bossId: null,
       bossType: null,
       additionalCooldownSeconds: 0,
+      lootLevelBonus: 0,
     },
     task: null,
     dailyBoss: null,

@@ -306,9 +306,16 @@ pre {
 .settlement-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .settlement-grid > div, .loot-card { display: grid; gap: 5px; padding: 12px; border: 1px solid #d7dde6; border-radius: 8px; background: white; }
 .settlement-grid small, .loot-card small { color: #637083; }
+/* BigInt values arrive as up to 20-digit strings; keep them inside their cards. */
+.stat-grid span, .settlement-grid span, .loot-card span { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
 .loot { margin-top: 18px; }
 .loot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .loot-card.inventory-full { border-color: #c92a2a; background: #fff0f0; color: #8b1e1e; }
+.loot-saved { color: #176128; font-weight: 700; }
+.loot-lost { color: #8b1e1e; font-weight: 700; }
+.item-body { display: grid; gap: 4px; padding: 8px; border-radius: 6px; background: #f7f8fa; }
+.affix-list { margin: 0; padding-left: 18px; font-size: 13px; }
+.affix-list li + li { margin-top: 2px; }
 .loot-card pre, .raw-result pre { max-height: 300px; font-size: 12px; }
 .raw-result { margin-top: 16px; }
 

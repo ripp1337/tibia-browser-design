@@ -169,6 +169,7 @@ type SettlementMonsterRow = {
   boss_id: string | null;
   boss_type: string | null;
   additional_cooldown_seconds: number | null;
+  loot_level_bonus: number | null;
 };
 
 type SettlementTaskDefinitionRow = {
@@ -1193,7 +1194,8 @@ class PostgresCombatActionTransaction
             m.cooldown_seconds,
             b.boss_id,
             b.boss_type,
-            b.additional_cooldown_seconds
+            b.additional_cooldown_seconds,
+            b.loot_level_bonus
           FROM monsters AS m
           LEFT JOIN bosses AS b
             ON b.monster_id =
@@ -1627,6 +1629,13 @@ class PostgresCombatActionTransaction
             : mapSafeInteger(
                 monster.additional_cooldown_seconds,
                 "settlement.monster.additional_cooldown_seconds"
+              ),
+        lootLevelBonus:
+          monster.loot_level_bonus === null
+            ? 0
+            : mapSafeInteger(
+                monster.loot_level_bonus,
+                "settlement.monster.loot_level_bonus"
               ),
       },
 
