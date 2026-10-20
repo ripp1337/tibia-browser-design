@@ -1,137 +1,20 @@
 import "./style.css";
 import { ApiClient, ApiError, type DiagnosticEntry } from "./api-client";
-
-type CharacterSummary = {
-  characterId: string;
-  name: string;
-  status: string;
-  level: number;
-  experience: string;
-};
-
-type MonsterListItem = {
-  code: string;
-  name: string;
-  level: number;
-  monsterType: "Normal" | "MiniBoss" | "TaskBoss" | "DailyBoss";
-  energyCost: number;
-  eligibility: {
-    isEligible: boolean;
-    reasons: readonly string[];
-  };
-  cooldown: {
-    isActive: boolean;
-    availableAt: string | null;
-  };
-  bestiaryVisible: boolean;
-};
-
-type MonsterDetails = MonsterListItem & {
-  description: string;
-};
-
-type CombatEvent = {
-  type: string;
-  actor?: string;
-  target?: string;
-  hit?: boolean;
-  damage?: number;
-  status?: string;
-  defeatReason?: string | null;
-  turn?: number;
-};
-
-type CombatSettlement = {
-  outcome: "Victory" | "Defeat";
-  experience: { before: string; awarded: string; lost: string; after: string };
-  gold: { before: string; baseRolled: string; awarded: string; after: string };
-  level: { before: number; after: number; levelsChanged: number };
-  blessingConsumed: boolean;
-  bestiary: { discovered: boolean; killCount: string | null };
-  taskBoss: { progressed: boolean; status: string | null };
-  cooldown: { applied: boolean; availableAt: string | null };
-  dailyBoss: { updated: boolean; victoryRecorded: boolean };
-  statistics: { damageDealt: string; damageTaken: string; highestPhysicalHit: string };
-  finalSummary: {
-    combatSessionId: string;
-    outcome: "Victory" | "Defeat";
-    turnCount: number;
-    startedAt: string;
-    endedAt: string;
-  };
-};
-
-type EquipmentSettlement = {
-  generated: Record<string, unknown> | null;
-  persisted: Record<string, unknown> | null;
-  lossReason: string | null;
-};
-
-type LootSettlement = {
-  regularEquipment: EquipmentSettlement;
-  specialEquipment: EquipmentSettlement;
-  specialRollOutcome: string;
-  otherLoot: Record<string, unknown> | null;
-  pity: { eligibleKillCount: number; chancePerMille: number };
-};
-type CombatSession = {
-  combatSessionId: string;
-  characterId: string;
-  monsterId: string;
-  monsterCode: string;
-  status: "Active" | "Victory" | "Defeat";
-  defeatReason: string | null;
-  currentTurn: number;
-  player: {
-    currentHealth: number;
-    maximumHealth: number;
-    attack: number;
-    defense: number;
-  };
-  monster: {
-    currentHealth: number;
-    maximumHealth: number;
-    attack: number;
-    defense: number;
-  };
-  startedAt: string;
-  endedAt: string | null;
-  settledAt: string | null;
-  events: readonly CombatEvent[];
-  settlement: CombatSettlement | null;
-  loot: LootSettlement | null;
-};
-type Resources = {
-  currentHealth: number;
-  maximumHealth: number;
-  currentMana: number;
-  maximumMana: number;
-  currentEnergy: number;
-  maximumEnergy: number;
-  resourcesUpdatedAt: string;
-};
-
-type CharacterSnapshot = {
-  characterId: string;
-  name: string;
-  status: string;
-  progression: {
-    level: number;
-    experience: string;
-    gold: string;
-  };
-  resources: Resources;
-  effectiveStatistics: {
-    attack: number;
-    defense: number;
-    spellPower: number;
-    maximumHealth: number;
-    maximumMana: number;
-    maximumEnergy: number;
-    goldBonusPercent: number;
-    experienceBonusPercent: number;
-  };
-};
+import type {
+  CharacterSnapshot,
+  CharacterSummary,
+  CombatEvent,
+  CombatSession,
+  EquipmentSettlementResult,
+  GeneratedOtherLoot,
+  GeneratedRegularItem,
+  GeneratedSpecialItem,
+  LootSettlement,
+  MonsterCooldown,
+  MonsterDetails,
+  MonsterListItem,
+  PersistedEquipmentItem,
+} from "./api-contract";
 
 const TOKEN_KEY = "developer-ui-token";
 const CHARACTER_KEY = "developer-ui-character";
@@ -369,7 +252,7 @@ function renderSnapshot(current: CharacterSnapshot, previous: CharacterSnapshot 
   snapshotElement.className = "snapshot";
   snapshotElement.innerHTML = `
     <div class="snapshot-heading"><strong>${escapeHtml(current.name)}</strong><span>Level ${current.progression.level}</span></div>
-    <div class="stat-grid"><span>Experience: ${current.progression.experience}</span><span>Gold: ${current.progression.gold}</span><span>Attack: ${current.effectiveStatistics.attack}</span><span>Defense: ${current.effectiveStatistics.defense}</span></div>
+    <div class="stat-grid"><span>Experience: ${escapeHtml(current.progression.experience)}</span><span>Gold: ${escapeHtml(current.progression.gold)}</span><span>Attack: ${current.effectiveStatistics.attack}</span><span>Defense: ${current.effectiveStatistics.defense}</span></div>
     <div class="resources">${resource("Health", "currentHealth", "maximumHealth")}${resource("Mana", "currentMana", "maximumMana")}${resource("Energy", "currentEnergy", "maximumEnergy")}</div>
     <p class="timestamp">resourcesUpdatedAt: <code>${escapeHtml(current.resources.resourcesUpdatedAt)}</code></p>
     <p class="muted">Wartosci sa potwierdzone przez serwer. UI niczego lokalnie nie regeneruje.</p>`;
@@ -690,14 +573,14 @@ function renderSettlement(combat: CombatSession): void {
   settlementElement.innerHTML = `
     <div class="settlement-title">
       <h3>${escapeHtml(settlement.outcome)}</h3>
-      <span>${settlement.finalSummary.turnCount} tur</span>
+            <span>${settlement.finalSummary.turnCount} tur</span>
     </div>
     <div class="settlement-grid">
       ${metricHtml("Experience", settlement.experience.before, settlement.experience.after, settlement.experience.awarded, settlement.experience.lost)}
       ${metricHtml("Gold", settlement.gold.before, settlement.gold.after, settlement.gold.awarded, "0")}
       <div><strong>Level</strong><span>${settlement.level.before} -> ${settlement.level.after}</span><small>Zmiana: ${settlement.level.levelsChanged}</small></div>
-      <div><strong>Statystyki</strong><span>Damage: ${settlement.statistics.damageDealt}</span><small>Taken ${settlement.statistics.damageTaken}, max hit ${settlement.statistics.highestPhysicalHit}</small></div>
-      <div><strong>Bestiary</strong><span>${settlement.bestiary.discovered ? "Odkryto" : "Bez zmiany"}</span><small>Kills: ${settlement.bestiary.killCount ?? "null"}</small></div>
+      <div><strong>Statystyki</strong><span>Damage: ${escapeHtml(settlement.statistics.damageDealt)}</span><small>Taken ${escapeHtml(settlement.statistics.damageTaken)}, max hit ${escapeHtml(settlement.statistics.highestPhysicalHit)}</small></div>
+      <div><strong>Bestiary</strong><span>${settlement.bestiary.discovered ? "Odkryto" : "Bez zmiany"}</span><small>Kills: ${escapeHtml(settlement.bestiary.killCount ?? "null")}</small></div>
       <div><strong>Task Boss</strong><span>${settlement.taskBoss.progressed ? "Postep" : "Bez postepu"}</span><small>${escapeHtml(settlement.taskBoss.status ?? "null")}</small></div>
       <div><strong>Cooldown</strong><span>${settlement.cooldown.applied ? "Zastosowany" : "Brak"}</span><small>${escapeHtml(settlement.cooldown.availableAt ?? "null")}</small></div>
       <div><strong>Daily Boss</strong><span>${settlement.dailyBoss.updated ? "Zaktualizowano" : "Bez zmiany"}</span><small>Victory: ${settlement.dailyBoss.victoryRecorded}</small></div>
@@ -716,47 +599,124 @@ function metricHtml(
   awarded: string,
   lost: string
 ): string {
-  return `<div><strong>${label}</strong><span>${before} -> ${after}</span><small>+${awarded}${lost !== "0" ? `, -${lost}` : ""}</small></div>`;
+  return `<div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(before)} -> ${escapeHtml(after)}</span><small>+${escapeHtml(awarded)}${lost !== "0" ? `, -${escapeHtml(lost)}` : ""}</small></div>`;
 }
 
 function renderLoot(loot: LootSettlement | null): string {
   if (loot === null) {
-    return '<section class="loot"><h3>Loot</h3><p class="muted">Brak lootu dla tego wyniku.</p></section>';
+    return `<section class="loot">
+      <h3>Loot</h3>
+      <p class="muted">Brak lootu dla tego wyniku (loot === null, np. porazka).</p>
+    </section>`;
   }
 
   return `<section class="loot">
     <h3>Loot</h3>
     <div class="loot-grid">
-      ${equipmentHtml("Regular Equipment", loot.regularEquipment)}
-      ${equipmentHtml("Special Equipment", loot.specialEquipment)}
+      ${equipmentHtml<GeneratedRegularItem>("Regular Equipment", loot.regularEquipment, regularItemBody)}
+      ${equipmentHtml<GeneratedSpecialItem>("Special Equipment", loot.specialEquipment, specialItemBody)}
       <div class="loot-card"><strong>Special roll</strong><span>${escapeHtml(loot.specialRollOutcome)}</span></div>
       <div class="loot-card"><strong>Other Loot</strong>${otherLootHtml(loot.otherLoot)}</div>
-      <div class="loot-card"><strong>Pity</strong><span>Eligible kills: ${loot.pity.eligibleKillCount}</span><small>Chance: ${loot.pity.chancePerMille} per mille</small></div>
+      ${pityHtml(loot)}
     </div>
   </section>`;
 }
 
-function equipmentHtml(label: string, item: EquipmentSettlement): string {
+/**
+ * Renders one Equipment settlement slot. Handles every server state:
+ * nothing generated, generated + persisted, or generated but lost
+ * (lossReason === "InventoryFull"), and tolerates missing affixes / stats.
+ */
+function equipmentHtml<TItem>(
+  label: string,
+  item: EquipmentSettlementResult<TItem>,
+  renderItem: (item: TItem) => string
+): string {
   const inventoryFull = item.lossReason === "InventoryFull";
   let state = "Nie wylosowano";
+  let stateClass = "";
 
-  if (item.generated !== null && item.persisted !== null) state = "Wylosowano i zapisano";
-  else if (item.generated !== null && inventoryFull) state = "UTRACONO: InventoryFull";
-  else if (item.generated !== null) state = `Wylosowano, nie zapisano: ${item.lossReason ?? "brak powodu"}`;
+  if (item.generated !== null && item.persisted !== null) {
+    state = "Wylosowano i zapisano";
+    stateClass = "loot-saved";
+  } else if (item.generated !== null && inventoryFull) {
+    state = "UTRACONO: InventoryFull (ekwipunek pelny)";
+    stateClass = "loot-lost";
+  } else if (item.generated !== null) {
+    state = `Wylosowano, nie zapisano: ${item.lossReason ?? "brak powodu"}`;
+    stateClass = "loot-lost";
+  }
+
+  const generatedBody = item.generated === null ? "" : renderItem(item.generated);
+  const persistedBody = item.persisted === null ? "" : persistedHtml(item.persisted);
 
   return `<div class="loot-card ${inventoryFull ? "inventory-full" : ""}">
-    <strong>${label}</strong>
-    <span>${escapeHtml(state)}</span>
-    ${item.generated === null ? "" : `<details><summary>Generated Item</summary><pre>${escapeHtml(JSON.stringify(item.generated, null, 2))}</pre></details>`}
-    ${item.persisted === null ? "" : `<details><summary>Persisted Item</summary><pre>${escapeHtml(JSON.stringify(item.persisted, null, 2))}</pre></details>`}
+    <strong>${escapeHtml(label)}</strong>
+    <span class="${stateClass}">${escapeHtml(state)}</span>
+    ${generatedBody}
+    ${persistedBody}
+    <details><summary>Surowy JSON</summary><pre>${escapeHtml(
+      JSON.stringify({ generated: item.generated, persisted: item.persisted, lossReason: item.lossReason }, null, 2)
+    )}</pre></details>
   </div>`;
 }
 
-function otherLootHtml(otherLoot: Record<string, unknown> | null): string {
+function persistedHtml(persisted: PersistedEquipmentItem): string {
+  return `<small>Zapisano jako <code>${escapeHtml(persisted.itemId)}</code> w slocie ${persisted.inventoryPosition}</small>`;
+}
+
+function regularItemBody(item: GeneratedRegularItem): string {
+  const affixes = Array.isArray(item.affixes) ? item.affixes : [];
+  const affixHtml = affixes.length === 0
+    ? '<small class="muted">Brak affiksow</small>'
+    : `<ul class="affix-list">${affixes.map((affix) =>
+        `<li>${escapeHtml(affix.statType)} +${escapeHtml(affix.rollValue)} (poz. ${affix.affixPosition})</li>`
+      ).join("")}</ul>`;
+
+  return `<div class="item-body">
+    <span>${escapeHtml(item.itemBaseId)}</span>
+    <small>Item Level: ${item.itemLevel} | Required: ${item.requiredLevel}</small>
+    <small>Rarity: <strong>${escapeHtml(item.rarity)}</strong> | Item Score: ${escapeHtml(item.itemScore)}</small>
+    ${affixHtml}
+  </div>`;
+}
+
+function specialItemBody(item: GeneratedSpecialItem): string {
+  const fixedStats = Array.isArray(item.fixedStats) ? item.fixedStats : [];
+  // `specialEquipment` has no regular rarity or Affixes; the special category
+  // is the server-side roll outcome, so it is shown on the roll card above.
+  const fixedHtml = fixedStats.length === 0
+    ? '<small class="muted">Brak fixed stats</small>'
+    : `<ul class="affix-list">${fixedStats.map((stat) =>
+        `<li>${escapeHtml(stat.statType)} +${escapeHtml(stat.rollValue)} (poz. ${stat.statPosition})</li>`
+      ).join("")}</ul>`;
+
+  return `<div class="item-body">
+    <span>${escapeHtml(item.itemBaseId)} <em>(Special)</em></span>
+    <small>Item Level: ${item.itemLevel} | Required: ${item.requiredLevel}</small>
+    <small>Item Score: ${escapeHtml(item.itemScore)}</small>
+    ${fixedHtml}
+  </div>`;
+}
+
+function otherLootHtml(otherLoot: GeneratedOtherLoot | null): string {
   if (otherLoot === null) return '<span>Brak</span>';
-  const kind = typeof otherLoot.kind === "string" ? otherLoot.kind : "Unknown";
-  const quantity = typeof otherLoot.quantity === "string" ? otherLoot.quantity : "?";
-  return `<span>${escapeHtml(kind)} x${escapeHtml(quantity)}</span><details><summary>Szczegoly</summary><pre>${escapeHtml(JSON.stringify(otherLoot, null, 2))}</pre></details>`;
+  const detail = otherLoot.kind === "Material"
+    ? escapeHtml(otherLoot.materialId)
+    : escapeHtml(otherLoot.consumableDefinitionId);
+  return `<span>${escapeHtml(otherLoot.kind)} x${escapeHtml(otherLoot.quantity)}</span>
+    <small>ID: ${detail}</small>
+    <details><summary>Szczegoly</summary><pre>${escapeHtml(JSON.stringify(otherLoot, null, 2))}</pre></details>`;
+}
+
+function pityHtml(loot: LootSettlement): string {
+  const { eligibleKillCount = 0, chancePerMille = 0 } = loot.pity ?? {};
+  const chancePercent = (chancePerMille / 10).toFixed(1);
+  return `<div class="loot-card">
+    <strong>Pity</strong>
+    <span>Eligible kills: ${escapeHtml(eligibleKillCount)}</span>
+    <small>Chance: ${escapeHtml(chancePerMille)} per mille (${escapeHtml(chancePercent)}%)</small>
+  </div>`;
 }
 
 function combatantHtml(
@@ -780,9 +740,9 @@ function renderEvents(events: readonly CombatEvent[]): string {
 
   return `<ol>${events.map((event) => {
     if (event.type === "AttackResolved") {
-      return `<li>${escapeHtml(event.actor ?? "?")} -> ${escapeHtml(event.target ?? "?")}: ${event.hit ? `${event.damage ?? 0} damage` : "miss"}</li>`;
+      return `<li>${escapeHtml(event.actor ?? "?")} -> ${escapeHtml(event.target ?? "?")}: ${event.hit ? `${escapeHtml(event.damage ?? 0)} damage` : "miss"}</li>`;
     }
-    if (event.type === "TurnAdvanced") return `<li>Nowa tura: ${event.turn ?? "?"}</li>`;
+    if (event.type === "TurnAdvanced") return `<li>Nowa tura: ${escapeHtml(String(event.turn ?? "?"))}</li>`;
     if (event.type === "CombatEnded") return `<li>Koniec: ${escapeHtml(event.status ?? "?")} ${escapeHtml(event.defeatReason ?? "")}</li>`;
     return `<li>${escapeHtml(JSON.stringify(event))}</li>`;
   }).join("")}</ol>`;
@@ -825,7 +785,7 @@ async function submitBasicAttack(): Promise<void> {
   }
 }
 
-function formatCooldown(cooldown: MonsterListItem["cooldown"]): string {
+function formatCooldown(cooldown: MonsterCooldown): string {
   if (!cooldown.isActive || cooldown.availableAt === null) return "Brak aktywnego cooldownu";
   const remainingMs = new Date(cooldown.availableAt).getTime() - Date.now();
   const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -879,4 +839,4 @@ function handleError(error: unknown): void {
 function renderDiagnostics(): void { diagnosticsElement.textContent = diagnostics.length ? JSON.stringify(diagnostics.slice(-10).reverse(), null, 2) : "Brak requestow."; }
 function setStatus(state: "idle" | "loading" | "success" | "error", label: string, detail: string): void { statusElement.textContent = label; statusElement.className = `status status-${state}`; messageElement.textContent = detail; }
 function requireElement<T extends Element>(selector: string): T { const element = document.querySelector<T>(selector); if (!element) throw new Error(`Missing element: ${selector}`); return element; }
-function escapeHtml(value: string): string { const element = document.createElement("span"); element.textContent = value; return element.innerHTML; }
+function escapeHtml(value: unknown): string { const element = document.createElement("span"); element.textContent = typeof value === "string" ? value : String(value ?? ""); return element.innerHTML; }
