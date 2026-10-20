@@ -48,6 +48,8 @@ const characterRepository =
 
 const createdAccountIds: string[] = [];
 const createdMonsterIds: string[] = [];
+const createdItemBaseIds: string[] = [];
+const createdMaterialIds: string[] = [];
 const openedServers: Server[] = [];
 
 async function createAuthorizationSession(
@@ -205,6 +207,153 @@ class VictoryRandomSource
   }
 }
 
+/**
+ * Deterministic Victories that always succeed the Equipment and Other Loot
+ * probability rolls (both use nextInt(1, 1000) and return the minimum) while
+ * rolling the maximum for any other integer range. Bigint rolls use the
+ * inclusive minimum, which is a valid edge for weighted selections and
+ * quantity ranges.
+ */
+class LootVictoryRandomSource
+  implements RandomSource {
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    if (minimum === 1 && maximum === 1000) {
+      return 1;
+    }
+
+    return maximum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+async function createLootBearingMonster() {
+  const monster =
+    await createCombatMonster();
+
+  const suffix =
+    randomUUID().replaceAll("-", "");
+
+  // Create a dedicated Item Base for this Monster instead of relying on a
+  // non-deterministic `SELECT ... LIMIT 1` over shared seed data. The
+  // inserted row is tracked and removed during cleanup, so concurrent test
+  // files never observe or depend on each other's loot data.
+  const itemBaseResult =
+    await testPool.query<{
+      item_base_id: string;
+    }>(
+      `
+        INSERT INTO item_bases (
+          code,
+          name,
+          description,
+          item_level,
+          required_level,
+          slot,
+          base_item_score
+        )
+        VALUES ($1, $2, $3, 1, 1, 'Helmet', 1)
+        RETURNING item_base_id
+      `,
+      [
+        `loot_http_base_${suffix}`,
+        `Loot HTTP Base ${suffix}`,
+        "HTTP integration-test loot Item Base.",
+      ]
+    );
+
+  const itemBaseId =
+    itemBaseResult.rows[0]?.item_base_id;
+
+  if (!itemBaseId) {
+    throw new Error(
+      "Could not create the HTTP loot Item Base."
+    );
+  }
+
+  createdItemBaseIds.push(itemBaseId);
+
+  await testPool.query(
+    `
+      INSERT INTO loot_tables (
+        monster_id,
+        item_base_id,
+        selection_weight
+      )
+      VALUES ($1, $2, 1)
+    `,
+    [
+      monster.monster_id,
+      itemBaseId,
+    ]
+  );
+
+  // Likewise, insert a dedicated Material instead of selecting a shared row.
+  const materialResult =
+    await testPool.query<{
+      material_id: string;
+    }>(
+      `
+        INSERT INTO materials (
+          code,
+          name,
+          description,
+          material_level,
+          is_lootable
+        )
+        VALUES ($1, $2, $3, 1, TRUE)
+        RETURNING material_id
+      `,
+      [
+        `loot_http_material_${suffix}`,
+        `Loot HTTP Material ${suffix}`,
+        "HTTP integration-test loot Material.",
+      ]
+    );
+
+  const materialId =
+    materialResult.rows[0]?.material_id;
+
+  if (!materialId) {
+    throw new Error(
+      "Could not create the HTTP loot Material."
+    );
+  }
+
+  createdMaterialIds.push(materialId);
+
+  await testPool.query(
+    `
+      INSERT INTO other_loot_tables (
+        monster_id,
+        material_id,
+        min_quantity,
+        max_quantity,
+        selection_weight
+      )
+      VALUES ($1, $2, 1, 3, 1)
+    `,
+    [
+      monster.monster_id,
+      materialId,
+    ]
+  );
+
+  return monster;
+}
+
 async function startServer(
   randomSource?: RandomSource
 ) {
@@ -260,6 +409,23 @@ function jsonRequest(
   };
 }
 
+/**
+ * Asserts that every listed property is serialized as a string. BigInt
+ * amounts (Experience, Gold, Item Score, quantities, statistics) must cross
+ * the HTTP boundary as strings, never as lossy numbers.
+ */
+function expectStringFields(
+  record: Record<string, unknown>,
+  fieldNames: readonly string[]
+): void {
+  for (const fieldName of fieldNames) {
+    expect(
+      typeof record[fieldName],
+      `${fieldName} must be serialized as a string`
+    ).toBe("string");
+  }
+}
+
 describe(
   "persistent combat HTTP integration",
   () => {
@@ -268,56 +434,126 @@ describe(
     });
 
     afterEach(async () => {
-      while (openedServers.length > 0) {
-        const server =
-          openedServers.pop();
+      // Drain the tracked collections atomically up front. Each collection is
+      // snapshotted and cleared before any awaited cleanup runs, so a failing
+      // or re-entrant cleanup can never leave stale ids behind for the next
+      // test and every id is still processed.
+      const servers =
+        openedServers.splice(
+          0,
+          openedServers.length
+        );
+      const accountIds =
+        createdAccountIds.splice(
+          0,
+          createdAccountIds.length
+        );
+      const monsterIds =
+        createdMonsterIds.splice(
+          0,
+          createdMonsterIds.length
+        );
+      const itemBaseIds =
+        createdItemBaseIds.splice(
+          0,
+          createdItemBaseIds.length
+        );
+      const materialIds =
+        createdMaterialIds.splice(
+          0,
+          createdMaterialIds.length
+        );
 
-        if (server) {
-          await new Promise<void>(
-            (resolve, reject) => {
-              server.close((error) => {
-                if (error) {
-                  reject(error);
-                  return;
-                }
+      // Close every HTTP server independently. A failure closing one server
+      // must not prevent closing the others or removing database rows.
+      await Promise.allSettled(
+        servers.map(async (server) => {
+          try {
+            await new Promise<void>(
+              (resolve, reject) => {
+                server.close((error) => {
+                  if (error) {
+                    reject(error);
+                    return;
+                  }
 
-                resolve();
-              });
-            }
-          );
-        }
-      }
+                  resolve();
+                });
+              }
+            );
+          } catch {
+            // Ignore individual close errors so cleanup continues.
+          }
+        })
+      );
 
-      while (
-        createdAccountIds.length > 0
-      ) {
-        const accountId =
-          createdAccountIds.pop();
+      // Accounts own characters and combat sessions; deleting an Account
+      // cascades those rows. Each delete runs in isolation.
+      await Promise.allSettled(
+        accountIds.map(async (accountId) => {
+          try {
+            await deleteTestAccount(
+              testPool,
+              accountId
+            );
+          } catch {
+            // Ignore individual delete errors (e.g. foreign-key conflicts)
+            // so unrelated records are still cleaned up.
+          }
+        })
+      );
 
-        if (accountId) {
-          await deleteTestAccount(
-            testPool,
-            accountId
-          );
-        }
-      }
+      // Monsters cascade loot_tables, other_loot_tables and any dependent
+      // session rows via ON DELETE CASCADE.
+      await Promise.allSettled(
+        monsterIds.map(async (monsterId) => {
+          try {
+            await testPool.query(
+              `
+                DELETE FROM monsters
+                WHERE monster_id = $1
+              `,
+              [monsterId]
+            );
+          } catch {
+            // Ignore individual delete errors so cleanup continues.
+          }
+        })
+      );
 
-      while (
-        createdMonsterIds.length > 0
-      ) {
-        const monsterId =
-          createdMonsterIds.pop();
+      // Remove dedicated loot Item Bases and Materials after the Monsters
+      // that reference them have been deleted.
+      await Promise.allSettled(
+        itemBaseIds.map(async (itemBaseId) => {
+          try {
+            await testPool.query(
+              `
+                DELETE FROM item_bases
+                WHERE item_base_id = $1
+              `,
+              [itemBaseId]
+            );
+          } catch {
+            // Ignore individual delete errors so cleanup continues.
+          }
+        })
+      );
 
-        if (monsterId) {
-          await testPool.query(
-            `
-              DELETE FROM monsters
-              WHERE monster_id = $1
-            `,
-            [monsterId]
-          );
-        }
-      }
+      await Promise.allSettled(
+        materialIds.map(async (materialId) => {
+          try {
+            await testPool.query(
+              `
+                DELETE FROM materials
+                WHERE material_id = $1
+              `,
+              [materialId]
+            );
+          } catch {
+            // Ignore individual delete errors so cleanup continues.
+          }
+        })
+      );
     });
 
     afterAll(async () => {
@@ -668,9 +904,12 @@ describe(
           body.data.status
         ).toBe("Victory");
 
-        expect(
-          body.data.settlement
-        ).toMatchObject({
+        const settlement =
+          body.data.settlement;
+
+        // BigInt amounts (Experience, Gold, Bestiary counts) must be
+        // serialized as strings and preserve their exact large values.
+        expect(settlement).toMatchObject({
           outcome: "Victory",
 
           experience: {
@@ -704,26 +943,28 @@ describe(
           },
         });
 
-        expect(
-          typeof body.data.settlement
-            .statistics.damageDealt
-        ).toBe("string");
-
-        expect(
-          typeof body.data.settlement
-            .statistics.damageTaken
-        ).toBe("string");
-
-        expect(
-          typeof body.data.settlement
-            .statistics
-            .highestPhysicalHit
-        ).toBe("string");
+        // Explicit string-typed expectations for BigInt-derived fields.
+        expectStringFields(
+          settlement.experience,
+          ["awarded", "after"]
+        );
+        expectStringFields(
+          settlement.gold,
+          ["baseRolled", "awarded", "after"]
+        );
+        expectStringFields(
+          settlement.statistics,
+          [
+            "damageDealt",
+            "damageTaken",
+            "highestPhysicalHit",
+          ]
+        );
 
         expect(
           Number.isNaN(
             Date.parse(
-              body.data.settlement
+              settlement
                 .finalSummary.startedAt
             )
           )
@@ -732,7 +973,7 @@ describe(
         expect(
           Number.isNaN(
             Date.parse(
-              body.data.settlement
+              settlement
                 .finalSummary.endedAt
             )
           )
@@ -861,6 +1102,7 @@ describe(
               status: string;
               defeatReason:
                 string | null;
+              loot: unknown;
               settlement: {
                 outcome: string;
                 experience: {
@@ -895,6 +1137,8 @@ describe(
         expect(
           body.data.status
         ).toBe("Defeat");
+
+        expect(body.data.loot).toBeNull();
 
         expect(
           body.data.defeatReason
@@ -972,6 +1216,250 @@ describe(
             )
           )
         ).toBe(false);
+      }
+    );
+
+    it(
+      "returns Loot settlement for terminal Victory",
+      async () => {
+        const account =
+          await createTestAccount(
+            testPool
+          );
+
+        createdAccountIds.push(
+          account.accountId
+        );
+
+        const character =
+          await characterRepository
+            .createCharacterGraph({
+              accountId:
+                account.accountId,
+              seasonId: null,
+              name:
+                `Http-Loot-${randomUUID()
+                  .slice(0, 8)}`,
+              spellLoadoutName:
+                "Default Spells",
+              equipmentLoadoutName:
+                "Default Equipment",
+            });
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              current_health = 100,
+              current_energy = 50,
+              resources_updated_at = NOW()
+            WHERE character_id = $1
+          `,
+          [
+            character.characterId,
+          ]
+        );
+
+        const monster =
+          await createLootBearingMonster();
+
+        await testPool.query(
+          `
+            UPDATE monsters
+            SET
+              health = 1,
+              defense = 0,
+              attack = 0
+            WHERE monster_id = $1
+          `,
+          [
+            monster.monster_id,
+          ]
+        );
+
+        const token =
+          await createAuthorizationSession(
+            account.accountId
+          );
+
+        const { baseUrl } =
+          await startServer(
+            new LootVictoryRandomSource()
+          );
+
+        const combatUrl =
+          `${baseUrl}/characters/${character.characterId}/combat`;
+
+        const startResponse =
+          await fetch(
+            combatUrl,
+            jsonRequest(token, {
+              monsterCode:
+                monster.code,
+            })
+          );
+
+        expect(
+          startResponse.status
+        ).toBe(201);
+
+        const actionResponse =
+          await fetch(
+            `${combatUrl}/actions`,
+            jsonRequest(token, {
+              expectedTurn: 1,
+              action: {
+                type:
+                  "basic_attack",
+              },
+            })
+          );
+
+        expect(
+          actionResponse.status
+        ).toBe(200);
+
+        const body =
+          await actionResponse.json() as {
+            data: {
+              status: string;
+              loot: {
+                regularEquipment: {
+                  generated: {
+                    itemLevel: number;
+                    requiredLevel: number;
+                    rarity: string;
+                    itemScore: string;
+                    affixes: Array<{
+                      statType: string;
+                      rollValue: string;
+                    }>;
+                  } | null;
+                  persisted: {
+                    itemId: string;
+                    inventoryPosition: number;
+                  } | null;
+                  lossReason:
+                    "InventoryFull" | null;
+                };
+                specialEquipment: {
+                  generated: unknown | null;
+                  persisted: unknown | null;
+                  lossReason:
+                    "InventoryFull" | null;
+                };
+                specialRollOutcome: string;
+                otherLoot: {
+                  kind: string;
+                  otherLootTableId: string;
+                  quantity: string;
+                } | null;
+                pity: {
+                  eligibleKillCount: number;
+                  chancePerMille: number;
+                };
+              };
+            };
+          };
+
+        expect(body.data.status).toBe(
+          "Victory"
+        );
+
+        const loot = body.data.loot;
+
+        expect(loot).not.toBeNull();
+
+        // regularEquipment: generated and persisted, string Item Score.
+        expect(
+          loot.regularEquipment.generated
+        ).not.toBeNull();
+
+        expect(
+          loot.regularEquipment.persisted
+        ).not.toBeNull();
+
+        expect(
+          loot.regularEquipment.lossReason
+        ).toBeNull();
+
+        // BigInt-derived amounts are serialized as strings.
+        expect(
+          typeof loot.regularEquipment
+            .generated?.itemScore
+        ).toBe("string");
+
+        expect(
+          typeof loot.regularEquipment
+            .generated?.itemLevel
+        ).toBe("number");
+
+        expect(
+          typeof loot.regularEquipment
+            .persisted?.itemId
+        ).toBe("string");
+
+        const affixes =
+          loot.regularEquipment
+            .generated?.affixes ?? [];
+
+        for (
+          const affix of affixes
+        ) {
+          expect(
+            typeof affix.rollValue
+          ).toBe("string");
+        }
+
+        // specialEquipment: no eligible source for this monster.
+        expect(
+          loot.specialEquipment.generated
+        ).toBeNull();
+
+        expect(
+          loot.specialEquipment.persisted
+        ).toBeNull();
+
+        expect(
+          loot.specialEquipment.lossReason
+        ).toBeNull();
+
+        expect([
+          "Ineligible",
+          "Failed",
+          "Generated",
+        ]).toContain(
+          loot.specialRollOutcome
+        );
+
+        expect(
+          loot.specialRollOutcome
+        ).toBe("Ineligible");
+
+        // otherLoot: present with a string-serialized quantity.
+        expect(loot.otherLoot).not.toBeNull();
+
+        expect(
+          typeof loot.otherLoot?.quantity
+        ).toBe("string");
+
+        expect([
+          "Material",
+          "Consumable",
+        ]).toContain(
+          loot.otherLoot?.kind
+        );
+
+        // pity: numeric canonical state.
+        expect(
+          typeof loot.pity
+            .eligibleKillCount
+        ).toBe("number");
+
+        expect(
+          typeof loot.pity
+            .chancePerMille
+        ).toBe("number");
       }
     );
 

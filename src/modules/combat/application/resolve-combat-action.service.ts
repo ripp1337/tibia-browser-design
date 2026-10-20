@@ -198,7 +198,9 @@ export class ResolveCombatActionService {
             monsterId: victoryContext.monster.monsterId,
             monsterFamilyId: victoryContext.monster.monsterFamilyId,
             monsterLevel: victoryContext.monster.level,
-            bossBonusLootLevel: 0,
+            bossBonusLootLevel: Number(
+              victoryContext.monster.lootLevelBonus ?? 0
+            ),
             isBoss: victoryContext.monster.monsterType !== "Normal",
           });
         } else if (

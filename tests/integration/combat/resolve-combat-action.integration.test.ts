@@ -122,6 +122,51 @@ class VictoryRandomSource
   }
 }
 
+/**
+ * Drives a deterministic regular Equipment drop for a boss while pinning
+ * the canonical Item Level range. The Equipment success roll returns the
+ * minimum (always within the boss threshold); the Item Level roll is
+ * identified by its canonical inclusive range [15, 30] and returns the
+ * minimum (15). Every other roll returns its minimum, which is a valid
+ * low edge for weighted selections and quantity ranges.
+ */
+class BossLootLevelRandomSource
+  implements RandomSource {
+  public itemLevelRange:
+    { minimum: number; maximum: number } | null =
+    null;
+
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    if (
+      minimum === 15 &&
+      maximum === 30
+    ) {
+      this.itemLevelRange = {
+        minimum,
+        maximum,
+      };
+
+      return minimum;
+    }
+
+    return minimum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
 class InvalidLootRandomSource
   implements RandomSource {
   private integerCall = 0;
@@ -1677,10 +1722,189 @@ describe(
             ]
           );
 
-        expect(stored.rows[0]).toEqual({
+                expect(stored.rows[0]).toEqual({
           status: "Victory",
           monster_id: miniBossId,
         });
+      }
+    );
+
+    it(
+      "applies the boss loot level bonus to the rolled Item Level",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const boss = await testPool.query<{
+          boss_id: string;
+          monster_id: string;
+          level: number;
+          loot_level_bonus: number;
+        }>(
+          `
+            SELECT
+              b.boss_id,
+              b.monster_id,
+              m.level,
+              b.loot_level_bonus
+            FROM bosses AS b
+            INNER JOIN monsters AS m
+              ON m.monster_id = b.monster_id
+            INNER JOIN loot_tables AS lt
+              ON lt.monster_id = b.monster_id
+              AND lt.is_enabled = TRUE
+            WHERE b.boss_type = 'MiniBoss'
+            ORDER BY b.boss_id
+            LIMIT 1
+          `
+        );
+
+        const bossRow = boss.rows[0];
+
+        if (!bossRow) {
+          throw new Error(
+            "Boss loot level fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            bossRow.monster_id,
+          ]
+        );
+
+        const randomSource =
+          new BossLootLevelRandomSource();
+
+        try {
+          // Boss level 20 with loot level bonus 5 yields the canonical
+          // Item Level range [15, 30] (effective loot level 25).
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET level = 20
+              WHERE monster_id = $1
+            `,
+            [bossRow.monster_id]
+          );
+
+          await testPool.query(
+            `
+              UPDATE bosses
+              SET loot_level_bonus = 5
+              WHERE boss_id = $1
+            `,
+            [bossRow.boss_id]
+          );
+
+          const service =
+            createService(randomSource);
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Victory",
+            monsterId: bossRow.monster_id,
+            settlement: {
+              outcome: "Victory",
+            },
+          });
+
+          if (
+            result.loot === null ||
+            result.loot.regularEquipment
+              .generated === null
+          ) {
+            throw new Error(
+              "Expected a generated regular Equipment drop."
+            );
+          }
+
+          const generated =
+            result.loot.regularEquipment
+              .generated;
+
+          const persisted =
+            result.loot.regularEquipment
+              .persisted;
+
+          if (persisted === null) {
+            throw new Error(
+              "Expected the regular Equipment drop to be persisted."
+            );
+          }
+
+          // Primary assertion: the boss loot level bonus reached the
+          // canonical Item Level roll.
+          expect(generated.itemLevel).toBe(15);
+
+          expect(generated.requiredLevel).toBe(15);
+
+          // The pinned range is identified by the canonical bounds, not
+          // by global call ordering.
+          expect(
+            randomSource.itemLevelRange
+          ).toEqual({
+            minimum: 15,
+            maximum: 30,
+          });
+
+          // The persisted Item rows keep the same canonical Item Level.
+          const storedItem =
+            await testPool.query<{
+              item_level: number;
+              required_level: number;
+            }>(
+              `
+                SELECT
+                  item_level,
+                  required_level
+                FROM items
+                WHERE item_id = $1
+              `,
+              [persisted.itemId]
+            );
+
+          expect(
+            storedItem.rows[0]
+          ).toEqual({
+            item_level: 15,
+            required_level: 15,
+          });
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET level = $2
+              WHERE monster_id = $1
+            `,
+            [
+              bossRow.monster_id,
+              bossRow.level,
+            ]
+          );
+
+          await testPool.query(
+            `
+              UPDATE bosses
+              SET loot_level_bonus = $2
+              WHERE boss_id = $1
+            `,
+            [
+              bossRow.boss_id,
+              bossRow.loot_level_bonus,
+            ]
+          );
+        }
       }
     );
 
