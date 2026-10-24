@@ -1,6 +1,6 @@
 ﻿# M7 Technical Dump
 
-Generated: 2026-10-14 13:49:32 +02:00
+Generated: 2026-10-20 22:17:24 +02:00
 Repository root: C:\Projects\ostatnia-szansa-game
 
 ## Purpose
@@ -20,34 +20,32 @@ Fresh source dump for planning M7: Item and Loot Generation.
 ## Repository state
 
 ```text
-Branch: m7/item-loot-generation
+Branch: m7/developer-ui
 
 Working tree:
-?? .audit/
-?? .tmp-m7-context-generator-audit.txt
-?? M7_APPROVED_DECISIONS.md
-?? M7_IMPLEMENTATION_PLAN.md
-?? M7_MASTER_PROMPT.md
-?? M7_SOURCE_AUDIT.md
-?? M7_VERIFICATION_PLAN.md
-?? scripts/generate-m7-context.ps1
+ M M7_P20_DEVELOPER_UI_PLAN.md
+ M developer-ui/HTTP_CONTRACT.md
+ M documentation/game-design/CURRENT_MILESTONE.md
+ M documentation/game-design/MASTER_PROJECT_PLAN.md
+?? .continue/
+?? developer-ui/V23_MANUAL_EVIDENCE.md
 
 Recent commits:
-f475675 prepare M7 developer UI integration
-c273821 align project status after M6
-8a83b30 complete M6 victory death and progression
-ace0e16 complete M6 documentation
-bbcf30a verify full M6 combat integration matrix
-1df4454 remove combat abandonment contract
-52393f3 verify combat settlement rollback coverage
-600c21c update database table count for M6
-e2e37d9 align combat retrieval test with terminal states
-b3b0b54 verify HTTP combat settlement responses
-ac0da34 verify final combat log retention
-ed39169 complete Daily Boss attempt consumption tests
-7edf739 checkpoint P11 daily boss attempt consumption
-39c10ef implement transactional defeat settlement
-e14bb55 implement transactional victory settlement
+62ff5d5 refactor(combat): restore defeat settlement tests and clean up loot level bonus repository mapping
+0341d55 feat(ui): display combat loot settlement with XSS protection and resilient BigInt handling
+d35a594 feat(combat): apply boss loot level bonus and isolate integration test fixtures
+e5d74ff apply monster cooldown after defeat
+5b8724d add development game content pack
+c9cb3ee update combat tests for resource regeneration
+8448561 configure default resource regeneration
+84d1259 test successful combat cooldown settlement
+d8552e8 add local combat session history
+16aad0f add combat settlement and loot developer UI
+06c436c add active combat developer UI
+a9c10e0 add monster discovery developer UI
+b019bb0 add character snapshot developer UI
+e2101ad connect developer UI to backend
+744bd80 add developer UI foundation
 ```
 
 # ============================================================
@@ -77,7 +75,11 @@ e14bb55 implement transactional victory settlement
         "dev": "tsx src/server.ts",
         "start": "node dist/server.js",
         "db:migrate": "tsx scripts/run-migrations.ts",
-        "db:migrate:status": "tsx scripts/run-migrations.ts --status"
+        "db:migrate:status": "tsx scripts/run-migrations.ts --status",
+        "dev:session": "tsx scripts/create-developer-session.ts",
+        "ui:dev": "npm --prefix developer-ui run dev",
+        "ui:typecheck": "npm --prefix developer-ui run typecheck",
+        "ui:build": "npm --prefix developer-ui run build"
     },
     "repository": {
         "type": "git",
@@ -103,6 +105,7 @@ e14bb55 implement transactional victory settlement
         "@types/pg": "^8.23.1",
         "tsx": "^4.23.15",
         "typescript": "^7.0.2",
+        "vite": "^8.3.4",
         "vitest": "^5.0.3"
     }
 }
@@ -467,6 +470,23 @@ const CONFIGS: TableConfig[] = [
     ]
   },
   {
+    sheet: "item_base_affix_weights",
+    table: "item_base_affix_weights",
+    keys: ["item_base_id", "affix_template_id"],
+    references: [
+      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+    ]
+  },
+  {
+    sheet: "item_base_fixed_stat_ranges",
+    table: "item_base_fixed_stat_ranges",
+    keys: ["item_base_id", "stat_position"],
+    references: [
+      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+    ]
+  },
+  { sheet: "item_score_coefficients", table: "item_score_coefficients", keys: ["score_component"] },
+  {
     sheet: "monsters",
     table: "monsters",
     keys: ["code"],
@@ -496,6 +516,17 @@ const CONFIGS: TableConfig[] = [
     keys: ["monster_id", "item_base_id"],
     references: [
       { workbookColumn: "monster_code", databaseColumn: "monster_id", target: "monsters" },
+      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+    ]
+  },
+  {
+    sheet: "special_item_sources",
+    table: "special_item_sources",
+    keys: ["monster_id", "monster_family_id", "item_base_id"],
+    allowNullKeys: true,
+    references: [
+      { workbookColumn: "monster_code", databaseColumn: "monster_id", target: "monsters", optional: true },
+      { workbookColumn: "monster_family_code", databaseColumn: "monster_family_id", target: "monster_families", optional: true },
       { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
     ]
   },
@@ -568,6 +599,61 @@ function isBlank(value: unknown): boolean {
 
 function normalizedString(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+export function validatePositiveInteger(
+  value: unknown,
+  fieldName: string
+): string | null {
+  const text = normalizedString(value);
+  if (!/^[0-9]+$/.test(text) || BigInt(text) <= 0n) {
+    return `${fieldName} must be a positive integer.`;
+  }
+  if (BigInt(text) > 9223372036854775807n) {
+    return `${fieldName} must not exceed PostgreSQL BIGINT maximum.`;
+  }
+  return null;
+}
+
+export function validateNonNegativeInteger(
+  value: unknown,
+  fieldName: string
+): string | null {
+  const text = normalizedString(value);
+  if (!/^[0-9]+$/.test(text)) {
+    return `${fieldName} must be a non-negative integer.`;
+  }
+  if (BigInt(text) > 9223372036854775807n) {
+    return `${fieldName} must not exceed PostgreSQL BIGINT maximum.`;
+  }
+  return null;
+}
+
+export function validateInclusiveIntegerRange(
+  minimum: unknown,
+  maximum: unknown
+): string | null {
+  const minimumText = normalizedString(minimum);
+  const maximumText = normalizedString(maximum);
+  if (!/^[0-9]+$/.test(minimumText) || !/^[0-9]+$/.test(maximumText)) {
+    return "min_value and max_value must be non-negative integers.";
+  }
+  if (BigInt(minimumText) > BigInt(maximumText)) {
+    return "min_value must not exceed max_value.";
+  }
+  return null;
+}
+
+export function validateSpecialItemSourceOwner(
+  monsterCode: unknown,
+  monsterFamilyCode: unknown
+): string | null {
+  const ownerCount = [monsterCode, monsterFamilyCode]
+    .map(normalizedString)
+    .filter(Boolean).length;
+  return ownerCount === 1
+    ? null
+    : "exactly one of monster_code or monster_family_code is required.";
 }
 
 export function validateMonsterExperienceReward(
@@ -669,9 +755,42 @@ function parseMode(): { mode: Mode; workbookPath: string } {
 }
 
 function workbookIdentity(config: TableConfig, row: WorkbookRow): string {
+  if (config.table === "item_base_affix_weights") {
+    return ["item_base_code", "affix_type", "affix_tier"]
+      .map((column) => normalizedString(row[column]))
+      .join("|");
+  }
+
   const refs = new Map((config.references ?? []).map((rule) => [rule.databaseColumn, rule.workbookColumn]));
   return config.keys.map((key) => normalizedString(row[refs.get(key) ?? key])).join("|");
 }
+
+const ITEM_SCORE_COMPONENTS = [
+  "ItemLevel",
+  "Attack",
+  "Defense",
+  "SpellPower",
+  "Health",
+  "Mana",
+  "Energy",
+  "GoldPercent",
+  "ExperiencePercent"
+] as const;
+
+const RETIRED_WORKBOOK_COLUMNS: Record<string, string[]> = {
+  loot_tables: [
+    "drop_chance_percent",
+    "min_item_level",
+    "max_item_level",
+    "loot_level_modifier"
+  ],
+  other_loot_tables: ["drop_chance_percent"],
+  unique_templates: [
+    "min_attack", "max_attack", "min_defense", "max_defense",
+    "min_spell_power", "max_spell_power", "min_health", "max_health",
+    "min_mana", "max_mana", "min_energy", "max_energy"
+  ]
+};
 
 function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]> {
   const rowsBySheet = new Map<string, WorkbookRow[]>();
@@ -724,6 +843,54 @@ function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]
           }
         });
       }
+
+      const retiredColumns = RETIRED_WORKBOOK_COLUMNS[config.sheet] ?? [];
+      for (const retiredColumn of retiredColumns) {
+        if (rows.some((row) => Object.hasOwn(row, retiredColumn))) {
+          problems.push(`${config.sheet}: retired column ${retiredColumn} must be removed.`);
+        }
+      }
+
+      if (["loot_tables", "other_loot_tables", "item_base_affix_weights", "special_item_sources"].includes(config.table)) {
+        rows.forEach((row, index) => {
+          const problem = validatePositiveInteger(row.selection_weight, "selection_weight");
+          if (problem) problems.push(`${config.sheet} row ${index + 2}: ${problem}`);
+        });
+      }
+
+      if (config.table === "item_score_coefficients") {
+        rows.forEach((row, index) => {
+          const problem = validateNonNegativeInteger(row.coefficient, "coefficient");
+          if (problem) problems.push(`${config.sheet} row ${index + 2}: ${problem}`);
+        });
+      }
+
+      if (config.table === "item_base_fixed_stat_ranges") {
+        rows.forEach((row, index) => {
+          const positionProblem = validatePositiveInteger(row.stat_position, "stat_position");
+          const rangeProblem = validateInclusiveIntegerRange(row.min_value, row.max_value);
+          if (positionProblem) problems.push(`${config.sheet} row ${index + 2}: ${positionProblem}`);
+          if (rangeProblem) problems.push(`${config.sheet} row ${index + 2}: ${rangeProblem}`);
+        });
+      }
+
+      if (config.table === "special_item_sources") {
+        rows.forEach((row, index) => {
+          const problem = validateSpecialItemSourceOwner(row.monster_code, row.monster_family_code);
+          if (problem) problems.push(`${config.sheet} row ${index + 2}: ${problem}`);
+        });
+      }
+
+      if (config.table === "item_base_affix_weights") {
+        rows.forEach((row, index) => {
+          if (!normalizedString(row.affix_type)) {
+            problems.push(`${config.sheet} row ${index + 2}: affix_type is required.`);
+          }
+          const tierProblem = validatePositiveInteger(row.affix_tier, "affix_tier");
+          if (tierProblem) problems.push(`${config.sheet} row ${index + 2}: ${tierProblem}`);
+        });
+      }
+
       const codes = new Set(rows.map((row) => normalizedString(row.code)).filter(Boolean));
       if (codes.size > 0) codeSets.set(config.table, codes);
       if (config.table === "chest_definitions") {
@@ -751,6 +918,91 @@ function validateWorkbook(workbook: ExcelJS.Workbook): Map<string, WorkbookRow[]
       }
     }
   }
+
+  const itemBases = rowsBySheet.get("item_bases") ?? [];
+  const itemBaseByCode = new Map(
+    itemBases.map((row) => [normalizedString(row.code), row])
+  );
+  const regularItemBaseCodes = new Set(
+    itemBases
+      .filter((row) => row.is_unique !== true && row.is_set !== true)
+      .map((row) => normalizedString(row.code))
+  );
+  const specialItemBaseCodes = new Set(
+    itemBases
+      .filter((row) => row.is_unique === true || row.is_set === true)
+      .map((row) => normalizedString(row.code))
+  );
+
+  const affixWeights = rowsBySheet.get("item_base_affix_weights") ?? [];
+  const affixPoolCodes = new Set(affixWeights.map((row) => normalizedString(row.item_base_code)));
+  for (const code of regularItemBaseCodes) {
+    if (!affixPoolCodes.has(code)) problems.push(`item_bases: regular Item Base "${code}" has no affix pool.`);
+  }
+  affixWeights.forEach((row, index) => {
+    const code = normalizedString(row.item_base_code);
+    if (specialItemBaseCodes.has(code)) {
+      problems.push(`item_base_affix_weights row ${index + 2}: special Item Base "${code}" cannot use normal affixes.`);
+    }
+  });
+
+  const fixedRanges = rowsBySheet.get("item_base_fixed_stat_ranges") ?? [];
+  const fixedRangesByBase = new Map<string, WorkbookRow[]>();
+  fixedRanges.forEach((row, index) => {
+    const code = normalizedString(row.item_base_code);
+    if (regularItemBaseCodes.has(code)) {
+      problems.push(`item_base_fixed_stat_ranges row ${index + 2}: regular Item Base "${code}" cannot use fixed stats.`);
+    }
+    const list = fixedRangesByBase.get(code) ?? [];
+    list.push(row);
+    fixedRangesByBase.set(code, list);
+  });
+  for (const code of specialItemBaseCodes) {
+    const ranges = fixedRangesByBase.get(code) ?? [];
+    if (ranges.length === 0) {
+      problems.push(`item_bases: special Item Base "${code}" has no fixed-stat ranges.`);
+      continue;
+    }
+    const positions = ranges
+      .map((row) => Number(normalizedString(row.stat_position)))
+      .sort((left, right) => left - right);
+    positions.forEach((position, index) => {
+      if (position !== index + 1) {
+        problems.push(`item_base_fixed_stat_ranges: Item Base "${code}" must use contiguous stat_position values starting at 1.`);
+      }
+    });
+  }
+
+  const specialSources = rowsBySheet.get("special_item_sources") ?? [];
+  specialSources.forEach((row, index) => {
+    const code = normalizedString(row.item_base_code);
+    if (!specialItemBaseCodes.has(code)) {
+      problems.push(`special_item_sources row ${index + 2}: Item Base "${code}" is not Unique or Set.`);
+    }
+  });
+  for (const code of specialItemBaseCodes) {
+    if (!specialSources.some((row) => normalizedString(row.item_base_code) === code)) {
+      problems.push(`item_bases: special Item Base "${code}" has no special-item source.`);
+    }
+  }
+
+  const coefficientRows = rowsBySheet.get("item_score_coefficients") ?? [];
+  const coefficientComponents = new Set(
+    coefficientRows.map((row) => normalizedString(row.score_component))
+  );
+  for (const component of ITEM_SCORE_COMPONENTS) {
+    if (!coefficientComponents.has(component)) {
+      problems.push(`item_score_coefficients: missing component "${component}".`);
+    }
+  }
+  coefficientRows.forEach((row, index) => {
+    const component = normalizedString(row.score_component);
+    if (!(ITEM_SCORE_COMPONENTS as readonly string[]).includes(component)) {
+      problems.push(`item_score_coefficients row ${index + 2}: unknown score_component "${component}".`);
+    }
+  });
+
+  void itemBaseByCode;
 
   if (problems.length > 0) throw new Error(`Workbook validation failed:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
   return rowsBySheet;
@@ -887,9 +1139,25 @@ async function mapRow(
   for (const [workbookColumn, rawValue] of Object.entries(row)) {
     if (!workbookColumn || referenceColumns.has(workbookColumn)) continue;
     const column = metadata.get(workbookColumn);
-    if (!column) continue;
+    if (!column) {
+      if (config.table === "item_base_affix_weights" && ["affix_type", "affix_tier"].includes(workbookColumn)) continue;
+      throw new Error(`${workbookColumn}: column does not exist in ${config.table}.`);
+    }
     if (isBlank(rawValue) && column.column_default !== null) continue;
     mapped[workbookColumn] = convertValue(rawValue, column);
+  }
+
+  if (config.table === "item_base_affix_weights") {
+    const affixType = normalizedString(row.affix_type);
+    const affixTier = normalizedString(row.affix_tier);
+    const result = await client.query<{ id: string }>(
+      `SELECT affix_template_id AS id FROM affix_templates WHERE affix_type = $1 AND tier = $2`,
+      [affixType, Number(affixTier)]
+    );
+    if (result.rows.length !== 1) {
+      throw new Error(`Could not resolve affix_templates reference "${affixType} Tier ${affixTier}".`);
+    }
+    mapped.affix_template_id = result.rows[0].id;
   }
 
   for (const rule of config.references ?? []) {
@@ -1036,7 +1304,11 @@ import {
 } from "vitest";
 
 import {
+  validateInclusiveIntegerRange,
   validateMonsterExperienceReward,
+  validateNonNegativeInteger,
+  validatePositiveInteger,
+  validateSpecialItemSourceOwner,
 } from "../../scripts/import-game-data.js";
 
 describe("monster Experience reward import validation", () => {
@@ -1075,6 +1347,41 @@ describe("monster Experience reward import validation", () => {
   );
 });
 
+
+describe("M7 game-data validation helpers", () => {
+  it.each([1, "10", "9223372036854775807"])(
+    "accepts positive integer %s",
+    (value) => expect(validatePositiveInteger(value, "selection_weight")).toBeNull()
+  );
+
+  it.each([null, "", 0, -1, "1.5"])(
+    "rejects invalid positive integer %s",
+    (value) => expect(validatePositiveInteger(value, "selection_weight")).not.toBeNull()
+  );
+
+  it.each([0, 1, "100"])(
+    "accepts non-negative integer %s",
+    (value) => expect(validateNonNegativeInteger(value, "coefficient")).toBeNull()
+  );
+
+  it("validates inclusive whole-number ranges", () => {
+    expect(validateInclusiveIntegerRange(1, 10)).toBeNull();
+    expect(validateInclusiveIntegerRange(10, 1)).toBe(
+      "min_value must not exceed max_value."
+    );
+    expect(validateInclusiveIntegerRange("1.5", 2)).toBe(
+      "min_value and max_value must be non-negative integers."
+    );
+  });
+
+  it("requires exactly one special-item source owner", () => {
+    expect(validateSpecialItemSourceOwner("monster", null)).toBeNull();
+    expect(validateSpecialItemSourceOwner(null, "family")).toBeNull();
+    expect(validateSpecialItemSourceOwner(null, null)).not.toBeNull();
+    expect(validateSpecialItemSourceOwner("monster", "family")).not.toBeNull();
+  });
+});
+
 ```
 
 # ============================================================
@@ -1087,6 +1394,9 @@ import type {
   CombatState,
   PlayerAction,
 } from "../domain/combat.types.js";
+import type {
+  LootSettlementResult,
+} from "../../items/application/loot-settlement.service.js";
 
 export const PERSISTENT_COMBAT_STATUS = {
   active: "Active",
@@ -1219,6 +1529,7 @@ export type CombatSettlement = {
 export type CombatSessionView = CombatSessionSnapshot & {
   events: readonly CombatEvent[];
   settlement: CombatSettlement | null;
+  loot: LootSettlementResult | null;
 };
 
 export type StartCombatInput = {
@@ -1284,6 +1595,10 @@ import type {
   CombatEvent,
   CombatState,
 } from "../domain/combat.types.js";
+import type {
+  LootGenerationContext,
+  LootSettlementTransaction,
+} from "../../items/application/loot.repository.js";
 
 export type CombatStartTransactionInput = {
   accountId: string;
@@ -1415,7 +1730,9 @@ export type CombatSettlementStatistics = {
 
 export type CombatSettlementMonster = {
   monsterId: string;
+  monsterFamilyId: string | null;
   monsterType: MonsterType;
+  level: number;
   powerScore: bigint;
   cooldownSeconds: number;
   bossId: string | null;
@@ -1425,6 +1742,7 @@ export type CombatSettlementMonster = {
     | "DailyBoss"
     | null;
   additionalCooldownSeconds: number;
+  lootLevelBonus: number;
 };
 
 export type CombatSettlementTask = {
@@ -1568,6 +1886,13 @@ export interface CombatActionTransaction {
   loadSettlementContext():
     Promise<CombatSettlementContext>;
 
+  withLootSettlement?<TResult>(
+    context: LootGenerationContext,
+    operation: (
+      transaction: LootSettlementTransaction
+    ) => Promise<TResult>
+  ): Promise<TResult>;
+
   applyVictorySettlement(
     input: ApplyVictorySettlementInput
   ): Promise<CombatSettlement>;
@@ -1646,6 +1971,13 @@ import {
 import type {
   CombatSessionRepository,
 } from "./combat-session.repository.js";
+import {
+  LootSettlementService,
+  type LootSettlementResult,
+} from "../../items/application/loot-settlement.service.js";
+import type {
+  LootRepository,
+} from "../../items/application/loot.repository.js";
 
 export class ResolveCombatActionService {
   public constructor(
@@ -1689,6 +2021,7 @@ export class ResolveCombatActionService {
           );
 
         let settlement = null;
+        let loot: LootSettlementResult | null = null;
 
         if (
           resolution.state.status ===
@@ -1783,6 +2116,36 @@ export class ResolveCombatActionService {
                   victoryPlan
                     .statisticsAfter,
               });
+
+          if (transaction.withLootSettlement === undefined) {
+            throw new Error(
+              "Combat transaction does not support Loot settlement."
+            );
+          }
+
+          const lootRepository: LootRepository = {
+            withSettlementTransaction: async (
+              context,
+              operation
+            ) => transaction.withLootSettlement!(
+              context,
+              operation
+            ),
+          };
+          const lootService = new LootSettlementService(
+            lootRepository,
+            this.randomSource
+          );
+          loot = await lootService.settle({
+            characterId: victoryContext.character.characterId,
+            monsterId: victoryContext.monster.monsterId,
+            monsterFamilyId: victoryContext.monster.monsterFamilyId,
+            monsterLevel: victoryContext.monster.level,
+            bossBonusLootLevel: Number(
+              victoryContext.monster.lootLevelBonus ?? 0
+            ),
+            isBoss: victoryContext.monster.monsterType !== "Normal",
+          });
         } else if (
           resolution.state.status ===
           COMBAT_STATUS.playerDefeat
@@ -1935,6 +2298,7 @@ export class ResolveCombatActionService {
               : observedAt,
           events: resolution.events,
           settlement,
+          loot,
         };
       }
     );
@@ -2081,6 +2445,7 @@ export class StartCombatService {
           ...session,
           events: [],
           settlement: null,
+          loot: null,
         };
       }
     );
@@ -3430,6 +3795,13 @@ import type {
   CombatEvent,
   CombatState,
 } from "../domain/combat.types.js";
+import type {
+  LootGenerationContext,
+  LootSettlementTransaction,
+} from "../../items/application/loot.repository.js";
+import {
+  createPostgresLootSettlementTransaction,
+} from "../../items/infrastructure/postgres-loot-transaction.js";
 
 
 
@@ -3509,12 +3881,15 @@ type SettlementStatisticsRow = {
 
 type SettlementMonsterRow = {
   monster_id: string;
+  monster_family_id: string | null;
   monster_type: string;
+  level: number;
   power_score: string;
   cooldown_seconds: number;
   boss_id: string | null;
   boss_type: string | null;
   additional_cooldown_seconds: number | null;
+  loot_level_bonus: number | null;
 };
 
 type SettlementTaskDefinitionRow = {
@@ -4343,6 +4718,7 @@ export type CombatSettlementFailurePoint =
   | "defeat.statistics"
   | "defeat.blessing"
   | "defeat.fightBuff"
+  | "defeat.cooldown"
   | "defeat.core"
   | "defeat.finalLog"
   | "defeat.retention"
@@ -4374,6 +4750,28 @@ class PostgresCombatActionTransaction
     await this.settlementFailureInjector?.(
       point
     );
+  }
+
+  public async withLootSettlement<TResult>(
+    context: LootGenerationContext,
+    operation: (
+      transaction: LootSettlementTransaction
+    ) => Promise<TResult>
+  ): Promise<TResult> {
+    if (
+      context.characterId !== this.locked.session.characterId ||
+      context.monsterId !== this.locked.session.monsterId
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Loot settlement context does not match the locked Combat session."
+      );
+    }
+
+    const transaction = await createPostgresLootSettlementTransaction(
+      this.client,
+      context
+    );
+    return operation(transaction);
   }
 
   public async loadSettlementContext():
@@ -4509,12 +4907,15 @@ class PostgresCombatActionTransaction
         `
           SELECT
             m.monster_id,
+            m.monster_family_id,
             m.monster_type,
+            m.level,
             m.power_score,
             m.cooldown_seconds,
             b.boss_id,
             b.boss_type,
-            b.additional_cooldown_seconds
+            b.additional_cooldown_seconds,
+            b.loot_level_bonus
           FROM monsters AS m
           LEFT JOIN bosses AS b
             ON b.monster_id =
@@ -4918,10 +5319,17 @@ class PostgresCombatActionTransaction
       monster: {
         monsterId:
           monster.monster_id,
+        monsterFamilyId:
+          monster.monster_family_id,
         monsterType:
           mapMonsterType(
             monster.monster_type
           ),
+        level: mapSafeInteger(
+          monster.level,
+          "settlement.monster.level",
+          1
+        ),
         powerScore:
           mapNonNegativeBigInt(
             monster.power_score,
@@ -4941,6 +5349,13 @@ class PostgresCombatActionTransaction
             : mapSafeInteger(
                 monster.additional_cooldown_seconds,
                 "settlement.monster.additional_cooldown_seconds"
+              ),
+        lootLevelBonus:
+          monster.loot_level_bonus === null
+            ? 0
+            : mapSafeInteger(
+                monster.loot_level_bonus,
+                "settlement.monster.loot_level_bonus"
               ),
       },
 
@@ -5045,6 +5460,121 @@ class PostgresCombatActionTransaction
         eventResult.rows.map(
           mapPersistedEvent
         ),
+    };
+  }
+
+  private async persistMonsterCooldown(input: {
+    monsterType: MonsterType;
+    cooldownSeconds: number;
+    additionalCooldownSeconds: number;
+    observedAt: Date;
+  }): Promise<{
+    applied: boolean;
+    availableAt: Date | null;
+  }> {
+    if (
+      input.monsterType !== "Normal" &&
+      input.monsterType !== "MiniBoss"
+    ) {
+      return {
+        applied: false,
+        availableAt: null,
+      };
+    }
+
+    const additionalSeconds =
+      input.monsterType === "MiniBoss"
+        ? input.additionalCooldownSeconds
+        : 0;
+
+    const totalSeconds =
+      input.cooldownSeconds +
+      additionalSeconds;
+
+    if (
+      !Number.isSafeInteger(
+        totalSeconds
+      ) ||
+      totalSeconds < 0
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Cooldown duration is invalid."
+      );
+    }
+
+    if (totalSeconds === 0) {
+      return {
+        applied: false,
+        availableAt: null,
+      };
+    }
+
+    const availableAt =
+      new Date(
+        input.observedAt.getTime() +
+        totalSeconds * 1000
+      );
+
+    if (
+      Number.isNaN(
+        availableAt.getTime()
+      )
+    ) {
+      throw new InvalidPersistentCombatStateError(
+        "Cooldown timestamp is invalid."
+      );
+    }
+
+    const cooldownWrite =
+      await this.client.query(
+        `
+          INSERT INTO character_cooldowns (
+            character_id,
+            cooldown_type,
+            target_id,
+            available_at,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            $1,
+            'Monster',
+            $2,
+            $3,
+            $4,
+            $4
+          )
+          ON CONFLICT (
+            character_id,
+            target_id
+          )
+          WHERE cooldown_type = 'Monster'
+          DO UPDATE
+          SET
+            available_at =
+              EXCLUDED.available_at,
+            updated_at =
+              EXCLUDED.updated_at
+        `,
+        [
+          this.locked.session
+            .characterId,
+          this.locked.session
+            .monsterId,
+          availableAt,
+          input.observedAt,
+        ]
+      );
+
+    if (cooldownWrite.rowCount !== 1) {
+      throw new InvalidPersistentCombatStateError(
+        "Cooldown could not be persisted."
+      );
+    }
+
+    return {
+      applied: true,
+      availableAt,
     };
   }
 
@@ -5648,113 +6178,24 @@ class PostgresCombatActionTransaction
       );
     }
 
-    let cooldownApplied = false;
-    let cooldownAvailableAt:
-      Date | null = null;
+    const cooldown =
+      await this.persistMonsterCooldown({
+        monsterType:
+          input.context.monster
+            .monsterType,
+        cooldownSeconds:
+          input.context.monster
+            .cooldownSeconds,
+        additionalCooldownSeconds:
+          input.context.monster
+            .additionalCooldownSeconds,
+        observedAt: input.observedAt,
+      });
 
-    const monsterType =
-      input.context.monster
-        .monsterType;
-
-    if (
-      monsterType === "Normal" ||
-      monsterType === "MiniBoss"
-    ) {
-      const baseSeconds =
-        input.context.monster
-          .cooldownSeconds;
-
-      const additionalSeconds =
-        monsterType === "MiniBoss"
-          ? input.context.monster
-              .additionalCooldownSeconds
-          : 0;
-
-      const totalSeconds =
-        baseSeconds +
-        additionalSeconds;
-
-      if (
-        !Number.isSafeInteger(
-          totalSeconds
-        ) ||
-        totalSeconds < 0
-      ) {
-        throw new InvalidPersistentCombatStateError(
-          "Victory cooldown duration is invalid."
-        );
-      }
-
-      if (totalSeconds > 0) {
-        cooldownAvailableAt =
-          new Date(
-            input.observedAt.getTime() +
-            totalSeconds * 1000
-          );
-
-        if (
-          Number.isNaN(
-            cooldownAvailableAt.getTime()
-          )
-        ) {
-          throw new InvalidPersistentCombatStateError(
-            "Victory cooldown timestamp is invalid."
-          );
-        }
-
-        const cooldownWrite =
-          await this.client.query(
-            `
-              INSERT INTO character_cooldowns (
-                character_id,
-                cooldown_type,
-                target_id,
-                available_at,
-                created_at,
-                updated_at
-              )
-              VALUES (
-                $1,
-                'Monster',
-                $2,
-                $3,
-                $4,
-                $4
-              )
-              ON CONFLICT (
-                character_id,
-                target_id
-              )
-              WHERE cooldown_type = 'Monster'
-              DO UPDATE
-              SET
-                available_at =
-                  EXCLUDED.available_at,
-                updated_at =
-                  EXCLUDED.updated_at
-            `,
-            [
-              this.locked.session
-                .characterId,
-              this.locked.session
-                .monsterId,
-              cooldownAvailableAt,
-              input.observedAt,
-            ]
-          );
-
-        if (cooldownWrite.rowCount !== 1) {
-          throw new InvalidPersistentCombatStateError(
-            "Victory cooldown could not be persisted."
-          );
-        }
-
-        cooldownApplied = true;
-
-        await this.injectSettlementFailure(
-          "victory.cooldown"
-        );
-      }
+    if (cooldown.applied) {
+      await this.injectSettlementFailure(
+        "victory.cooldown"
+      );
     }
 
     for (
@@ -5837,9 +6278,9 @@ class PostgresCombatActionTransaction
         status: taskStatus,
       },
       cooldown: {
-        applied: cooldownApplied,
+        applied: cooldown.applied,
         availableAt:
-          cooldownAvailableAt,
+          cooldown.availableAt,
       },
       dailyBoss: {
         updated:
@@ -6216,7 +6657,12 @@ class PostgresCombatActionTransaction
 
   private async persistDefeatCore(
     input: ApplyDefeatSettlementInput
-  ): Promise<void> {
+  ): Promise<{
+    cooldown: {
+      applied: boolean;
+      availableAt: Date | null;
+    };
+  }> {
     if (
       input.state.status !==
       COMBAT_STATUS.playerDefeat
@@ -6461,6 +6907,28 @@ class PostgresCombatActionTransaction
         );
       }
     }
+
+    const cooldown =
+      await this.persistMonsterCooldown({
+        monsterType:
+          input.context.monster
+            .monsterType,
+        cooldownSeconds:
+          input.context.monster
+            .cooldownSeconds,
+        additionalCooldownSeconds:
+          input.context.monster
+            .additionalCooldownSeconds,
+        observedAt: input.observedAt,
+      });
+
+    if (cooldown.applied) {
+      await this.injectSettlementFailure(
+        "defeat.cooldown"
+      );
+    }
+
+    return { cooldown };
   }
 
   public async applyDefeatSettlement(
@@ -6519,9 +6987,10 @@ class PostgresCombatActionTransaction
       );
     }
 
-    await this.persistDefeatCore(
-      input
-    );
+    const consequences =
+      await this.persistDefeatCore(
+        input
+      );
 
     await this.injectSettlementFailure(
       "defeat.core"
@@ -6624,8 +7093,14 @@ class PostgresCombatActionTransaction
       },
 
       cooldown: {
-        applied: false,
-        availableAt: null,
+        applied:
+          consequences.cooldown
+            .applied,
+        availableAt:
+          consequences.cooldown
+            .availableAt
+            ?.toISOString() ??
+          null,
       },
 
       dailyBoss: {
@@ -6811,10 +7286,8 @@ class PostgresCombatActionTransaction
           null,
       },
 
-      cooldown: {
-        applied: false,
-        availableAt: null,
-      },
+      cooldown:
+        consequences.cooldown,
 
       dailyBoss: {
         updated: false,
@@ -7484,8 +7957,8 @@ export const INITIAL_CHARACTER = {
 } as const;
 
 export const DEFAULT_RESOURCE_REGENERATION = {
-  healthPerMinute: 0,
-  manaPerMinute: 0,
+  healthPerMinute: 30,
+  manaPerMinute: 10,
   energyPerMinute: 1,
 } as const;
 ```
@@ -10162,6 +10635,31 @@ function createFixture(
   const persistAction = vi.fn<
     CombatActionTransaction["persistAction"]
   >(async () => []);
+  const withLootSettlement = vi.fn(async (
+    _context,
+    operation
+  ) => operation({
+    character: {
+      characterId: "character-1",
+      inventoryCapacity: 20,
+      occupiedInventoryPositions: [],
+      pity: { eligibleKillCount: 0, chancePerMille: 1 },
+    },
+    loadCatalog: vi.fn(async () => ({
+      regularItemBases: [],
+      otherLootCandidates: [],
+      specialItemCandidates: [],
+      itemScoreCoefficients: {
+        ItemLevel: 1n, Attack: 1n, Defense: 1n, SpellPower: 1n,
+        Health: 1n, Mana: 1n, Energy: 1n, GoldPercent: 1n,
+        ExperiencePercent: 1n,
+      },
+    })),
+    persistRegularItem: vi.fn(),
+    persistSpecialItem: vi.fn(),
+    applyOtherLoot: vi.fn(),
+    updateUniquePity: vi.fn(),
+  }));
 
   const transaction:
   CombatActionTransaction = {
@@ -10195,6 +10693,7 @@ function createFixture(
       },
       combatState: state,
     },
+    withLootSettlement,
     loadSettlementContext:
       vi.fn(async () => ({
         character: {
@@ -10251,12 +10750,15 @@ function createFixture(
 
         monster: {
           monsterId: "monster-1",
+          monsterFamilyId: "family-1",
           monsterType: "Normal" as const,
+          level: 1,
           powerScore: 10n,
           cooldownSeconds: 30,
           bossId: null,
           bossType: null,
           additionalCooldownSeconds: 0,
+          lootLevelBonus: 0,
         },
 
         task: null,
@@ -10479,6 +10981,7 @@ function createFixture(
     clock,
     randomSource,
     persistAction,
+    withLootSettlement,
     withActionTransaction,
   };
 }
@@ -10537,6 +11040,7 @@ describe(
         endedAt: null,
         settledAt: null,
         settlement: null,
+        loot: null,
       });
 
       expect(
@@ -10585,7 +11089,12 @@ describe(
         state,
         {
           nextFloat: vi.fn(() => 0),
-          nextInt: vi.fn(() => 20),
+          nextInt: vi.fn((
+            minimum: number,
+            maximum: number
+          ) => maximum === 1000
+            ? maximum
+            : Math.max(minimum, maximum)),
         }
       );
 
@@ -10602,6 +11111,12 @@ describe(
         monster: {
           currentHealth: 0,
         },
+      });
+
+      expect(fixture.withLootSettlement).toHaveBeenCalledOnce();
+      expect(result.loot).toMatchObject({
+        specialRollOutcome: "Ineligible",
+        otherLoot: null,
       });
 
       expect(
@@ -10651,7 +11166,9 @@ describe(
         player: {
           currentHealth: 0,
         },
+        loot: null,
       });
+      expect(fixture.withLootSettlement).not.toHaveBeenCalled();
     });
 
     it("returns defeat through the turn limit", async () => {
@@ -10966,9 +11483,9 @@ describe("StartCombatService", () => {
     expect(
       fixture.updateCharacterResources
     ).toHaveBeenCalledWith({
-      currentHealth: 100,
+      currentHealth: 180,
       maximumHealth: 180,
-      currentMana: 20,
+      currentMana: 35,
       maximumMana: 35,
       currentEnergy: 12,
       maximumEnergy: 100,
@@ -10984,8 +11501,8 @@ describe("StartCombatService", () => {
     ).toHaveBeenCalledWith({
       characterId: "character-1",
       monsterId: "monster-1",
-      characterHealth: 100,
-      characterMana: 20,
+      characterHealth: 180,
+      characterMana: 35,
       characterMaximumHealth: 180,
       characterAttack: 20,
       characterDefense: 10,
@@ -11014,7 +11531,7 @@ describe("StartCombatService", () => {
       fixture.createCombatSession
     ).toHaveBeenCalledWith(
       expect.objectContaining({
-        characterHealth: 50,
+        characterHealth: 180,
       })
     );
   });
@@ -12210,12 +12727,15 @@ CombatSettlementContext {
     },
     monster: {
       monsterId: "monster-1",
+      monsterFamilyId: null,
       monsterType: "Normal",
+      level: 1,
       powerScore: 10n,
       cooldownSeconds: 30,
       bossId: null,
       bossType: null,
       additionalCooldownSeconds: 0,
+      lootLevelBonus: 0,
     },
     task: null,
     dailyBoss: null,
@@ -12890,6 +13410,77 @@ class VictoryRandomSource
   }
 }
 
+/**
+ * Drives a deterministic regular Equipment drop for a boss while pinning
+ * the canonical Item Level range. The Equipment success roll returns the
+ * minimum (always within the boss threshold); the Item Level roll is
+ * identified by its canonical inclusive range [15, 30] and returns the
+ * minimum (15). Every other roll returns its minimum, which is a valid
+ * low edge for weighted selections and quantity ranges.
+ */
+class BossLootLevelRandomSource
+  implements RandomSource {
+  public itemLevelRange:
+    { minimum: number; maximum: number } | null =
+    null;
+
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    if (
+      minimum === 15 &&
+      maximum === 30
+    ) {
+      this.itemLevelRange = {
+        minimum,
+        maximum,
+      };
+
+      return minimum;
+    }
+
+    return minimum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+class InvalidLootRandomSource
+  implements RandomSource {
+  private integerCall = 0;
+
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    this.integerCall += 1;
+
+    if (this.integerCall === 1) {
+      return maximum;
+    }
+
+    if (this.integerCall === 2) {
+      return minimum;
+    }
+
+    return maximum + 1;
+  }
+}
+
 async function createFixture(
   monsterHealth = 100
 ): Promise<Fixture> {
@@ -13430,6 +14021,43 @@ describe(
         expect(
           stored.rows[0]?.current_health
         ).toBe("100");
+      }
+    );
+
+    it(
+      "rolls back Combat settlement when Loot generation fails",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const before =
+          await readRollbackState(
+            fixture
+          );
+
+        const service = createService(
+          new InvalidLootRandomSource()
+        );
+
+        await expect(
+          service.execute(
+            actionInput(fixture)
+          )
+        ).rejects.toThrow(
+          "Random Item Level is outside the canonical inclusive range."
+        );
+
+        const after =
+          await readRollbackState(
+            fixture
+          );
+
+        expect(after).toEqual(before);
+        expect(after.status).toBe("Active");
+        expect(after.event_count).toBe("0");
+        expect(after.log_count).toBe("0");
+        expect(after.bestiary_entry_count).toBe("0");
+        expect(after.bestiary_statistics_count).toBe("0");
       }
     );
 
@@ -14382,10 +15010,189 @@ describe(
             ]
           );
 
-        expect(stored.rows[0]).toEqual({
+                expect(stored.rows[0]).toEqual({
           status: "Victory",
           monster_id: miniBossId,
         });
+      }
+    );
+
+    it(
+      "applies the boss loot level bonus to the rolled Item Level",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const boss = await testPool.query<{
+          boss_id: string;
+          monster_id: string;
+          level: number;
+          loot_level_bonus: number;
+        }>(
+          `
+            SELECT
+              b.boss_id,
+              b.monster_id,
+              m.level,
+              b.loot_level_bonus
+            FROM bosses AS b
+            INNER JOIN monsters AS m
+              ON m.monster_id = b.monster_id
+            INNER JOIN loot_tables AS lt
+              ON lt.monster_id = b.monster_id
+              AND lt.is_enabled = TRUE
+            WHERE b.boss_type = 'MiniBoss'
+            ORDER BY b.boss_id
+            LIMIT 1
+          `
+        );
+
+        const bossRow = boss.rows[0];
+
+        if (!bossRow) {
+          throw new Error(
+            "Boss loot level fixture was not found."
+          );
+        }
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET monster_id = $2
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+            bossRow.monster_id,
+          ]
+        );
+
+        const randomSource =
+          new BossLootLevelRandomSource();
+
+        try {
+          // Boss level 20 with loot level bonus 5 yields the canonical
+          // Item Level range [15, 30] (effective loot level 25).
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET level = 20
+              WHERE monster_id = $1
+            `,
+            [bossRow.monster_id]
+          );
+
+          await testPool.query(
+            `
+              UPDATE bosses
+              SET loot_level_bonus = 5
+              WHERE boss_id = $1
+            `,
+            [bossRow.boss_id]
+          );
+
+          const service =
+            createService(randomSource);
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Victory",
+            monsterId: bossRow.monster_id,
+            settlement: {
+              outcome: "Victory",
+            },
+          });
+
+          if (
+            result.loot === null ||
+            result.loot.regularEquipment
+              .generated === null
+          ) {
+            throw new Error(
+              "Expected a generated regular Equipment drop."
+            );
+          }
+
+          const generated =
+            result.loot.regularEquipment
+              .generated;
+
+          const persisted =
+            result.loot.regularEquipment
+              .persisted;
+
+          if (persisted === null) {
+            throw new Error(
+              "Expected the regular Equipment drop to be persisted."
+            );
+          }
+
+          // Primary assertion: the boss loot level bonus reached the
+          // canonical Item Level roll.
+          expect(generated.itemLevel).toBe(15);
+
+          expect(generated.requiredLevel).toBe(15);
+
+          // The pinned range is identified by the canonical bounds, not
+          // by global call ordering.
+          expect(
+            randomSource.itemLevelRange
+          ).toEqual({
+            minimum: 15,
+            maximum: 30,
+          });
+
+          // The persisted Item rows keep the same canonical Item Level.
+          const storedItem =
+            await testPool.query<{
+              item_level: number;
+              required_level: number;
+            }>(
+              `
+                SELECT
+                  item_level,
+                  required_level
+                FROM items
+                WHERE item_id = $1
+              `,
+              [persisted.itemId]
+            );
+
+          expect(
+            storedItem.rows[0]
+          ).toEqual({
+            item_level: 15,
+            required_level: 15,
+          });
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET level = $2
+              WHERE monster_id = $1
+            `,
+            [
+              bossRow.monster_id,
+              bossRow.level,
+            ]
+          );
+
+          await testPool.query(
+            `
+              UPDATE bosses
+              SET loot_level_bonus = $2
+              WHERE boss_id = $1
+            `,
+            [
+              bossRow.boss_id,
+              bossRow.loot_level_bonus,
+            ]
+          );
+        }
       }
     );
 
@@ -16720,6 +17527,403 @@ describe(
     );
 
     it(
+      "applies cooldown after Victory",
+      async () => {
+        const fixture =
+          await createFixture(10);
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions AS session
+              INNER JOIN monsters AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE session.combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown test monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const service =
+            createService(
+              new VictoryRandomSource()
+            );
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Victory",
+            settlement: {
+              outcome: "Victory",
+              cooldown: {
+                applied: true,
+                availableAt: new Date(
+                  observedAt.getTime() +
+                  30_000
+                ),
+              },
+            },
+          });
+
+          const storedCooldown =
+            await testPool.query<{
+              available_at: Date;
+            }>(
+              `
+                SELECT available_at
+                FROM character_cooldowns
+                WHERE character_id = $1
+                  AND target_id = $2
+              `,
+              [
+                fixture.characterId,
+                monsterRow.monster_id,
+              ]
+            );
+
+          expect(
+            storedCooldown.rows
+          ).toHaveLength(1);
+
+          expect(
+            storedCooldown.rows[0]
+              ?.available_at
+          ).toEqual(
+            new Date(
+              observedAt.getTime() +
+              30_000
+            )
+          );
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+    it(
+      "applies cooldown after Defeat",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET current_health = 5
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET character_health = 5
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions AS session
+              INNER JOIN monsters AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE session.combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown test monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const service =
+            createService(
+              new DefeatRandomSource()
+            );
+
+          const result =
+            await service.execute(
+              actionInput(fixture)
+            );
+
+          expect(result).toMatchObject({
+            status: "Defeat",
+            settlement: {
+              outcome: "Defeat",
+              cooldown: {
+                applied: true,
+                availableAt: new Date(
+                  observedAt.getTime() +
+                  30_000
+                ),
+              },
+            },
+          });
+
+          const storedCooldown =
+            await testPool.query<{
+              available_at: Date;
+            }>(
+              `
+                SELECT available_at
+                FROM character_cooldowns
+                WHERE character_id = $1
+                  AND target_id = $2
+              `,
+              [
+                fixture.characterId,
+                monsterRow.monster_id,
+              ]
+            );
+
+          expect(
+            storedCooldown.rows
+          ).toHaveLength(1);
+
+          expect(
+            storedCooldown.rows[0]
+              ?.available_at
+          ).toEqual(
+            new Date(
+              observedAt.getTime() +
+              30_000
+            )
+          );
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+    it(
+      "rolls back Defeat when cooldown persistence is followed by failure",
+      async () => {
+        const fixture =
+          await createFixture();
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET current_health = 5
+            WHERE character_id = $1
+          `,
+          [
+            fixture.characterId,
+          ]
+        );
+
+        await testPool.query(
+          `
+            UPDATE combat_sessions
+            SET character_health = 5
+            WHERE combat_session_id = $1
+          `,
+          [
+            fixture.combatSessionId,
+          ]
+        );
+
+        const monster =
+          await testPool.query<{
+            monster_id: string;
+            cooldown_seconds: number;
+          }>(
+            `
+              SELECT
+                monster.monster_id,
+                monster.cooldown_seconds
+              FROM combat_sessions AS session
+              INNER JOIN monsters AS monster
+                ON monster.monster_id =
+                  session.monster_id
+              WHERE session.combat_session_id = $1
+            `,
+            [
+              fixture.combatSessionId,
+            ]
+          );
+
+        const monsterRow =
+          monster.rows[0];
+
+        if (!monsterRow) {
+          throw new Error(
+            "Cooldown rollback monster was not found."
+          );
+        }
+
+        try {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = 30
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+            ]
+          );
+
+          const before =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(
+            before.cooldown_count
+          ).toBe("0");
+
+          const failure =
+            new Error(
+              "Injected failure at defeat.cooldown."
+            );
+
+          const repository =
+            new PostgresCombatSessionRepository(
+              testPool,
+              {
+                settlementFailureInjector:
+                  async (point) => {
+                    if (
+                      point ===
+                      "defeat.cooldown"
+                    ) {
+                      throw failure;
+                    }
+                  },
+              }
+            );
+
+          const service =
+            new ResolveCombatActionService(
+              repository,
+              new DefeatRandomSource(),
+              clock
+            );
+
+          await expect(
+            service.execute(
+              actionInput(fixture)
+            )
+          ).rejects.toBe(failure);
+
+          const after =
+            await readRollbackState(
+              fixture
+            );
+
+          expect(after).toEqual(before);
+          expect(
+            after.cooldown_count
+          ).toBe("0");
+          expect(after.status).toBe(
+            "Active"
+          );
+          expect(after.log_count).toBe(
+            "0"
+          );
+          expect(after.event_count).toBe(
+            "0"
+          );
+        } finally {
+          await testPool.query(
+            `
+              UPDATE monsters
+              SET cooldown_seconds = $2
+              WHERE monster_id = $1
+            `,
+            [
+              monsterRow.monster_id,
+              monsterRow.cooldown_seconds,
+            ]
+          );
+        }
+      }
+    );
+    it(
       "allows only one of two concurrent requests to resolve the turn",
       async () => {
         const fixture =
@@ -17512,10 +18716,11 @@ async function createInventoryItem(
       INSERT INTO items (
         item_base_id,
         item_level,
+        required_level,
         rarity,
         item_score
       )
-      VALUES ($1, 1, 'Common', 0)
+      VALUES ($1, 1, 1, 'Common', 0)
       RETURNING item_id
     `,
     [itemBaseId]
@@ -17933,7 +19138,9 @@ describe("PostgresCharacterStatisticsRepository integration", () => {
             gold_percent, experience_percent
           )
           VALUES ($1, $2, 'Integration test item', 1, 1, $3,
-            $4, $4, $4, $4, $4, $4, $4, $4)
+            $4::integer, $4::integer, $4::integer,
+            $4::bigint, $4::bigint, $4::integer,
+            $4::numeric, $4::numeric)
           RETURNING item_base_id
         `,
         [`${input.namePrefix.toLowerCase()}_${randomUUID().replaceAll("-", "")}`, `${input.namePrefix} ${randomUUID()}`, input.slot, input.value]
@@ -17951,8 +19158,10 @@ describe("PostgresCharacterStatisticsRepository integration", () => {
     async function createItem(itemBaseId: string): Promise<string> {
       const result = await testPool.query<{ item_id: string }>(
         `
-          INSERT INTO items (item_base_id, item_level, rarity, item_score)
-          VALUES ($1, 1, 'Common', 0)
+          INSERT INTO items (
+            item_base_id, item_level, required_level, rarity, item_score
+          )
+          VALUES ($1, 1, 1, 'Common', 0)
           RETURNING item_id
         `,
         [itemBaseId]
@@ -18022,11 +19231,12 @@ describe("PostgresCharacterStatisticsRepository integration", () => {
         INSERT INTO item_affixes (
           item_id,
           affix_template_id,
+          affix_position,
           roll_value
         )
         VALUES
-          ($1, $3, 7),
-          ($2, $3, 500)
+          ($1, $3, 1, 7),
+          ($2, $3, 1, 500)
       `,
       [
         equippedItemId,
@@ -18124,6 +19334,8 @@ const characterRepository =
 
 const createdAccountIds: string[] = [];
 const createdMonsterIds: string[] = [];
+const createdItemBaseIds: string[] = [];
+const createdMaterialIds: string[] = [];
 const openedServers: Server[] = [];
 
 async function createAuthorizationSession(
@@ -18281,6 +19493,153 @@ class VictoryRandomSource
   }
 }
 
+/**
+ * Deterministic Victories that always succeed the Equipment and Other Loot
+ * probability rolls (both use nextInt(1, 1000) and return the minimum) while
+ * rolling the maximum for any other integer range. Bigint rolls use the
+ * inclusive minimum, which is a valid edge for weighted selections and
+ * quantity ranges.
+ */
+class LootVictoryRandomSource
+  implements RandomSource {
+  public nextFloat(): number {
+    return 0;
+  }
+
+  public nextInt(
+    minimum: number,
+    maximum: number
+  ): number {
+    if (minimum === 1 && maximum === 1000) {
+      return 1;
+    }
+
+    return maximum;
+  }
+
+  public nextBigInt(
+    minimum: bigint,
+    _maximum: bigint
+  ): bigint {
+    return minimum;
+  }
+}
+
+async function createLootBearingMonster() {
+  const monster =
+    await createCombatMonster();
+
+  const suffix =
+    randomUUID().replaceAll("-", "");
+
+  // Create a dedicated Item Base for this Monster instead of relying on a
+  // non-deterministic `SELECT ... LIMIT 1` over shared seed data. The
+  // inserted row is tracked and removed during cleanup, so concurrent test
+  // files never observe or depend on each other's loot data.
+  const itemBaseResult =
+    await testPool.query<{
+      item_base_id: string;
+    }>(
+      `
+        INSERT INTO item_bases (
+          code,
+          name,
+          description,
+          item_level,
+          required_level,
+          slot,
+          base_item_score
+        )
+        VALUES ($1, $2, $3, 1, 1, 'Helmet', 1)
+        RETURNING item_base_id
+      `,
+      [
+        `loot_http_base_${suffix}`,
+        `Loot HTTP Base ${suffix}`,
+        "HTTP integration-test loot Item Base.",
+      ]
+    );
+
+  const itemBaseId =
+    itemBaseResult.rows[0]?.item_base_id;
+
+  if (!itemBaseId) {
+    throw new Error(
+      "Could not create the HTTP loot Item Base."
+    );
+  }
+
+  createdItemBaseIds.push(itemBaseId);
+
+  await testPool.query(
+    `
+      INSERT INTO loot_tables (
+        monster_id,
+        item_base_id,
+        selection_weight
+      )
+      VALUES ($1, $2, 1)
+    `,
+    [
+      monster.monster_id,
+      itemBaseId,
+    ]
+  );
+
+  // Likewise, insert a dedicated Material instead of selecting a shared row.
+  const materialResult =
+    await testPool.query<{
+      material_id: string;
+    }>(
+      `
+        INSERT INTO materials (
+          code,
+          name,
+          description,
+          material_level,
+          is_lootable
+        )
+        VALUES ($1, $2, $3, 1, TRUE)
+        RETURNING material_id
+      `,
+      [
+        `loot_http_material_${suffix}`,
+        `Loot HTTP Material ${suffix}`,
+        "HTTP integration-test loot Material.",
+      ]
+    );
+
+  const materialId =
+    materialResult.rows[0]?.material_id;
+
+  if (!materialId) {
+    throw new Error(
+      "Could not create the HTTP loot Material."
+    );
+  }
+
+  createdMaterialIds.push(materialId);
+
+  await testPool.query(
+    `
+      INSERT INTO other_loot_tables (
+        monster_id,
+        material_id,
+        min_quantity,
+        max_quantity,
+        selection_weight
+      )
+      VALUES ($1, $2, 1, 3, 1)
+    `,
+    [
+      monster.monster_id,
+      materialId,
+    ]
+  );
+
+  return monster;
+}
+
 async function startServer(
   randomSource?: RandomSource
 ) {
@@ -18336,6 +19695,23 @@ function jsonRequest(
   };
 }
 
+/**
+ * Asserts that every listed property is serialized as a string. BigInt
+ * amounts (Experience, Gold, Item Score, quantities, statistics) must cross
+ * the HTTP boundary as strings, never as lossy numbers.
+ */
+function expectStringFields(
+  record: Record<string, unknown>,
+  fieldNames: readonly string[]
+): void {
+  for (const fieldName of fieldNames) {
+    expect(
+      typeof record[fieldName],
+      `${fieldName} must be serialized as a string`
+    ).toBe("string");
+  }
+}
+
 describe(
   "persistent combat HTTP integration",
   () => {
@@ -18344,56 +19720,126 @@ describe(
     });
 
     afterEach(async () => {
-      while (openedServers.length > 0) {
-        const server =
-          openedServers.pop();
+      // Drain the tracked collections atomically up front. Each collection is
+      // snapshotted and cleared before any awaited cleanup runs, so a failing
+      // or re-entrant cleanup can never leave stale ids behind for the next
+      // test and every id is still processed.
+      const servers =
+        openedServers.splice(
+          0,
+          openedServers.length
+        );
+      const accountIds =
+        createdAccountIds.splice(
+          0,
+          createdAccountIds.length
+        );
+      const monsterIds =
+        createdMonsterIds.splice(
+          0,
+          createdMonsterIds.length
+        );
+      const itemBaseIds =
+        createdItemBaseIds.splice(
+          0,
+          createdItemBaseIds.length
+        );
+      const materialIds =
+        createdMaterialIds.splice(
+          0,
+          createdMaterialIds.length
+        );
 
-        if (server) {
-          await new Promise<void>(
-            (resolve, reject) => {
-              server.close((error) => {
-                if (error) {
-                  reject(error);
-                  return;
-                }
+      // Close every HTTP server independently. A failure closing one server
+      // must not prevent closing the others or removing database rows.
+      await Promise.allSettled(
+        servers.map(async (server) => {
+          try {
+            await new Promise<void>(
+              (resolve, reject) => {
+                server.close((error) => {
+                  if (error) {
+                    reject(error);
+                    return;
+                  }
 
-                resolve();
-              });
-            }
-          );
-        }
-      }
+                  resolve();
+                });
+              }
+            );
+          } catch {
+            // Ignore individual close errors so cleanup continues.
+          }
+        })
+      );
 
-      while (
-        createdAccountIds.length > 0
-      ) {
-        const accountId =
-          createdAccountIds.pop();
+      // Accounts own characters and combat sessions; deleting an Account
+      // cascades those rows. Each delete runs in isolation.
+      await Promise.allSettled(
+        accountIds.map(async (accountId) => {
+          try {
+            await deleteTestAccount(
+              testPool,
+              accountId
+            );
+          } catch {
+            // Ignore individual delete errors (e.g. foreign-key conflicts)
+            // so unrelated records are still cleaned up.
+          }
+        })
+      );
 
-        if (accountId) {
-          await deleteTestAccount(
-            testPool,
-            accountId
-          );
-        }
-      }
+      // Monsters cascade loot_tables, other_loot_tables and any dependent
+      // session rows via ON DELETE CASCADE.
+      await Promise.allSettled(
+        monsterIds.map(async (monsterId) => {
+          try {
+            await testPool.query(
+              `
+                DELETE FROM monsters
+                WHERE monster_id = $1
+              `,
+              [monsterId]
+            );
+          } catch {
+            // Ignore individual delete errors so cleanup continues.
+          }
+        })
+      );
 
-      while (
-        createdMonsterIds.length > 0
-      ) {
-        const monsterId =
-          createdMonsterIds.pop();
+      // Remove dedicated loot Item Bases and Materials after the Monsters
+      // that reference them have been deleted.
+      await Promise.allSettled(
+        itemBaseIds.map(async (itemBaseId) => {
+          try {
+            await testPool.query(
+              `
+                DELETE FROM item_bases
+                WHERE item_base_id = $1
+              `,
+              [itemBaseId]
+            );
+          } catch {
+            // Ignore individual delete errors so cleanup continues.
+          }
+        })
+      );
 
-        if (monsterId) {
-          await testPool.query(
-            `
-              DELETE FROM monsters
-              WHERE monster_id = $1
-            `,
-            [monsterId]
-          );
-        }
-      }
+      await Promise.allSettled(
+        materialIds.map(async (materialId) => {
+          try {
+            await testPool.query(
+              `
+                DELETE FROM materials
+                WHERE material_id = $1
+              `,
+              [materialId]
+            );
+          } catch {
+            // Ignore individual delete errors so cleanup continues.
+          }
+        })
+      );
     });
 
     afterAll(async () => {
@@ -18744,9 +20190,12 @@ describe(
           body.data.status
         ).toBe("Victory");
 
-        expect(
-          body.data.settlement
-        ).toMatchObject({
+        const settlement =
+          body.data.settlement;
+
+        // BigInt amounts (Experience, Gold, Bestiary counts) must be
+        // serialized as strings and preserve their exact large values.
+        expect(settlement).toMatchObject({
           outcome: "Victory",
 
           experience: {
@@ -18780,26 +20229,28 @@ describe(
           },
         });
 
-        expect(
-          typeof body.data.settlement
-            .statistics.damageDealt
-        ).toBe("string");
-
-        expect(
-          typeof body.data.settlement
-            .statistics.damageTaken
-        ).toBe("string");
-
-        expect(
-          typeof body.data.settlement
-            .statistics
-            .highestPhysicalHit
-        ).toBe("string");
+        // Explicit string-typed expectations for BigInt-derived fields.
+        expectStringFields(
+          settlement.experience,
+          ["awarded", "after"]
+        );
+        expectStringFields(
+          settlement.gold,
+          ["baseRolled", "awarded", "after"]
+        );
+        expectStringFields(
+          settlement.statistics,
+          [
+            "damageDealt",
+            "damageTaken",
+            "highestPhysicalHit",
+          ]
+        );
 
         expect(
           Number.isNaN(
             Date.parse(
-              body.data.settlement
+              settlement
                 .finalSummary.startedAt
             )
           )
@@ -18808,7 +20259,7 @@ describe(
         expect(
           Number.isNaN(
             Date.parse(
-              body.data.settlement
+              settlement
                 .finalSummary.endedAt
             )
           )
@@ -18937,6 +20388,7 @@ describe(
               status: string;
               defeatReason:
                 string | null;
+              loot: unknown;
               settlement: {
                 outcome: string;
                 experience: {
@@ -18971,6 +20423,8 @@ describe(
         expect(
           body.data.status
         ).toBe("Defeat");
+
+        expect(body.data.loot).toBeNull();
 
         expect(
           body.data.defeatReason
@@ -19048,6 +20502,250 @@ describe(
             )
           )
         ).toBe(false);
+      }
+    );
+
+    it(
+      "returns Loot settlement for terminal Victory",
+      async () => {
+        const account =
+          await createTestAccount(
+            testPool
+          );
+
+        createdAccountIds.push(
+          account.accountId
+        );
+
+        const character =
+          await characterRepository
+            .createCharacterGraph({
+              accountId:
+                account.accountId,
+              seasonId: null,
+              name:
+                `Http-Loot-${randomUUID()
+                  .slice(0, 8)}`,
+              spellLoadoutName:
+                "Default Spells",
+              equipmentLoadoutName:
+                "Default Equipment",
+            });
+
+        await testPool.query(
+          `
+            UPDATE characters
+            SET
+              current_health = 100,
+              current_energy = 50,
+              resources_updated_at = NOW()
+            WHERE character_id = $1
+          `,
+          [
+            character.characterId,
+          ]
+        );
+
+        const monster =
+          await createLootBearingMonster();
+
+        await testPool.query(
+          `
+            UPDATE monsters
+            SET
+              health = 1,
+              defense = 0,
+              attack = 0
+            WHERE monster_id = $1
+          `,
+          [
+            monster.monster_id,
+          ]
+        );
+
+        const token =
+          await createAuthorizationSession(
+            account.accountId
+          );
+
+        const { baseUrl } =
+          await startServer(
+            new LootVictoryRandomSource()
+          );
+
+        const combatUrl =
+          `${baseUrl}/characters/${character.characterId}/combat`;
+
+        const startResponse =
+          await fetch(
+            combatUrl,
+            jsonRequest(token, {
+              monsterCode:
+                monster.code,
+            })
+          );
+
+        expect(
+          startResponse.status
+        ).toBe(201);
+
+        const actionResponse =
+          await fetch(
+            `${combatUrl}/actions`,
+            jsonRequest(token, {
+              expectedTurn: 1,
+              action: {
+                type:
+                  "basic_attack",
+              },
+            })
+          );
+
+        expect(
+          actionResponse.status
+        ).toBe(200);
+
+        const body =
+          await actionResponse.json() as {
+            data: {
+              status: string;
+              loot: {
+                regularEquipment: {
+                  generated: {
+                    itemLevel: number;
+                    requiredLevel: number;
+                    rarity: string;
+                    itemScore: string;
+                    affixes: Array<{
+                      statType: string;
+                      rollValue: string;
+                    }>;
+                  } | null;
+                  persisted: {
+                    itemId: string;
+                    inventoryPosition: number;
+                  } | null;
+                  lossReason:
+                    "InventoryFull" | null;
+                };
+                specialEquipment: {
+                  generated: unknown | null;
+                  persisted: unknown | null;
+                  lossReason:
+                    "InventoryFull" | null;
+                };
+                specialRollOutcome: string;
+                otherLoot: {
+                  kind: string;
+                  otherLootTableId: string;
+                  quantity: string;
+                } | null;
+                pity: {
+                  eligibleKillCount: number;
+                  chancePerMille: number;
+                };
+              };
+            };
+          };
+
+        expect(body.data.status).toBe(
+          "Victory"
+        );
+
+        const loot = body.data.loot;
+
+        expect(loot).not.toBeNull();
+
+        // regularEquipment: generated and persisted, string Item Score.
+        expect(
+          loot.regularEquipment.generated
+        ).not.toBeNull();
+
+        expect(
+          loot.regularEquipment.persisted
+        ).not.toBeNull();
+
+        expect(
+          loot.regularEquipment.lossReason
+        ).toBeNull();
+
+        // BigInt-derived amounts are serialized as strings.
+        expect(
+          typeof loot.regularEquipment
+            .generated?.itemScore
+        ).toBe("string");
+
+        expect(
+          typeof loot.regularEquipment
+            .generated?.itemLevel
+        ).toBe("number");
+
+        expect(
+          typeof loot.regularEquipment
+            .persisted?.itemId
+        ).toBe("string");
+
+        const affixes =
+          loot.regularEquipment
+            .generated?.affixes ?? [];
+
+        for (
+          const affix of affixes
+        ) {
+          expect(
+            typeof affix.rollValue
+          ).toBe("string");
+        }
+
+        // specialEquipment: no eligible source for this monster.
+        expect(
+          loot.specialEquipment.generated
+        ).toBeNull();
+
+        expect(
+          loot.specialEquipment.persisted
+        ).toBeNull();
+
+        expect(
+          loot.specialEquipment.lossReason
+        ).toBeNull();
+
+        expect([
+          "Ineligible",
+          "Failed",
+          "Generated",
+        ]).toContain(
+          loot.specialRollOutcome
+        );
+
+        expect(
+          loot.specialRollOutcome
+        ).toBe("Ineligible");
+
+        // otherLoot: present with a string-serialized quantity.
+        expect(loot.otherLoot).not.toBeNull();
+
+        expect(
+          typeof loot.otherLoot?.quantity
+        ).toBe("string");
+
+        expect([
+          "Material",
+          "Consumable",
+        ]).toContain(
+          loot.otherLoot?.kind
+        );
+
+        // pity: numeric canonical state.
+        expect(
+          typeof loot.pity
+            .eligibleKillCount
+        ).toBe("number");
+
+        expect(
+          typeof loot.pity
+            .chancePerMille
+        ).toBe("number");
       }
     );
 
@@ -22656,126 +24354,366 @@ Inspect first. Do not create migration 090 or M7 runtime code during P1.
 
 ### Milestone
 
-M6: Victory, Death, and Progression
+M7: Item and Loot Generation
 
 ### Status
 
-Completed.
+Backend M7 item and loot generation implemented and regression-green. Developer UI
+(P20) fully implemented on branch `m7/developer-ui`; typecheck and production build
+pass.
+
+M7 is in closure: it is fully implemented and awaiting manual V23 verification
+(`developer-ui/V23_MANUAL_EVIDENCE.md`) and merge of `m7/developer-ui`. No further
+implementation work remains â€” see the "Developer UI implementation state" section
+below.
 
 ### Objective
 
-Convert terminal combat results into authoritative Character progression, rewards, penalties, statistics, discovery progress, cooldown state, and final combat summaries.
+Implement the canonical, server-authoritative Item and loot generation pipeline as part of the existing transactional Victory settlement.
 
-Settlement occurs exactly once inside the same PostgreSQL transaction as the combat-ending action.
+M7 must preserve the M6 settlement, exactly-once, ownership, concurrency and rollback guarantees.
 
-### Implemented scope
+### Approved design authority
 
-- Transactional Victory settlement.
-- Transactional Defeat settlement.
-- Experience and Gold rewards.
-- Canonical Experience curve and level lookup.
-- Multiple-level gains and losses.
-- Level-dependent resource recalculation.
-- Promotion and Blessing death modifiers.
-- Active Blessing consumption after Defeat.
-- Character lifetime statistics.
-- Bestiary kill progression.
-- Task progress and Task Boss transitions.
-- Daily Boss attempt consumption at combat start.
-- Daily Boss Victory progression.
-- Normal Monster and Mini Boss cooldown recording.
-- Fight-based boost consumption.
-- Compact final combat logs.
-- Per-character retention of the ten newest final logs.
-- Settlement data in the authenticated combat-action response.
-- Exactly-once concurrency protection.
-- Transaction rollback protection.
-- Persistent active-combat recovery after reconnecting.
+All decisions M7-D1 through M7-D24 are approved and authoritative.
 
-### Settlement rules
+Authoritative decision source:
 
-Victory may update:
+```text
+M7_APPROVED_DECISIONS.md
+```
 
-- Experience,
-- level,
-- Gold,
-- Health, Mana, and Energy state,
-- Character statistics,
-- Bestiary statistics,
-- Task progress,
-- Task Boss state,
-- Daily Boss Victory progress,
-- monster cooldown,
-- fight-based boosts,
-- final combat log,
-- terminal combat-session state.
+Approved decisions must not be reopened unless repository inspection reveals a genuine technical contradiction.
 
-Defeat may update:
+### Planning artifacts
 
-- Experience loss,
-- level,
-- Health, Mana, and Energy state,
-- Character statistics,
-- Blessing state,
-- monster cooldown,
-- fight-based boosts,
-- final combat log,
-- terminal combat-session state.
+The following M7 planning artifacts have been prepared:
 
-M6 does not generate loot. Item and loot generation belongs to M7.
+```text
+M7_APPROVED_DECISIONS.md
+M7_SOURCE_AUDIT.md
+M7_VERIFICATION_PLAN.md
+M7_IMPLEMENTATION_PLAN.md
+M7_MASTER_PROMPT.md
+M7_TECHNICAL_DUMP.md
+M7_SCHEMA_DATA_DUMP.md
+scripts/generate-m7-context.ps1
+```
 
-### Combat-session contract
+### Verified repository foundation
 
-Supported persistent statuses:
+The repository already provides:
 
-- `Active`
-- `Victory`
-- `Defeat`
+- transactional Victory and Defeat settlement from M6,
+- exactly-once terminal combat protection,
+- Character Inventory and Equipment foundations,
+- Item Bases,
+- Affix Templates,
+- generated Items,
+- Inventory Items,
+- Item Affixes,
+- regular loot tables,
+- Other Loot tables,
+- Unique/Set pity tracking foundation,
+- Material and Consumable storage,
+- workbook validation and transactional import,
+- unit, PostgreSQL integration and authenticated HTTP test foundations,
+- an existing Developer UI integration foundation.
 
-Combat cannot be abandoned.
+### Required M7 scope
 
-Closing the client does not end combat. An unfinished session remains active, can be retrieved after reconnecting, and prevents the Character from starting another fight.
+M7 must implement:
 
-Base Experience and Gold ranges are snapshotted when combat starts. Current authoritative reward bonuses are loaded during settlement.
+- independent regular Equipment generation,
+- canonical Item Level generation,
+- canonical slot selection and fallback,
+- weighted eligible Item Base selection,
+- rarity generation,
+- independent Affix-slot generation,
+- repeated identical Affixes with stable positions,
+- authoritative Item Base to Affix weights,
+- Item Score calculation,
+- independent Other Loot generation,
+- shared Unique/Set generation,
+- Unique/Set fixed-stat rolls,
+- per-Character Unique/Set pity,
+- deterministic Inventory placement,
+- `InventoryFull` lost-Item results,
+- transactional Victory integration,
+- complete settlement response,
+- mandatory Developer UI verification.
 
-Normal Monsters and Mini Bosses receive their configured cooldown after Victory and Defeat. Task Bosses and Daily Bosses do not use that standard cooldown.
+### Canonical Item Level
 
-Daily Boss attempts are consumed when combat starts. Victory fields are updated only after Daily Boss Victory settlement.
+```text
+effectiveLootLevel = monsterLevel + bossBonusLootLevel
+minimumItemLevel = max(1, effectiveLootLevel - 10)
+maximumItemLevel = effectiveLootLevel + 5
+```
 
-### Final verification
+Item Level is rolled uniformly and inclusively.
 
-M6 was completed and verified with:
+Regular Monsters use `bossBonusLootLevel = 0`.
 
-- PostgreSQL connection: PASS
-- development database migrations: 89 applied, 0 pending
-- clean-database migrations: 001 through 089 applied successfully
-- public database tables: 81
-- workbook validation: 29 worksheets and 248 rows
-- game-data dry run: PASS with rollback
-- full regression: 68 test files and 470 tests passed
-- focused M6 unit tests: 18 files and 169 tests passed
-- PostgreSQL integration: 14 files and 78 tests passed
-- authenticated HTTP integration: 2 files and 9 tests passed
-- concurrency verification: 3 tests passed
-- rollback verification: 8 tests passed
-- TypeScript typecheck: PASS
-- production build: PASS
-- stale active `Abandoned` contract: none
-- mandatory verification gates V1 through V25: PASS
+An Item Base qualifies only when:
 
-### Completion
+```text
+itemBase.itemLevel <= rolledItemLevel
+```
 
-M6 Victory, Death, and Progression is complete.
+The generated Item's Required Level equals its Item Level.
 
-Final completion commit:
+### Regular Equipment flow
 
-`8a83b30 complete M6 victory death and progression`
+```text
+Equipment roll
+-> Item Level roll
+-> slot roll
+-> weighted eligible Item Base selection
+-> rarity roll
+-> Affix rolls
+-> Item Score calculation
+-> persistence
+```
 
-### Next milestone
+A kill may generate at most one regular Item.
 
-M7: Item and Loot Generation
+### Rarity and Affix count
 
-M7 will introduce the canonical item-generation and loot-generation pipeline without weakening M6 settlement, transaction, exactly-once, ownership, and rollback guarantees.
+```text
+Common: 0
+Magic: 1
+Rare: 2
+Epic: 3
+Legendary: 4
+```
+
+Rarity controls only the number of Affixes.
+
+Each Affix slot is rolled independently. Identical Affix Templates may appear multiple times on one Item, and every occurrence has its own roll value and stable position.
+
+### Independent reward systems
+
+Victory processes independently:
+
+- M6 Experience and Gold,
+- regular Equipment,
+- Other Loot,
+- Unique/Set.
+
+A kill may generate at most:
+
+- one regular Item,
+- one Unique or Set Item.
+
+Defeat does not generate loot.
+
+### Inventory behavior
+
+All Item rolls are performed even when Inventory is full.
+
+If no Inventory position is available:
+
+- the generated Equipment Item is not persisted,
+- Victory remains successful,
+- independent rewards remain granted,
+- the complete generated Item is returned as lost,
+- the loss reason is `InventoryFull`.
+
+When a Unique/Set Item and a regular Item drop together, persistence priority is:
+
+1. Unique/Set Item,
+2. regular Item.
+
+Free Inventory positions are assigned from the lowest available position number.
+
+### Unique/Set pity
+
+```text
+Starting chance: 0.1%
+Increase: +0.1 percentage point per eligible failed kill
+Maximum chance: 10%
+```
+
+Pity resets to `0.1%` only after the generated Unique/Set Item is successfully persisted in Inventory.
+
+A special Item lost because of `InventoryFull` does not reset pity.
+
+### Transaction contract
+
+Loot generation belongs to the existing Victory transaction.
+
+The same transaction must perform:
+
+- all reward rolls,
+- pity updates,
+- Item persistence,
+- Affix or fixed-stat persistence,
+- Inventory assignment,
+- Material and Consumable storage updates,
+- settlement-response construction.
+
+Unexpected generation or persistence failure rolls back the complete Victory settlement.
+
+`InventoryFull` is an expected business result and does not trigger rollback.
+
+### Database and authored-data checkpoint
+
+M7 uses one complete migration after migration 089.
+
+The migration must include at least:
+
+- removal of the constraint blocking identical Affix Templates on one Item,
+- `affix_position`,
+- uniqueness of Affix position within an Item,
+- authoritative Item Base to Affix weights,
+- weighted regular loot-pool semantics,
+- retirement of manual loot-table Item Level range authority,
+- M7-compatible weighted Other Loot semantics,
+- persistence for actual Unique/Set fixed-stat rolls,
+- required special-item source structures,
+- required constraints and indexes.
+
+The workbook and importer must support every new authoritative authored-data structure.
+
+The migration must pass on:
+
+- the current development database,
+- a newly created empty database.
+
+### Developer UI checkpoint
+
+M7 must provide a maintained minimal browser flow that allows a human to:
+
+- create or select a development Character,
+- view eligible Monsters,
+- start combat,
+- submit basic attacks,
+- observe Victory or Defeat,
+- inspect Experience, Gold and level changes,
+- inspect regular Equipment,
+- inspect Other Loot,
+- inspect Unique/Set and pity state,
+- see `InventoryFull` warnings.
+
+M7 cannot be completed until this flow has been manually exercised in addition to automated verification.
+
+### Implementation sequence
+
+Implementation will follow `M7_IMPLEMENTATION_PLAN.md` phases P1 through P25.
+
+The first implementation phase was:
+
+```text
+P1: Baseline and implementation inventory
+```
+
+### Developer UI implementation state
+
+Backend M7 phases P1â€“P19 are implemented and committed on `m7/item-loot-generation`.
+Developer UI work (P20) is implemented on the separate branch `m7/developer-ui`.
+
+Implemented Developer UI features:
+
+- [x] P20.0 Safety checkpoint (separate `developer-ui/` app, own branch).
+- [x] P20.1 HTTP contract inventory (`developer-ui/HTTP_CONTRACT.md`).
+- [x] P20.2 Vite + TypeScript foundation, plain CSS, typed API client, connection
+      panel, sanitized diagnostics history.
+- [x] P20.3 Character list/creation/selection, snapshot with progression and
+      resources, manual and optional 10s auto-refresh, `resourcesUpdatedAt`.
+- [x] P20.4 Monster discovery/details, eligibility, Energy cost, server
+      `availableAt`, approximate presentation-only countdown, 10s server refresh.
+- [x] P20.5 Combat start, active-combat recovery, Basic Attack with `expectedTurn`,
+      events and current state, Victory/Defeat, stale-turn and terminal handling.
+- [x] P20.6 M6 and M7 settlement inspection: Experience, Gold, level, statistics,
+      regular Equipment, Other Loot, Unique/Set and pity, Affixes and fixed stats,
+      persisted/lost status, `InventoryFull`, raw settlement JSON fallback.
+- [x] P20.7 Recovery and diagnostics: Character selected from local storage,
+      active-combat recovery after browser refresh, manual session/log reload,
+      duplicate-submission blocking, raw diagnostics.
+- [x] Backend hook `GET /characters/:characterId/combat/:combatSessionId` and
+      local session cache/history for reloading completed sessions.
+- [x] HTML sanitization standard (`escapeHtml`) and BIGINT-as-string handling
+      documented in `developer-ui/HTTP_CONTRACT.md`.
+
+Latest verified Developer UI state on `m7/developer-ui`:
+
+```text
+UI typecheck:      passing (npm run ui:typecheck)
+UI build:          passing (npm run ui:build)
+Backend typecheck: passing (npm run typecheck)
+```
+
+Remaining M7 closure work (implementation complete):
+
+- [x] Full backend regression (`npm test` â€” 84 files / 585 tests), `npm run build`,
+      `npm run ui:typecheck`, `npm run ui:build` â€” all green.
+- [x] `MASTER_PROJECT_PLAN.md` current-status block synchronized for M7.
+- [x] `developer-ui/V23_MANUAL_EVIDENCE.md` template created.
+- [ ] Run the manual V23 click-through and fill in
+      `developer-ui/V23_MANUAL_EVIDENCE.md`.
+- [ ] Merge `m7/developer-ui` after V23 sign-off.
+- [ ] Refresh `M7_TECHNICAL_DUMP.md` / `M7_SCHEMA_DATA_DUMP.md` if the schema or
+      source snapshot changed during the final verification round.
+
+### Mandatory verification
+
+Verification will follow `M7_VERIFICATION_PLAN.md` gates V1 through V25.
+
+M7 cannot be completed until:
+
+- every approved decision D1-D24 is implemented,
+- every mandatory gate V1-V25 passes,
+- current-database and clean-database migration paths pass,
+- workbook validation, dry run and controlled import pass,
+- unit, PostgreSQL integration and HTTP integration tests pass,
+- concurrency and rollback matrices pass,
+- complete regression passes,
+- typecheck and production build pass,
+- Developer UI build and manual verification pass,
+- technical and schema context dumps are current,
+- documentation matches implementation,
+- the branch is committed, pushed, synchronized and clean.
+
+### Checkpoint state
+
+Completed:
+
+1. `M7_SOURCE_AUDIT.md`
+2. `M7_VERIFICATION_PLAN.md`
+3. `M7_IMPLEMENTATION_PLAN.md`
+4. `M7_MASTER_PROMPT.md`
+5. fresh `M7_TECHNICAL_DUMP.md`
+6. fresh `M7_SCHEMA_DATA_DUMP.md`
+7. `CURRENT_MILESTONE.md` planning checkpoint
+8. backend M7 phases P1â€“P18 (`m7/item-loot-generation`)
+9. backend Developer UI readiness P19 (`GET .../combat/:combatSessionId`)
+10. Developer UI P20.0â€“P20.7 on `m7/developer-ui`
+11. loot HTTP contract and serialization/sanitization documentation
+    (`developer-ui/HTTP_CONTRACT.md`)
+
+Current step:
+
+12. Developer UI manual V23 evidence and final P20 verification
+
+Remaining before the Pull Request:
+
+13. focused Developer UI tests (optional)
+14. full regression, `git diff --check`
+15. update `MASTER_PROJECT_PLAN.md` status
+16. commit and push `m7/developer-ui`
+
+### Previous milestone
+
+M6: Victory, Death, and Progression is complete.
+
+Final M6 implementation commit:
+
+```text
+8a83b30 complete M6 victory death and progression
+```
+
+M7 must not weaken any verified M6 guarantee.
 
 ```
 
@@ -25477,6 +27415,19 @@ M6 completed with:
 
 ## M7: ITEM AND LOOT GENERATION
 
+### Status
+
+Implemented. Awaiting manual V23 Developer UI verification and merge.
+
+The backend M7 item and loot generation pipeline is implemented and
+regression-green on `m7/item-loot-generation`. The Developer UI checkpoint (P20)
+is implemented on `m7/developer-ui` and passes typecheck and production build.
+M7 remains formally open until:
+
+- Gate V23 manual Developer UI verification is recorded in
+  `developer-ui/V23_MANUAL_EVIDENCE.md`, and
+- the `m7/developer-ui` branch is reviewed and merged.
+
 ### Canonical item generator
 
 generateItem({
@@ -26158,6 +28109,12 @@ Start Gathering
 - M5: Persistent Combat API
 - M6: Victory, Death, and Progression
 
+#### Milestone in closure
+- M7: Item and Loot Generation â€” backend implemented and regression-green;
+  Developer UI implemented and passing typecheck/build on `m7/developer-ui`;
+  awaiting manual V23 verification (`developer-ui/V23_MANUAL_EVIDENCE.md`) and
+  merge.
+
 #### Completed platform foundations
 - Database architecture established.
 - Production migrations implemented through migration 089.
@@ -26171,6 +28128,12 @@ Start Gathering
 - Exactly-once Victory and Defeat settlement implemented.
 - Experience, Gold, level, death, Bestiary, Task Boss, Daily Boss, cooldown, boost, Blessing, and final-log settlement implemented.
 - Combat concurrency and rollback protection verified.
+- Canonical item generator, item-level and rarity selection, affix rolls, and Item Score implemented.
+- Regular equipment, Other Loot (materials/consumables), and shared Unique/Set generation implemented.
+- Per-character Unique/Set pity with fixed-stat rolls implemented.
+- Deterministic inventory placement and `InventoryFull` lost-item results implemented.
+- Transactional loot settlement integrated with M6 Victory settlement.
+- Developer UI (Vite + TypeScript) integration surface implemented.
 
 #### Current development content
 - 29 authored-content worksheets.
@@ -26189,9 +28152,8 @@ Development definitions remain synthetic fixtures rather than final production c
 #### Current technical state
 
 ```text
-Database schema: Ready through M6
+Database schema: Ready through M7
 Database migrations: 89 applied, 0 pending
-Database tables: 81
 Character foundation: Implemented
 Effective statistics: Implemented
 Monster discovery: Implemented
@@ -26204,12 +28166,25 @@ Daily Boss attempt and Victory progression: Implemented
 Final combat logs and retention: Implemented
 Authenticated combat routes: Implemented
 Combat integration flow: Verified
-Test files: 68 passing
-Tests: 470 passing
-TypeScript typecheck: Passing
-Production build: Passing
-Current milestone: M7 Item and Loot Generation
+Item and loot generation: Implemented
+Regular equipment / Other Loot / Unique-Set generation: Implemented
+Unique/Set pity and fixed-stat rolls: Implemented
+InventoryFull lost-item handling: Implemented
+Transactional loot settlement: Implemented
+Developer UI: Implemented (typecheck + build passing)
+Manual V23 Developer UI verification: Pending
+Backend test files: 84 passing
+Backend tests: 585 passing
+Backend typecheck: Passing
+Backend production build: Passing
+Developer UI typecheck: Passing
+Developer UI build: Passing
+Current milestone: M7 Item and Loot Generation (closure pending V23 + merge)
 ```
+
+The M7 loot migration and database table count are tracked in the M7 schema
+context dump (`M7_SCHEMA_DATA_DUMP.md`); refresh that dump during the final V23
+verification round if the schema changed after the last dump.
 
 #### Current playable backend flow
 
@@ -26227,39 +28202,38 @@ Create Character
 â†’ Apply Experience, Gold, Levels, Death Penalties, and Resources
 â†’ Update Statistics, Bestiary, Tasks, Boss Progress, Cooldowns, and Boosts
 â†’ Persist Final Combat Summary and Ten-Log Retention
-â†’ Return Committed Settlement Through HTTP
+â†’ Generate Regular Equipment, Other Loot, and Unique/Set Independently
+â†’ Roll Item Level, Rarity, Affixes, and Item Score
+â†’ Assign Deterministic Inventory Positions (or return InventoryFull)
+â†’ Persist Loot Transactionally Within the Victory Settlement
+â†’ Return Committed Settlement (including loot) Through HTTP
 â†’ Retrieve Active or Completed Session and Ordered Events
 ```
 
-The backend does not yet generate equipment, materials, consumables, uniques, sets, or other loot from combat. Those rewards belong to M7 and later milestones.
+The backend now generates equipment, materials, consumables, uniques, and sets
+from combat as part of the M7 Victory settlement. The Developer UI
+(`developer-ui/`) exposes the complete Character â†’ Monster â†’ Combat â†’ Settlement
+flow for manual verification.
 
 ## IMMEDIATE NEXT TASK
 
-Prepare and approve the implementation context for:
+Close M7 by completing its remaining formalities:
 
 ```text
-M7: Item and Loot Generation
+M7 closure: manual V23 verification + merge
 ```
 
-The M7 discovery and planning package must inspect and resolve:
-- existing item, affix, inventory, and loot-definition schemas,
-- the authoritative item and loot workbook pipeline,
-- the canonical deterministic item generator,
-- item-level and rarity selection,
-- rarity-to-affix-count rules,
-- eligible-affix filtering and duplicate-affix behavior,
-- affix value rolling and Item Score calculation,
-- regular equipment, material, and consumable drops,
-- unique and set reward boundaries relative to M19,
-- inventory-capacity behavior,
-- integration with M6 terminal settlement,
-- exactly-once persistence and rollback,
-- deterministic randomness and ownership isolation,
-- reuse by future chests, gambling, bosses, milestones, and administration.
+Required steps:
 
-M7 must preserve every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
+1. Run the Developer UI end-to-end flow and record manual Gate V23 evidence in
+   `developer-ui/V23_MANUAL_EVIDENCE.md`.
+2. Complete the final verification round (`npm test`, `npm run build`,
+   `npm run ui:typecheck`, `npm run ui:build`, `git diff --check`).
+3. Review and merge `m7/developer-ui` into the M7 backend baseline.
+4. Refresh `M7_TECHNICAL_DUMP.md` and `M7_SCHEMA_DATA_DUMP.md` if required.
+5. Mark M7 completed and advance `CURRENT_MILESTONE.md` to M8.
 
-Do not begin M7 implementation until its source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt are approved.
+M7 preserves every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
 
 ### M7 TRANSITION AND DEVELOPER UI POLICY
 
@@ -26309,7 +28283,10 @@ Fight
 â†’ Observe Statistics Change
 â†’ Fight Again
 
-The immediate next task is to prepare and approve the M7 source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt.
+The M7 planning package (source audit, gameplay decisions, schema implications,
+verification plan, implementation plan, and master prompt) is approved and the
+backend plus Developer UI are implemented. The immediate next task is to record
+manual V23 evidence and merge `m7/developer-ui`, then advance to M8.
 
 ```
 
@@ -29085,6 +31062,7 @@ database\migrations\085_unique_monster_task_boss.sql
 database\migrations\086_daily_boss_rotation_window.sql
 database\migrations\087_daily_boss_attempt_rotation.sql
 database\migrations\089_victory_death_progression.sql
+database\migrations\090_item_loot_generation.sql
 database-design\bosses\bosses.md
 database-design\bosses\character-daily-boss-progress.md
 database-design\bosses\daily-boss-definitions.md
@@ -29130,6 +31108,25 @@ scripts\import-game-data.ts
 scripts\import-materials.ts
 src\modules\characters\application\equipment.repository.ts
 src\modules\characters\infrastructure\postgres-equipment.repository.ts
+src\modules\items\application\loot.repository.ts
+src\modules\items\application\loot-settlement.service.ts
+src\modules\items\domain\complete-regular-item-generator.ts
+src\modules\items\domain\item-base-selection.ts
+src\modules\items\domain\item-generation.constants.ts
+src\modules\items\domain\item-generation.errors.ts
+src\modules\items\domain\item-generation.types.ts
+src\modules\items\domain\item-generator.ts
+src\modules\items\domain\item-loot-level.ts
+src\modules\items\domain\item-random.ts
+src\modules\items\domain\item-rarity-affix.ts
+src\modules\items\domain\item-score.ts
+src\modules\items\domain\other-loot-generator.ts
+src\modules\items\domain\special-item-generator.ts
+src\modules\items\infrastructure\postgres-loot.repository.ts
+src\modules\items\infrastructure\postgres-loot-catalog.ts
+src\modules\items\infrastructure\postgres-loot-lock.ts
+src\modules\items\infrastructure\postgres-loot-persistence.ts
+src\modules\items\infrastructure\postgres-loot-transaction.ts
 src\modules\monsters\application\get-monster-details.service.ts
 src\modules\monsters\application\get-monster-list.service.ts
 src\modules\monsters\application\monster-discovery.models.ts
@@ -29154,6 +31151,22 @@ tests\integration\monsters\postgres-monster-discovery.repository.test.ts
 tests\unit\http\monster-http.handler.test.ts
 tests\unit\http\monster-http.request.test.ts
 tests\unit\import-game-data.test.ts
+tests\unit\items\complete-regular-item-generator.test.ts
+tests\unit\items\item-base-selection.test.ts
+tests\unit\items\item-generator.test.ts
+tests\unit\items\item-loot-level.test.ts
+tests\unit\items\item-random.test.ts
+tests\unit\items\item-rarity-affix.test.ts
+tests\unit\items\item-score.test.ts
+tests\unit\items\loot-repository-contract.test.ts
+tests\unit\items\loot-settlement.service.test.ts
+tests\unit\items\other-loot-generator.test.ts
+tests\unit\items\postgres-loot.repository.test.ts
+tests\unit\items\postgres-loot-catalog.test.ts
+tests\unit\items\postgres-loot-lock.test.ts
+tests\unit\items\postgres-loot-persistence.test.ts
+tests\unit\items\postgres-loot-transaction.test.ts
+tests\unit\items\special-item-generator.test.ts
 tests\unit\monsters\daily-boss-discovery.service.test.ts
 tests\unit\monsters\daily-boss-eligibility.test.ts
 tests\unit\monsters\get-monster-details.service.test.ts
@@ -29646,6 +31659,119 @@ database/migrations/082_add_item_handedness.sql:6:UPDATE item_bases
 database/migrations/082_add_item_handedness.sql:10:ALTER TABLE item_bases
 database/migrations/082_add_item_handedness.sql:11:    ADD CONSTRAINT chk_item_bases_handedness_value
 database/migrations/082_add_item_handedness.sql:20:    ADD CONSTRAINT chk_item_bases_handedness_slot
+database/migrations/090_item_loot_generation.sql:2:-- 090_item_loot_generation.sql
+database/migrations/090_item_loot_generation.sql:3:-- M7 Item and Loot Generation schema foundation
+database/migrations/090_item_loot_generation.sql:27:        FROM item_bases
+database/migrations/090_item_loot_generation.sql:38:            'M7 migration requires integral item_bases statistics.';
+database/migrations/090_item_loot_generation.sql:63:        FROM item_affixes
+database/migrations/090_item_loot_generation.sql:67:            'M7 migration requires integral item_affixes rolls.';
+database/migrations/090_item_loot_generation.sql:72:        FROM item_affixes
+database/migrations/090_item_loot_generation.sql:102:-- Regular Items use rarity; Unique/Set Items use NULL.
+database/migrations/090_item_loot_generation.sql:106:    DROP CONSTRAINT chk_items_rarity,
+database/migrations/090_item_loot_generation.sql:107:    ALTER COLUMN rarity DROP NOT NULL,
+database/migrations/090_item_loot_generation.sql:108:    ADD CONSTRAINT chk_items_rarity
+database/migrations/090_item_loot_generation.sql:110:            rarity IS NULL
+database/migrations/090_item_loot_generation.sql:111:            OR rarity IN ('Common', 'Magic', 'Rare', 'Epic', 'Legendary')
+database/migrations/090_item_loot_generation.sql:130:ALTER TABLE item_bases
+database/migrations/090_item_loot_generation.sql:131:    DROP CONSTRAINT chk_item_bases_stats;
+database/migrations/090_item_loot_generation.sql:133:ALTER TABLE item_bases
+database/migrations/090_item_loot_generation.sql:144:ALTER TABLE item_bases
+database/migrations/090_item_loot_generation.sql:145:    ADD CONSTRAINT chk_item_bases_stats
+database/migrations/090_item_loot_generation.sql:155:            AND base_item_score >= 0
+database/migrations/090_item_loot_generation.sql:161:ALTER TABLE item_affixes
+database/migrations/090_item_loot_generation.sql:162:    DROP CONSTRAINT ux_item_affixes_item_template,
+database/migrations/090_item_loot_generation.sql:163:    DROP CONSTRAINT chk_item_affixes_roll_value,
+database/migrations/090_item_loot_generation.sql:164:    ADD COLUMN affix_position SMALLINT;
+database/migrations/090_item_loot_generation.sql:168:        item_affix_id,
+database/migrations/090_item_loot_generation.sql:171:            ORDER BY created_at, item_affix_id
+database/migrations/090_item_loot_generation.sql:173:    FROM item_affixes
+database/migrations/090_item_loot_generation.sql:175:UPDATE item_affixes AS target
+database/migrations/090_item_loot_generation.sql:176:SET affix_position = source.generated_position::SMALLINT
+database/migrations/090_item_loot_generation.sql:178:WHERE target.item_affix_id = source.item_affix_id;
+database/migrations/090_item_loot_generation.sql:180:ALTER TABLE item_affixes
+database/migrations/090_item_loot_generation.sql:183:    ALTER COLUMN affix_position SET NOT NULL,
+database/migrations/090_item_loot_generation.sql:184:    ADD CONSTRAINT ux_item_affixes_item_position
+database/migrations/090_item_loot_generation.sql:185:        UNIQUE (item_id, affix_position),
+database/migrations/090_item_loot_generation.sql:186:    ADD CONSTRAINT chk_item_affixes_position
+database/migrations/090_item_loot_generation.sql:187:        CHECK (affix_position BETWEEN 1 AND 4),
+database/migrations/090_item_loot_generation.sql:188:    ADD CONSTRAINT chk_item_affixes_roll_value
+database/migrations/090_item_loot_generation.sql:194:CREATE TABLE item_base_affix_weights (
+database/migrations/090_item_loot_generation.sql:195:    item_base_affix_weight_id UUID
+database/migrations/090_item_loot_generation.sql:198:    item_base_id UUID NOT NULL,
+database/migrations/090_item_loot_generation.sql:203:    CONSTRAINT fk_item_base_affix_weights_item_base
+database/migrations/090_item_loot_generation.sql:204:        FOREIGN KEY (item_base_id)
+database/migrations/090_item_loot_generation.sql:205:        REFERENCES item_bases(item_base_id)
+database/migrations/090_item_loot_generation.sql:207:    CONSTRAINT fk_item_base_affix_weights_affix_template
+database/migrations/090_item_loot_generation.sql:211:    CONSTRAINT ux_item_base_affix_weights_base_template
+database/migrations/090_item_loot_generation.sql:212:        UNIQUE (item_base_id, affix_template_id),
+database/migrations/090_item_loot_generation.sql:213:    CONSTRAINT chk_item_base_affix_weights_selection_weight
+database/migrations/090_item_loot_generation.sql:217:CREATE INDEX ix_item_base_affix_weights_item_base_id
+database/migrations/090_item_loot_generation.sql:218:    ON item_base_affix_weights(item_base_id);
+database/migrations/090_item_loot_generation.sql:220:CREATE INDEX ix_item_base_affix_weights_affix_template_id
+database/migrations/090_item_loot_generation.sql:221:    ON item_base_affix_weights(affix_template_id);
+database/migrations/090_item_loot_generation.sql:226:CREATE TABLE item_base_fixed_stat_ranges (
+database/migrations/090_item_loot_generation.sql:227:    item_base_fixed_stat_range_id UUID
+database/migrations/090_item_loot_generation.sql:230:    item_base_id UUID NOT NULL,
+database/migrations/090_item_loot_generation.sql:237:    CONSTRAINT fk_item_base_fixed_stat_ranges_item_base
+database/migrations/090_item_loot_generation.sql:238:        FOREIGN KEY (item_base_id)
+database/migrations/090_item_loot_generation.sql:239:        REFERENCES item_bases(item_base_id)
+database/migrations/090_item_loot_generation.sql:241:    CONSTRAINT ux_item_base_fixed_stat_ranges_base_position
+database/migrations/090_item_loot_generation.sql:242:        UNIQUE (item_base_id, stat_position),
+database/migrations/090_item_loot_generation.sql:243:    CONSTRAINT ux_item_base_fixed_stat_ranges_base_type
+database/migrations/090_item_loot_generation.sql:244:        UNIQUE (item_base_id, stat_type),
+database/migrations/090_item_loot_generation.sql:245:    CONSTRAINT chk_item_base_fixed_stat_ranges_position
+database/migrations/090_item_loot_generation.sql:247:    CONSTRAINT chk_item_base_fixed_stat_ranges_type
+database/migrations/090_item_loot_generation.sql:260:    CONSTRAINT chk_item_base_fixed_stat_ranges_values
+database/migrations/090_item_loot_generation.sql:264:CREATE INDEX ix_item_base_fixed_stat_ranges_item_base_id
+database/migrations/090_item_loot_generation.sql:265:    ON item_base_fixed_stat_ranges(item_base_id);
+database/migrations/090_item_loot_generation.sql:270:        item_base.item_base_id,
+database/migrations/090_item_loot_generation.sql:275:    FROM item_bases AS item_base
+database/migrations/090_item_loot_generation.sql:277:        ON template.unique_template_id = item_base.unique_template_id
+database/migrations/090_item_loot_generation.sql:304:    WHERE item_base.is_unique = TRUE
+database/migrations/090_item_loot_generation.sql:312:        item_base_id,
+database/migrations/090_item_loot_generation.sql:314:            PARTITION BY item_base_id
+database/migrations/090_item_loot_generation.sql:322:INSERT INTO item_base_fixed_stat_ranges (
+database/migrations/090_item_loot_generation.sql:323:    item_base_id,
+database/migrations/090_item_loot_generation.sql:330:    item_base_id,
+database/migrations/090_item_loot_generation.sql:407:ALTER TABLE loot_tables
+database/migrations/090_item_loot_generation.sql:410:UPDATE loot_tables
+database/migrations/090_item_loot_generation.sql:413:ALTER TABLE loot_tables
+database/migrations/090_item_loot_generation.sql:414:    DROP CONSTRAINT chk_loot_tables_chance,
+database/migrations/090_item_loot_generation.sql:415:    DROP CONSTRAINT chk_loot_tables_levels,
+database/migrations/090_item_loot_generation.sql:419:    DROP COLUMN loot_level_modifier,
+database/migrations/090_item_loot_generation.sql:421:    ADD CONSTRAINT chk_loot_tables_selection_weight
+database/migrations/090_item_loot_generation.sql:425:-- Other Loot becomes one weighted pool after the
+database/migrations/090_item_loot_generation.sql:426:-- independent Other Loot success roll.
+database/migrations/090_item_loot_generation.sql:428:ALTER TABLE other_loot_tables
+database/migrations/090_item_loot_generation.sql:431:UPDATE other_loot_tables
+database/migrations/090_item_loot_generation.sql:434:ALTER TABLE other_loot_tables
+database/migrations/090_item_loot_generation.sql:435:    DROP CONSTRAINT chk_other_loot_tables_chance,
+database/migrations/090_item_loot_generation.sql:438:    ADD CONSTRAINT chk_other_loot_tables_selection_weight
+database/migrations/090_item_loot_generation.sql:441:CREATE UNIQUE INDEX ux_other_loot_tables_monster_material
+database/migrations/090_item_loot_generation.sql:442:    ON other_loot_tables(monster_id, material_id)
+database/migrations/090_item_loot_generation.sql:445:CREATE UNIQUE INDEX ux_other_loot_tables_monster_consumable
+database/migrations/090_item_loot_generation.sql:446:    ON other_loot_tables(monster_id, consumable_definition_id)
+database/migrations/090_item_loot_generation.sql:458:    item_base_id UUID NOT NULL,
+database/migrations/090_item_loot_generation.sql:471:    CONSTRAINT fk_special_item_sources_item_base
+database/migrations/090_item_loot_generation.sql:472:        FOREIGN KEY (item_base_id)
+database/migrations/090_item_loot_generation.sql:473:        REFERENCES item_bases(item_base_id)
+database/migrations/090_item_loot_generation.sql:486:    ON special_item_sources(monster_id, item_base_id)
+database/migrations/090_item_loot_generation.sql:490:    ON special_item_sources(monster_family_id, item_base_id)
+database/migrations/090_item_loot_generation.sql:501:CREATE INDEX ix_special_item_sources_item_base_id
+database/migrations/090_item_loot_generation.sql:502:    ON special_item_sources(item_base_id);
+database/migrations/090_item_loot_generation.sql:507:CREATE TABLE item_score_coefficients (
+database/migrations/090_item_loot_generation.sql:508:    item_score_coefficient_id UUID
+database/migrations/090_item_loot_generation.sql:515:    CONSTRAINT ux_item_score_coefficients_component
+database/migrations/090_item_loot_generation.sql:517:    CONSTRAINT chk_item_score_coefficients_component
+database/migrations/090_item_loot_generation.sql:531:    CONSTRAINT chk_item_score_coefficients_value
+database/migrations/090_item_loot_generation.sql:538:ALTER TABLE unique_pity_tracking
+database/migrations/090_item_loot_generation.sql:539:    DROP CONSTRAINT chk_unique_pity_tracking_chance,
+database/migrations/090_item_loot_generation.sql:540:    DROP CONSTRAINT chk_unique_pity_tracking_kills;
+database/migrations/090_item_loot_generation.sql:542:UPDATE unique_pity_tracking
+database/migrations/090_item_loot_generation.sql:556:ALTER TABLE unique_pity_tracking
+database/migrations/090_item_loot_generation.sql:561:    ADD CONSTRAINT chk_unique_pity_tracking_kills
+database/migrations/090_item_loot_generation.sql:563:    ADD CONSTRAINT chk_unique_pity_tracking_chance
+database/migrations/090_item_loot_generation.sql:567:    ADD CONSTRAINT chk_unique_pity_tracking_state
 database/schema-v1.sql:341:    is_lootable BOOLEAN NOT NULL DEFAULT FALSE,
 database/schema-v1.sql:373:        CHECK (is_gatherable = TRUE OR is_lootable = TRUE OR vendor_available = TRUE)
 database/schema-v1.sql:388:CREATE INDEX ix_materials_is_lootable
@@ -29955,16 +32081,44 @@ documentation/database-design/upgrade-system.md:264:- Current Item Rarity
 documentation/database-design/upgrade-system.md:287:- Looted
 documentation/database-design/upgrade-system.md:306:Rarity Upgrade
 documentation/database-design/upgrade-system.md:335:- Legendary Rarity
-documentation/game-design/CURRENT_MILESTONE.md:15:Settlement occurs exactly once inside the same PostgreSQL transaction as the combat-ending action.
-documentation/game-design/CURRENT_MILESTONE.md:19:- Transactional Victory settlement.
-documentation/game-design/CURRENT_MILESTONE.md:20:- Transactional Defeat settlement.
-documentation/game-design/CURRENT_MILESTONE.md:36:- Settlement data in the authenticated combat-action response.
-documentation/game-design/CURRENT_MILESTONE.md:41:### Settlement rules
-documentation/game-design/CURRENT_MILESTONE.md:71:M6 does not generate loot. Item and loot generation belongs to M7.
-documentation/game-design/CURRENT_MILESTONE.md:85:Base Experience and Gold ranges are snapshotted when combat starts. Current authoritative reward bonuses are loaded during settlement.
-documentation/game-design/CURRENT_MILESTONE.md:89:Daily Boss attempts are consumed when combat starts. Victory fields are updated only after Daily Boss Victory settlement.
-documentation/game-design/CURRENT_MILESTONE.md:122:M7: Item and Loot Generation
-documentation/game-design/CURRENT_MILESTONE.md:124:M7 will introduce the canonical item-generation and loot-generation pipeline without weakening M6 settlement, transaction, exactly-once, ownership, and rollback guarantees.
+documentation/game-design/CURRENT_MILESTONE.md:5:M7: Item and Loot Generation
+documentation/game-design/CURRENT_MILESTONE.md:9:Backend M7 item and loot generation implemented and regression-green. Developer UI
+documentation/game-design/CURRENT_MILESTONE.md:20:Implement the canonical, server-authoritative Item and loot generation pipeline as part of the existing transactional Victory settlement.
+documentation/game-design/CURRENT_MILESTONE.md:22:M7 must preserve the M6 settlement, exactly-once, ownership, concurrency and rollback guarantees.
+documentation/game-design/CURRENT_MILESTONE.md:55:- transactional Victory and Defeat settlement from M6,
+documentation/game-design/CURRENT_MILESTONE.md:63:- regular loot tables,
+documentation/game-design/CURRENT_MILESTONE.md:64:- Other Loot tables,
+documentation/game-design/CURRENT_MILESTONE.md:79:- rarity generation,
+documentation/game-design/CURRENT_MILESTONE.md:84:- independent Other Loot generation,
+documentation/game-design/CURRENT_MILESTONE.md:89:- `InventoryFull` lost-Item results,
+documentation/game-design/CURRENT_MILESTONE.md:91:- complete settlement response,
+documentation/game-design/CURRENT_MILESTONE.md:97:effectiveLootLevel = monsterLevel + bossBonusLootLevel
+documentation/game-design/CURRENT_MILESTONE.md:98:minimumItemLevel = max(1, effectiveLootLevel - 10)
+documentation/game-design/CURRENT_MILESTONE.md:99:maximumItemLevel = effectiveLootLevel + 5
+documentation/game-design/CURRENT_MILESTONE.md:104:Regular Monsters use `bossBonusLootLevel = 0`.
+documentation/game-design/CURRENT_MILESTONE.md:121:-> rarity roll
+documentation/game-design/CURRENT_MILESTONE.md:129:### Rarity and Affix count
+documentation/game-design/CURRENT_MILESTONE.md:139:Rarity controls only the number of Affixes.
+documentation/game-design/CURRENT_MILESTONE.md:149:- Other Loot,
+documentation/game-design/CURRENT_MILESTONE.md:157:Defeat does not generate loot.
+documentation/game-design/CURRENT_MILESTONE.md:169:- the loss reason is `InventoryFull`.
+documentation/game-design/CURRENT_MILESTONE.md:188:A special Item lost because of `InventoryFull` does not reset pity.
+documentation/game-design/CURRENT_MILESTONE.md:192:Loot generation belongs to the existing Victory transaction.
+documentation/game-design/CURRENT_MILESTONE.md:202:- settlement-response construction.
+documentation/game-design/CURRENT_MILESTONE.md:204:Unexpected generation or persistence failure rolls back the complete Victory settlement.
+documentation/game-design/CURRENT_MILESTONE.md:206:`InventoryFull` is an expected business result and does not trigger rollback.
+documentation/game-design/CURRENT_MILESTONE.md:215:- `affix_position`,
+documentation/game-design/CURRENT_MILESTONE.md:218:- weighted regular loot-pool semantics,
+documentation/game-design/CURRENT_MILESTONE.md:219:- retirement of manual loot-table Item Level range authority,
+documentation/game-design/CURRENT_MILESTONE.md:220:- M7-compatible weighted Other Loot semantics,
+documentation/game-design/CURRENT_MILESTONE.md:243:- inspect Other Loot,
+documentation/game-design/CURRENT_MILESTONE.md:245:- see `InventoryFull` warnings.
+documentation/game-design/CURRENT_MILESTONE.md:261:Backend M7 phases P1ΓÇôP19 are implemented and committed on `m7/item-loot-generation`.
+documentation/game-design/CURRENT_MILESTONE.md:276:- [x] P20.6 M6 and M7 settlement inspection: Experience, Gold, level, statistics,
+documentation/game-design/CURRENT_MILESTONE.md:277:      regular Equipment, Other Loot, Unique/Set and pity, Affixes and fixed stats,
+documentation/game-design/CURRENT_MILESTONE.md:278:      persisted/lost status, `InventoryFull`, raw settlement JSON fallback.
+documentation/game-design/CURRENT_MILESTONE.md:337:8. backend M7 phases P1ΓÇôP18 (`m7/item-loot-generation`)
+documentation/game-design/CURRENT_MILESTONE.md:340:11. loot HTTP contract and serialization/sanitization documentation
 documentation/game-design/MASTER_PROJECT_PLAN.md:740:inventory_items.is_equipped = TRUE
 documentation/game-design/MASTER_PROJECT_PLAN.md:995:- `inventory_items`
 documentation/game-design/MASTER_PROJECT_PLAN.md:997:- `item_bases`
@@ -29993,39 +32147,50 @@ documentation/game-design/MASTER_PROJECT_PLAN.md:2650:Daily Boss attempts are co
 documentation/game-design/MASTER_PROJECT_PLAN.md:2685:- Failed settlement rolls back the complete terminal action.
 documentation/game-design/MASTER_PROJECT_PLAN.md:2688:- Settlement is returned by the authenticated combat-action endpoint.
 documentation/game-design/MASTER_PROJECT_PLAN.md:2692:## M7: ITEM AND LOOT GENERATION
-documentation/game-design/MASTER_PROJECT_PLAN.md:2699:  forcedRarity,
-documentation/game-design/MASTER_PROJECT_PLAN.md:2708:ΓåÆ Determine Rarity
-documentation/game-design/MASTER_PROJECT_PLAN.md:2715:### Rarity and affix counts
-documentation/game-design/MASTER_PROJECT_PLAN.md:2727:3. Other loot
-documentation/game-design/MASTER_PROJECT_PLAN.md:2740:- Rarity produces the correct affix count.
-documentation/game-design/MASTER_PROJECT_PLAN.md:2877:- Rarity upgrading
-documentation/game-design/MASTER_PROJECT_PLAN.md:3085:- Normal and unique/set loot remain independent.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3192:- Loot telemetry
-documentation/game-design/MASTER_PROJECT_PLAN.md:3201:- Rarity and affix distribution
-documentation/game-design/MASTER_PROJECT_PLAN.md:3272:5. Loot frequency
-documentation/game-design/MASTER_PROJECT_PLAN.md:3273:6. Rarity distribution
-documentation/game-design/MASTER_PROJECT_PLAN.md:3311:- Loot and equipment work.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3342:7. M7 Item and Loot Generation
-documentation/game-design/MASTER_PROJECT_PLAN.md:3385:- Exactly-once Victory and Defeat settlement implemented.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3386:- Experience, Gold, level, death, Bestiary, Task Boss, Daily Boss, cooldown, boost, Blessing, and final-log settlement implemented.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3398:- 10 loot-table records.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3414:Victory and Defeat settlement: Implemented
-documentation/game-design/MASTER_PROJECT_PLAN.md:3425:Current milestone: M7 Item and Loot Generation
-documentation/game-design/MASTER_PROJECT_PLAN.md:3444:ΓåÆ Return Committed Settlement Through HTTP
-documentation/game-design/MASTER_PROJECT_PLAN.md:3448:The backend does not yet generate equipment, materials, consumables, uniques, sets, or other loot from combat. Those rewards belong to M7 and later milestones.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3455:M7: Item and Loot Generation
-documentation/game-design/MASTER_PROJECT_PLAN.md:3459:- existing item, affix, inventory, and loot-definition schemas,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3460:- the authoritative item and loot workbook pipeline,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3462:- item-level and rarity selection,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3463:- rarity-to-affix-count rules,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3469:- integration with M6 terminal settlement,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3474:M7 must preserve every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
-documentation/game-design/MASTER_PROJECT_PLAN.md:3484:M7: Item and Loot Generation
-documentation/game-design/MASTER_PROJECT_PLAN.md:3490:- rarity rolls,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3496:- other loot rewards,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3499:- exactly-once integration with M6 settlement,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3512:- view Victory or Defeat settlement,
-documentation/game-design/MASTER_PROJECT_PLAN.md:3514:- inspect generated loot.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2698:The backend M7 item and loot generation pipeline is implemented and
+documentation/game-design/MASTER_PROJECT_PLAN.md:2699:regression-green on `m7/item-loot-generation`. The Developer UI checkpoint (P20)
+documentation/game-design/MASTER_PROJECT_PLAN.md:2712:  forcedRarity,
+documentation/game-design/MASTER_PROJECT_PLAN.md:2721:ΓåÆ Determine Rarity
+documentation/game-design/MASTER_PROJECT_PLAN.md:2728:### Rarity and affix counts
+documentation/game-design/MASTER_PROJECT_PLAN.md:2740:3. Other loot
+documentation/game-design/MASTER_PROJECT_PLAN.md:2753:- Rarity produces the correct affix count.
+documentation/game-design/MASTER_PROJECT_PLAN.md:2890:- Rarity upgrading
+documentation/game-design/MASTER_PROJECT_PLAN.md:3098:- Normal and unique/set loot remain independent.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3205:- Loot telemetry
+documentation/game-design/MASTER_PROJECT_PLAN.md:3214:- Rarity and affix distribution
+documentation/game-design/MASTER_PROJECT_PLAN.md:3285:5. Loot frequency
+documentation/game-design/MASTER_PROJECT_PLAN.md:3286:6. Rarity distribution
+documentation/game-design/MASTER_PROJECT_PLAN.md:3324:- Loot and equipment work.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3355:7. M7 Item and Loot Generation
+documentation/game-design/MASTER_PROJECT_PLAN.md:3389:- M7: Item and Loot Generation ΓÇö backend implemented and regression-green;
+documentation/game-design/MASTER_PROJECT_PLAN.md:3404:- Exactly-once Victory and Defeat settlement implemented.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3405:- Experience, Gold, level, death, Bestiary, Task Boss, Daily Boss, cooldown, boost, Blessing, and final-log settlement implemented.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3407:- Canonical item generator, item-level and rarity selection, affix rolls, and Item Score implemented.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3408:- Regular equipment, Other Loot (materials/consumables), and shared Unique/Set generation implemented.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3410:- Deterministic inventory placement and `InventoryFull` lost-item results implemented.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3411:- Transactional loot settlement integrated with M6 Victory settlement.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3423:- 10 loot-table records.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3438:Victory and Defeat settlement: Implemented
+documentation/game-design/MASTER_PROJECT_PLAN.md:3445:Item and loot generation: Implemented
+documentation/game-design/MASTER_PROJECT_PLAN.md:3446:Regular equipment / Other Loot / Unique-Set generation: Implemented
+documentation/game-design/MASTER_PROJECT_PLAN.md:3448:InventoryFull lost-item handling: Implemented
+documentation/game-design/MASTER_PROJECT_PLAN.md:3449:Transactional loot settlement: Implemented
+documentation/game-design/MASTER_PROJECT_PLAN.md:3458:Current milestone: M7 Item and Loot Generation (closure pending V23 + merge)
+documentation/game-design/MASTER_PROJECT_PLAN.md:3461:The M7 loot migration and database table count are tracked in the M7 schema
+documentation/game-design/MASTER_PROJECT_PLAN.md:3481:ΓåÆ Generate Regular Equipment, Other Loot, and Unique/Set Independently
+documentation/game-design/MASTER_PROJECT_PLAN.md:3482:ΓåÆ Roll Item Level, Rarity, Affixes, and Item Score
+documentation/game-design/MASTER_PROJECT_PLAN.md:3483:ΓåÆ Assign Deterministic Inventory Positions (or return InventoryFull)
+documentation/game-design/MASTER_PROJECT_PLAN.md:3484:ΓåÆ Persist Loot Transactionally Within the Victory Settlement
+documentation/game-design/MASTER_PROJECT_PLAN.md:3485:ΓåÆ Return Committed Settlement (including loot) Through HTTP
+documentation/game-design/MASTER_PROJECT_PLAN.md:3490:from combat as part of the M7 Victory settlement. The Developer UI
+documentation/game-design/MASTER_PROJECT_PLAN.md:3491:(`developer-ui/`) exposes the complete Character ΓåÆ Monster ΓåÆ Combat ΓåÆ Settlement
+documentation/game-design/MASTER_PROJECT_PLAN.md:3512:M7 preserves every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
+documentation/game-design/MASTER_PROJECT_PLAN.md:3520:M7: Item and Loot Generation
+documentation/game-design/MASTER_PROJECT_PLAN.md:3526:- rarity rolls,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3532:- other loot rewards,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3535:- exactly-once integration with M6 settlement,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3548:- view Victory or Defeat settlement,
+documentation/game-design/MASTER_PROJECT_PLAN.md:3550:- inspect generated loot.
 scripts/generate-m4-context.ps1:211:  "RandomSource|Math\.random|randomUUID|rng" `
 scripts/generate-m5-context.ps1:223:  "RandomSource|Math\.random|randomUUID|rng" `
 scripts/generate-m6-context.ps1:221:[void]$technicalBuilder.AppendLine("# M6 SETTLEMENT REFERENCE AUDIT")
@@ -30033,15 +32198,71 @@ scripts/generate-m6-context.ps1:226:$settlementAudit = git grep -n -i -E "combat
 scripts/generate-m6-context.ps1:228:if ($settlementAudit) {
 scripts/generate-m6-context.ps1:229:  [void]$technicalBuilder.AppendLine(($settlementAudit -join "`n"))
 scripts/generate-m6-context.ps1:232:  [void]$technicalBuilder.AppendLine("No settlement references found.")
+scripts/generate-m7-context.ps1:76:  "src/modules/progression/domain/victory-settlement.ts",
+scripts/generate-m7-context.ps1:84:  "tests/unit/progression/victory-settlement.test.ts",
+scripts/generate-m7-context.ps1:102:  "documentation/database-design/loot-design.md",
+scripts/generate-m7-context.ps1:103:  "database-design/loot/unique-pity-tracking.md"
+scripts/generate-m7-context.ps1:112:  "database/migrations/017_item_bases.sql",
+scripts/generate-m7-context.ps1:116:  "database/migrations/029_inventory_items.sql",
+scripts/generate-m7-context.ps1:120:  "database/migrations/033_item_affixes.sql",
+scripts/generate-m7-context.ps1:122:  "database/migrations/056_loot_tables.sql",
+scripts/generate-m7-context.ps1:123:  "database/migrations/057_other_loot_tables.sql",
+scripts/generate-m7-context.ps1:124:  "database/migrations/058_unique_pity_tracking.sql",
+scripts/generate-m7-context.ps1:161:  [void]$builder.AppendLine("Fresh source dump for planning M7: Item and Loot Generation.")
+scripts/generate-m7-context.ps1:208:      $_.FullName -match "loot|item|affix|inventory|equipment|unique|set|pity|reward|victory|settlement|material|consumable|monster|boss|workbook|import"
+scripts/generate-m7-context.ps1:223:  $audit = git grep -n -i -E "loot|item_affix|affix_position|item_base|inventory_items|unique_pity|other_loot|rarity|item_score|InventoryFull|RandomSource|settlement" -- src tests database documentation database-design scripts 2>$null
+scripts/generate-m7-context.ps1:250:  [void]$builder.AppendLine("Authoritative pre-implementation schema evidence relevant to M7: Item and Loot Generation.")
 scripts/import-game-data.ts:71:    sheet: "item_bases",
 scripts/import-game-data.ts:72:    table: "item_bases",
-scripts/import-game-data.ts:104:    sheet: "loot_tables",
-scripts/import-game-data.ts:105:    table: "loot_tables",
-scripts/import-game-data.ts:106:    keys: ["monster_id", "item_base_id"],
-scripts/import-game-data.ts:109:      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
-scripts/import-game-data.ts:122:    sheet: "other_loot_tables",
-scripts/import-game-data.ts:123:    table: "other_loot_tables",
-scripts/import-game-data.ts:321:      if (config.table === "other_loot_tables") {
+scripts/import-game-data.ts:80:    sheet: "item_base_affix_weights",
+scripts/import-game-data.ts:81:    table: "item_base_affix_weights",
+scripts/import-game-data.ts:82:    keys: ["item_base_id", "affix_template_id"],
+scripts/import-game-data.ts:84:      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+scripts/import-game-data.ts:88:    sheet: "item_base_fixed_stat_ranges",
+scripts/import-game-data.ts:89:    table: "item_base_fixed_stat_ranges",
+scripts/import-game-data.ts:90:    keys: ["item_base_id", "stat_position"],
+scripts/import-game-data.ts:92:      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+scripts/import-game-data.ts:95:  { sheet: "item_score_coefficients", table: "item_score_coefficients", keys: ["score_component"] },
+scripts/import-game-data.ts:121:    sheet: "loot_tables",
+scripts/import-game-data.ts:122:    table: "loot_tables",
+scripts/import-game-data.ts:123:    keys: ["monster_id", "item_base_id"],
+scripts/import-game-data.ts:126:      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+scripts/import-game-data.ts:132:    keys: ["monster_id", "monster_family_id", "item_base_id"],
+scripts/import-game-data.ts:137:      { workbookColumn: "item_base_code", databaseColumn: "item_base_id", target: "item_bases" }
+scripts/import-game-data.ts:150:    sheet: "other_loot_tables",
+scripts/import-game-data.ts:151:    table: "other_loot_tables",
+scripts/import-game-data.ts:365:  if (config.table === "item_base_affix_weights") {
+scripts/import-game-data.ts:366:    return ["item_base_code", "affix_type", "affix_tier"]
+scripts/import-game-data.ts:375:const ITEM_SCORE_COMPONENTS = [
+scripts/import-game-data.ts:388:  loot_tables: [
+scripts/import-game-data.ts:392:    "loot_level_modifier"
+scripts/import-game-data.ts:394:  other_loot_tables: ["drop_chance_percent"],
+scripts/import-game-data.ts:437:      if (config.table === "other_loot_tables") {
+scripts/import-game-data.ts:461:      if (["loot_tables", "other_loot_tables", "item_base_affix_weights", "special_item_sources"].includes(config.table)) {
+scripts/import-game-data.ts:468:      if (config.table === "item_score_coefficients") {
+scripts/import-game-data.ts:475:      if (config.table === "item_base_fixed_stat_ranges") {
+scripts/import-game-data.ts:491:      if (config.table === "item_base_affix_weights") {
+scripts/import-game-data.ts:529:  const itemBases = rowsBySheet.get("item_bases") ?? [];
+scripts/import-game-data.ts:544:  const affixWeights = rowsBySheet.get("item_base_affix_weights") ?? [];
+scripts/import-game-data.ts:545:  const affixPoolCodes = new Set(affixWeights.map((row) => normalizedString(row.item_base_code)));
+scripts/import-game-data.ts:547:    if (!affixPoolCodes.has(code)) problems.push(`item_bases: regular Item Base "${code}" has no affix pool.`);
+scripts/import-game-data.ts:550:    const code = normalizedString(row.item_base_code);
+scripts/import-game-data.ts:552:      problems.push(`item_base_affix_weights row ${index + 2}: special Item Base "${code}" cannot use normal affixes.`);
+scripts/import-game-data.ts:556:  const fixedRanges = rowsBySheet.get("item_base_fixed_stat_ranges") ?? [];
+scripts/import-game-data.ts:559:    const code = normalizedString(row.item_base_code);
+scripts/import-game-data.ts:561:      problems.push(`item_base_fixed_stat_ranges row ${index + 2}: regular Item Base "${code}" cannot use fixed stats.`);
+scripts/import-game-data.ts:570:      problems.push(`item_bases: special Item Base "${code}" has no fixed-stat ranges.`);
+scripts/import-game-data.ts:578:        problems.push(`item_base_fixed_stat_ranges: Item Base "${code}" must use contiguous stat_position values starting at 1.`);
+scripts/import-game-data.ts:585:    const code = normalizedString(row.item_base_code);
+scripts/import-game-data.ts:591:    if (!specialSources.some((row) => normalizedString(row.item_base_code) === code)) {
+scripts/import-game-data.ts:592:      problems.push(`item_bases: special Item Base "${code}" has no special-item source.`);
+scripts/import-game-data.ts:596:  const coefficientRows = rowsBySheet.get("item_score_coefficients") ?? [];
+scripts/import-game-data.ts:600:  for (const component of ITEM_SCORE_COMPONENTS) {
+scripts/import-game-data.ts:602:      problems.push(`item_score_coefficients: missing component "${component}".`);
+scripts/import-game-data.ts:607:    if (!(ITEM_SCORE_COMPONENTS as readonly string[]).includes(component)) {
+scripts/import-game-data.ts:608:      problems.push(`item_score_coefficients row ${index + 2}: unknown score_component "${component}".`);
+scripts/import-game-data.ts:750:      if (config.table === "item_base_affix_weights" && ["affix_type", "affix_tier"].includes(workbookColumn)) continue;
+scripts/import-game-data.ts:757:  if (config.table === "item_base_affix_weights") {
 scripts/import-materials.ts:16:  "is_lootable",
 scripts/import-materials.ts:36:  isLootable: boolean;
 scripts/import-materials.ts:52:  is_lootable: boolean;
@@ -30087,75 +32308,106 @@ src/modules/characters/infrastructure/postgres-equipment.repository.ts:210:     
 src/modules/characters/infrastructure/postgres-equipment.repository.ts:211:            current_item.item_base_id
 src/modules/characters/infrastructure/postgres-equipment.repository.ts:359:            UPDATE inventory_items
 src/modules/characters/infrastructure/postgres-equipment.repository.ts:402:            UPDATE inventory_items
-src/modules/combat/application/combat-session.models.ts:63:export type CombatSettlementOutcome =
-src/modules/combat/application/combat-session.models.ts:67:export type CombatSettlementExperience = {
-src/modules/combat/application/combat-session.models.ts:74:export type CombatSettlementGold = {
-src/modules/combat/application/combat-session.models.ts:81:export type CombatSettlementLevel = {
-src/modules/combat/application/combat-session.models.ts:87:export type CombatSettlementBestiary = {
-src/modules/combat/application/combat-session.models.ts:92:export type CombatSettlementTaskBoss = {
-src/modules/combat/application/combat-session.models.ts:97:export type CombatSettlementCooldown = {
-src/modules/combat/application/combat-session.models.ts:102:export type CombatSettlementDailyBoss = {
-src/modules/combat/application/combat-session.models.ts:107:export type CombatSettlementStatistics = {
-src/modules/combat/application/combat-session.models.ts:115:  outcome: CombatSettlementOutcome;
-src/modules/combat/application/combat-session.models.ts:121:export type CombatSettlement = {
-src/modules/combat/application/combat-session.models.ts:122:  outcome: CombatSettlementOutcome;
-src/modules/combat/application/combat-session.models.ts:123:  experience: CombatSettlementExperience;
-src/modules/combat/application/combat-session.models.ts:124:  gold: CombatSettlementGold;
-src/modules/combat/application/combat-session.models.ts:125:  level: CombatSettlementLevel;
-src/modules/combat/application/combat-session.models.ts:127:  bestiary: CombatSettlementBestiary;
-src/modules/combat/application/combat-session.models.ts:128:  taskBoss: CombatSettlementTaskBoss;
-src/modules/combat/application/combat-session.models.ts:129:  cooldown: CombatSettlementCooldown;
-src/modules/combat/application/combat-session.models.ts:130:  dailyBoss: CombatSettlementDailyBoss;
-src/modules/combat/application/combat-session.models.ts:131:  statistics: CombatSettlementStatistics;
-src/modules/combat/application/combat-session.models.ts:137:  settlement: CombatSettlement | null;
+src/modules/combat/application/combat-session.models.ts:7:  LootSettlementResult,
+src/modules/combat/application/combat-session.models.ts:8:} from "../../items/application/loot-settlement.service.js";
+src/modules/combat/application/combat-session.models.ts:66:export type CombatSettlementOutcome =
+src/modules/combat/application/combat-session.models.ts:70:export type CombatSettlementExperience = {
+src/modules/combat/application/combat-session.models.ts:77:export type CombatSettlementGold = {
+src/modules/combat/application/combat-session.models.ts:84:export type CombatSettlementLevel = {
+src/modules/combat/application/combat-session.models.ts:90:export type CombatSettlementBestiary = {
+src/modules/combat/application/combat-session.models.ts:95:export type CombatSettlementTaskBoss = {
+src/modules/combat/application/combat-session.models.ts:100:export type CombatSettlementCooldown = {
+src/modules/combat/application/combat-session.models.ts:105:export type CombatSettlementDailyBoss = {
+src/modules/combat/application/combat-session.models.ts:110:export type CombatSettlementStatistics = {
+src/modules/combat/application/combat-session.models.ts:118:  outcome: CombatSettlementOutcome;
+src/modules/combat/application/combat-session.models.ts:124:export type CombatSettlement = {
+src/modules/combat/application/combat-session.models.ts:125:  outcome: CombatSettlementOutcome;
+src/modules/combat/application/combat-session.models.ts:126:  experience: CombatSettlementExperience;
+src/modules/combat/application/combat-session.models.ts:127:  gold: CombatSettlementGold;
+src/modules/combat/application/combat-session.models.ts:128:  level: CombatSettlementLevel;
+src/modules/combat/application/combat-session.models.ts:130:  bestiary: CombatSettlementBestiary;
+src/modules/combat/application/combat-session.models.ts:131:  taskBoss: CombatSettlementTaskBoss;
+src/modules/combat/application/combat-session.models.ts:132:  cooldown: CombatSettlementCooldown;
+src/modules/combat/application/combat-session.models.ts:133:  dailyBoss: CombatSettlementDailyBoss;
+src/modules/combat/application/combat-session.models.ts:134:  statistics: CombatSettlementStatistics;
+src/modules/combat/application/combat-session.models.ts:140:  settlement: CombatSettlement | null;
+src/modules/combat/application/combat-session.models.ts:141:  loot: LootSettlementResult | null;
 src/modules/combat/application/combat-session.repository.ts:14:  CombatSettlement,
-src/modules/combat/application/combat-session.repository.ts:119:export type CombatSettlementCharacter = {
-src/modules/combat/application/combat-session.repository.ts:127:export type CombatSettlementStatistics = {
-src/modules/combat/application/combat-session.repository.ts:152:export type CombatSettlementMonster = {
-src/modules/combat/application/combat-session.repository.ts:166:export type CombatSettlementTask = {
-src/modules/combat/application/combat-session.repository.ts:178:export type CombatSettlementDailyBoss = {
-src/modules/combat/application/combat-session.repository.ts:188:export type CombatSettlementFightBuff = {
-src/modules/combat/application/combat-session.repository.ts:195:export type CombatSettlementContext = {
-src/modules/combat/application/combat-session.repository.ts:196:  character: CombatSettlementCharacter;
-src/modules/combat/application/combat-session.repository.ts:199:  statistics: CombatSettlementStatistics;
-src/modules/combat/application/combat-session.repository.ts:204:  monster: CombatSettlementMonster;
-src/modules/combat/application/combat-session.repository.ts:206:  task: CombatSettlementTask | null;
-src/modules/combat/application/combat-session.repository.ts:209:    CombatSettlementDailyBoss | null;
-src/modules/combat/application/combat-session.repository.ts:212:    readonly CombatSettlementFightBuff[];
-src/modules/combat/application/combat-session.repository.ts:218:export type ApplyVictorySettlementInput = {
-src/modules/combat/application/combat-session.repository.ts:219:  context: CombatSettlementContext;
-src/modules/combat/application/combat-session.repository.ts:265:export type ApplyDefeatSettlementInput = {
-src/modules/combat/application/combat-session.repository.ts:266:  context: CombatSettlementContext;
-src/modules/combat/application/combat-session.repository.ts:304:  loadSettlementContext():
-src/modules/combat/application/combat-session.repository.ts:305:    Promise<CombatSettlementContext>;
-src/modules/combat/application/combat-session.repository.ts:307:  applyVictorySettlement(
-src/modules/combat/application/combat-session.repository.ts:308:    input: ApplyVictorySettlementInput
-src/modules/combat/application/combat-session.repository.ts:309:  ): Promise<CombatSettlement>;
-src/modules/combat/application/combat-session.repository.ts:311:  applyDefeatSettlement(
-src/modules/combat/application/combat-session.repository.ts:312:    input: ApplyDefeatSettlementInput
-src/modules/combat/application/combat-session.repository.ts:313:  ): Promise<CombatSettlement>;
+src/modules/combat/application/combat-session.repository.ts:24:  LootGenerationContext,
+src/modules/combat/application/combat-session.repository.ts:25:  LootSettlementTransaction,
+src/modules/combat/application/combat-session.repository.ts:26:} from "../../items/application/loot.repository.js";
+src/modules/combat/application/combat-session.repository.ts:123:export type CombatSettlementCharacter = {
+src/modules/combat/application/combat-session.repository.ts:131:export type CombatSettlementStatistics = {
+src/modules/combat/application/combat-session.repository.ts:156:export type CombatSettlementMonster = {
+src/modules/combat/application/combat-session.repository.ts:170:  lootLevelBonus: number;
+src/modules/combat/application/combat-session.repository.ts:173:export type CombatSettlementTask = {
+src/modules/combat/application/combat-session.repository.ts:185:export type CombatSettlementDailyBoss = {
+src/modules/combat/application/combat-session.repository.ts:195:export type CombatSettlementFightBuff = {
+src/modules/combat/application/combat-session.repository.ts:202:export type CombatSettlementContext = {
+src/modules/combat/application/combat-session.repository.ts:203:  character: CombatSettlementCharacter;
+src/modules/combat/application/combat-session.repository.ts:206:  statistics: CombatSettlementStatistics;
+src/modules/combat/application/combat-session.repository.ts:211:  monster: CombatSettlementMonster;
+src/modules/combat/application/combat-session.repository.ts:213:  task: CombatSettlementTask | null;
+src/modules/combat/application/combat-session.repository.ts:216:    CombatSettlementDailyBoss | null;
+src/modules/combat/application/combat-session.repository.ts:219:    readonly CombatSettlementFightBuff[];
+src/modules/combat/application/combat-session.repository.ts:225:export type ApplyVictorySettlementInput = {
+src/modules/combat/application/combat-session.repository.ts:226:  context: CombatSettlementContext;
+src/modules/combat/application/combat-session.repository.ts:272:export type ApplyDefeatSettlementInput = {
+src/modules/combat/application/combat-session.repository.ts:273:  context: CombatSettlementContext;
+src/modules/combat/application/combat-session.repository.ts:311:  loadSettlementContext():
+src/modules/combat/application/combat-session.repository.ts:312:    Promise<CombatSettlementContext>;
+src/modules/combat/application/combat-session.repository.ts:314:  withLootSettlement?<TResult>(
+src/modules/combat/application/combat-session.repository.ts:315:    context: LootGenerationContext,
+src/modules/combat/application/combat-session.repository.ts:317:      transaction: LootSettlementTransaction
+src/modules/combat/application/combat-session.repository.ts:321:  applyVictorySettlement(
+src/modules/combat/application/combat-session.repository.ts:322:    input: ApplyVictorySettlementInput
+src/modules/combat/application/combat-session.repository.ts:323:  ): Promise<CombatSettlement>;
+src/modules/combat/application/combat-session.repository.ts:325:  applyDefeatSettlement(
+src/modules/combat/application/combat-session.repository.ts:326:    input: ApplyDefeatSettlementInput
+src/modules/combat/application/combat-session.repository.ts:327:  ): Promise<CombatSettlement>;
 src/modules/combat/application/get-active-combat.service.ts:33:      settlement: null,
+src/modules/combat/application/get-active-combat.service.ts:34:      loot: null,
 src/modules/combat/application/get-combat-session.service.ts:31:      settlement: null,
+src/modules/combat/application/get-combat-session.service.ts:32:      loot: null,
 src/modules/combat/application/resolve-combat-action.service.ts:5:  RandomSource,
 src/modules/combat/application/resolve-combat-action.service.ts:8:  planDefeatSettlement,
 src/modules/combat/application/resolve-combat-action.service.ts:9:} from "../../progression/domain/defeat-settlement.js";
 src/modules/combat/application/resolve-combat-action.service.ts:11:  planVictorySettlement,
 src/modules/combat/application/resolve-combat-action.service.ts:12:} from "../../progression/domain/victory-settlement.js";
-src/modules/combat/application/resolve-combat-action.service.ts:36:    private readonly randomSource:
-src/modules/combat/application/resolve-combat-action.service.ts:37:      RandomSource,
-src/modules/combat/application/resolve-combat-action.service.ts:70:            this.randomSource
-src/modules/combat/application/resolve-combat-action.service.ts:73:        let settlement = null;
-src/modules/combat/application/resolve-combat-action.service.ts:81:              .loadSettlementContext();
-src/modules/combat/application/resolve-combat-action.service.ts:91:            planVictorySettlement(
-src/modules/combat/application/resolve-combat-action.service.ts:97:              this.randomSource
-src/modules/combat/application/resolve-combat-action.service.ts:100:          settlement =
-src/modules/combat/application/resolve-combat-action.service.ts:102:              .applyVictorySettlement({
-src/modules/combat/application/resolve-combat-action.service.ts:183:              .loadSettlementContext();
-src/modules/combat/application/resolve-combat-action.service.ts:193:            planDefeatSettlement(
-src/modules/combat/application/resolve-combat-action.service.ts:201:          settlement =
-src/modules/combat/application/resolve-combat-action.service.ts:203:              .applyDefeatSettlement({
-src/modules/combat/application/resolve-combat-action.service.ts:319:          settlement,
+src/modules/combat/application/resolve-combat-action.service.ts:32:  LootSettlementService,
+src/modules/combat/application/resolve-combat-action.service.ts:33:  type LootSettlementResult,
+src/modules/combat/application/resolve-combat-action.service.ts:34:} from "../../items/application/loot-settlement.service.js";
+src/modules/combat/application/resolve-combat-action.service.ts:36:  LootRepository,
+src/modules/combat/application/resolve-combat-action.service.ts:37:} from "../../items/application/loot.repository.js";
+src/modules/combat/application/resolve-combat-action.service.ts:43:    private readonly randomSource:
+src/modules/combat/application/resolve-combat-action.service.ts:44:      RandomSource,
+src/modules/combat/application/resolve-combat-action.service.ts:77:            this.randomSource
+src/modules/combat/application/resolve-combat-action.service.ts:80:        let settlement = null;
+src/modules/combat/application/resolve-combat-action.service.ts:81:        let loot: LootSettlementResult | null = null;
+src/modules/combat/application/resolve-combat-action.service.ts:89:              .loadSettlementContext();
+src/modules/combat/application/resolve-combat-action.service.ts:99:            planVictorySettlement(
+src/modules/combat/application/resolve-combat-action.service.ts:105:              this.randomSource
+src/modules/combat/application/resolve-combat-action.service.ts:108:          settlement =
+src/modules/combat/application/resolve-combat-action.service.ts:110:              .applyVictorySettlement({
+src/modules/combat/application/resolve-combat-action.service.ts:177:          if (transaction.withLootSettlement === undefined) {
+src/modules/combat/application/resolve-combat-action.service.ts:179:              "Combat transaction does not support Loot settlement."
+src/modules/combat/application/resolve-combat-action.service.ts:183:          const lootRepository: LootRepository = {
+src/modules/combat/application/resolve-combat-action.service.ts:184:            withSettlementTransaction: async (
+src/modules/combat/application/resolve-combat-action.service.ts:187:            ) => transaction.withLootSettlement!(
+src/modules/combat/application/resolve-combat-action.service.ts:192:          const lootService = new LootSettlementService(
+src/modules/combat/application/resolve-combat-action.service.ts:193:            lootRepository,
+src/modules/combat/application/resolve-combat-action.service.ts:194:            this.randomSource
+src/modules/combat/application/resolve-combat-action.service.ts:196:          loot = await lootService.settle({
+src/modules/combat/application/resolve-combat-action.service.ts:201:            bossBonusLootLevel: Number(
+src/modules/combat/application/resolve-combat-action.service.ts:202:              victoryContext.monster.lootLevelBonus ?? 0
+src/modules/combat/application/resolve-combat-action.service.ts:221:              .loadSettlementContext();
+src/modules/combat/application/resolve-combat-action.service.ts:231:            planDefeatSettlement(
+src/modules/combat/application/resolve-combat-action.service.ts:239:          settlement =
+src/modules/combat/application/resolve-combat-action.service.ts:241:              .applyDefeatSettlement({
+src/modules/combat/application/resolve-combat-action.service.ts:357:          settlement,
+src/modules/combat/application/resolve-combat-action.service.ts:358:          loot,
 src/modules/combat/application/start-combat.service.ts:133:          settlement: null,
+src/modules/combat/application/start-combat.service.ts:134:          loot: null,
 src/modules/combat/domain/combat-attack.ts:1:import type { RandomSource } from "../ports/random-source.js";
 src/modules/combat/domain/combat-attack.ts:45:  randomSource: RandomSource
 src/modules/combat/domain/combat-attack.ts:53:  const hitRoll = randomSource.nextFloat();
@@ -30178,130 +32430,488 @@ src/modules/combat/infrastructure/postgres-combat-session.repository.ts:44:  typ
 src/modules/combat/infrastructure/postgres-combat-session.repository.ts:51:  ApplyDefeatSettlementInput,
 src/modules/combat/infrastructure/postgres-combat-session.repository.ts:52:  ApplyVictorySettlementInput,
 src/modules/combat/infrastructure/postgres-combat-session.repository.ts:56:  CombatSettlementContext,
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:108:type SettlementCharacterRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:122:type SettlementUnlockRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:126:type SettlementBlessingRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:130:type SettlementStatisticsRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:155:type SettlementMonsterRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:165:type SettlementTaskDefinitionRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:172:type SettlementTaskProgressRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:177:type SettlementDailyDefinitionRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:183:type SettlementDailyProgressRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:190:type SettlementFightBuffRow = {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:974:export type CombatSettlementFailurePoint =
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:996:export type CombatSettlementFailureInjector = (
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:997:  point: CombatSettlementFailurePoint
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1001:  settlementFailureInjector?:
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1002:    CombatSettlementFailureInjector;
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1012:    private readonly settlementFailureInjector?:
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1013:      CombatSettlementFailureInjector
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1016:  private async injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1017:    point: CombatSettlementFailurePoint
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1019:    await this.settlementFailureInjector?.(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1024:  public async loadSettlementContext():
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1025:  Promise<CombatSettlementContext> {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1028:        SettlementCharacterRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1063:        SettlementUnlockRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1084:        SettlementBlessingRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1097:        SettlementStatisticsRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1152:        SettlementMonsterRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1180:        "Settlement monster was not found."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1186:        SettlementTaskDefinitionRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1214:        "Settlement monster matched multiple Task definitions."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1222:      SettlementTaskProgressRow | null =
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1228:          SettlementTaskProgressRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1252:        SettlementDailyDefinitionRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1291:      SettlementDailyProgressRow | null =
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1297:          SettlementDailyProgressRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1326:        SettlementFightBuffRow
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1402:                "Settlement boss type is invalid."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1412:          "settlement.character.level",
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1418:            "settlement.character.experience"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1423:            "settlement.character.gold"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1428:            "settlement.character.current_health"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1432:            "settlement.character.max_health",
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1437:            "settlement.character.current_mana"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1441:            "settlement.character.max_mana"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1445:            "settlement.character.current_energy"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1449:            "settlement.character.max_energy",
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1455:              "settlement.character.resources_updated_at"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1469:            "settlement.statistics.total_gold_earned"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1474:            "settlement.statistics.highest_gold_owned"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1479:            "settlement.statistics.total_monsters_killed"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1484:            "settlement.statistics.total_bosses_killed"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1489:            "settlement.statistics.total_daily_bosses_killed"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1494:            "settlement.statistics.total_deaths"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1499:            "settlement.statistics.total_damage_dealt"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1504:            "settlement.statistics.total_damage_taken"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1509:            "settlement.statistics.highest_physical_hit"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1524:                "settlement.statistics.strongest_monster_power_score"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1539:                "settlement.statistics.strongest_boss_power_score"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1545:            "settlement.statistics.current_no_death_streak"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1550:            "settlement.statistics.longest_no_death_streak"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1573:            "settlement.monster.power_score"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1578:            "settlement.monster.cooldown_seconds"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1588:                "settlement.monster.additional_cooldown_seconds"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1609:                  "settlement.task.required_kills"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1617:                      "settlement.task.current_progress"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1637:                "settlement.daily_boss.tier",
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1646:                      "settlement.daily_boss.attempts_used_in_rotation"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1654:                      "settlement.daily_boss.total_attempts"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1662:                      "settlement.daily_boss.total_victories"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1678:              "settlement.fight_buff.value"
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1683:                "settlement.fight_buff.duration_remaining",
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1697:    input: ApplyVictorySettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1751:        "Victory character state changed after settlement loading."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1757:    input: ApplyVictorySettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1853:        "Victory statistics changed after settlement loading."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1859:    input: ApplyVictorySettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1875:        "Victory settlement character does not match the locked session."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1884:        "Victory settlement monster does not match the locked session."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1944:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2011:        "Victory settlement could not update character statistics."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2015:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2021:    input: ApplyVictorySettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2129:        "Victory settlement could not update Bestiary statistics."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2133:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2237:      await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2291:      await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2399:        await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2434:        await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2498:  public async applyVictorySettlement(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2499:    input: ApplyVictorySettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2500:  ): Promise<CombatSettlement> {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2506:        "Victory settlement requires a player Victory state."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2514:        "Victory settlement cannot contain a defeat reason."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2525:        "Victory settlement time is invalid."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2535:        "Victory settlement cannot predate combat start."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2543:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2552:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2718:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2741:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2781:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2863:    input: ApplyDefeatSettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2887:        "Defeat settlement character does not match the locked session."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2896:        "Defeat settlement monster does not match the locked session."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2905:        "Defeat Blessing result does not match the locked settlement context."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2965:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3012:        "Defeat settlement could not update character statistics."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3016:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3041:      await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3075:        await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3111:  public async applyDefeatSettlement(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3112:    input: ApplyDefeatSettlementInput
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3113:  ): Promise<CombatSettlement> {
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3119:        "Defeat settlement requires a player Defeat state."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3127:        "Defeat settlement requires a defeat reason."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3138:        "Defeat settlement time is invalid."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3148:        "Defeat settlement cannot predate combat start."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3163:        "Defeat settlement could not map the terminal state."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3171:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3339:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3362:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3403:    await this.injectSettlementFailure(
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3631:        "Terminal combat must use settlement persistence."
-src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3788:              .settlementFailureInjector
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:79:  LootGenerationContext,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:80:  LootSettlementTransaction,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:81:} from "../../items/application/loot.repository.js";
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:83:  createPostgresLootSettlementTransaction,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:84:} from "../../items/infrastructure/postgres-loot-transaction.js";
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:115:type SettlementCharacterRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:129:type SettlementUnlockRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:133:type SettlementBlessingRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:137:type SettlementStatisticsRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:162:type SettlementMonsterRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:172:  loot_level_bonus: number | null;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:175:type SettlementTaskDefinitionRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:182:type SettlementTaskProgressRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:187:type SettlementDailyDefinitionRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:193:type SettlementDailyProgressRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:200:type SettlementFightBuffRow = {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:984:export type CombatSettlementFailurePoint =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1007:export type CombatSettlementFailureInjector = (
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1008:  point: CombatSettlementFailurePoint
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1012:  settlementFailureInjector?:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1013:    CombatSettlementFailureInjector;
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1023:    private readonly settlementFailureInjector?:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1024:      CombatSettlementFailureInjector
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1027:  private async injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1028:    point: CombatSettlementFailurePoint
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1030:    await this.settlementFailureInjector?.(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1035:  public async withLootSettlement<TResult>(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1036:    context: LootGenerationContext,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1038:      transaction: LootSettlementTransaction
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1046:        "Loot settlement context does not match the locked Combat session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1050:    const transaction = await createPostgresLootSettlementTransaction(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1057:  public async loadSettlementContext():
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1058:  Promise<CombatSettlementContext> {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1061:        SettlementCharacterRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1096:        SettlementUnlockRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1117:        SettlementBlessingRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1130:        SettlementStatisticsRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1185:        SettlementMonsterRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1198:            b.loot_level_bonus
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1216:        "Settlement monster was not found."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1222:        SettlementTaskDefinitionRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1250:        "Settlement monster matched multiple Task definitions."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1258:      SettlementTaskProgressRow | null =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1264:          SettlementTaskProgressRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1288:        SettlementDailyDefinitionRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1327:      SettlementDailyProgressRow | null =
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1333:          SettlementDailyProgressRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1362:        SettlementFightBuffRow
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1438:                "Settlement boss type is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1448:          "settlement.character.level",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1454:            "settlement.character.experience"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1459:            "settlement.character.gold"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1464:            "settlement.character.current_health"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1468:            "settlement.character.max_health",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1473:            "settlement.character.current_mana"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1477:            "settlement.character.max_mana"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1481:            "settlement.character.current_energy"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1485:            "settlement.character.max_energy",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1491:              "settlement.character.resources_updated_at"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1505:            "settlement.statistics.total_gold_earned"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1510:            "settlement.statistics.highest_gold_owned"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1515:            "settlement.statistics.total_monsters_killed"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1520:            "settlement.statistics.total_bosses_killed"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1525:            "settlement.statistics.total_daily_bosses_killed"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1530:            "settlement.statistics.total_deaths"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1535:            "settlement.statistics.total_damage_dealt"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1540:            "settlement.statistics.total_damage_taken"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1545:            "settlement.statistics.highest_physical_hit"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1560:                "settlement.statistics.strongest_monster_power_score"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1575:                "settlement.statistics.strongest_boss_power_score"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1581:            "settlement.statistics.current_no_death_streak"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1586:            "settlement.statistics.longest_no_death_streak"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1610:          "settlement.monster.level",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1616:            "settlement.monster.power_score"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1621:            "settlement.monster.cooldown_seconds"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1631:                "settlement.monster.additional_cooldown_seconds"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1633:        lootLevelBonus:
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1634:          monster.loot_level_bonus === null
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1637:                monster.loot_level_bonus,
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1638:                "settlement.monster.loot_level_bonus"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1659:                  "settlement.task.required_kills"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1667:                      "settlement.task.current_progress"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1687:                "settlement.daily_boss.tier",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1696:                      "settlement.daily_boss.attempts_used_in_rotation"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1704:                      "settlement.daily_boss.total_attempts"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1712:                      "settlement.daily_boss.total_victories"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1728:              "settlement.fight_buff.value"
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1733:                "settlement.fight_buff.duration_remaining",
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1862:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1916:        "Victory character state changed after settlement loading."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:1922:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2018:        "Victory statistics changed after settlement loading."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2024:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2040:        "Victory settlement character does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2049:        "Victory settlement monster does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2109:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2176:        "Victory settlement could not update character statistics."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2180:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2186:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2294:        "Victory settlement could not update Bestiary statistics."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2298:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2402:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2456:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2476:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2510:        await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2574:  public async applyVictorySettlement(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2575:    input: ApplyVictorySettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2576:  ): Promise<CombatSettlement> {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2582:        "Victory settlement requires a player Victory state."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2590:        "Victory settlement cannot contain a defeat reason."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2601:        "Victory settlement time is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2611:        "Victory settlement cannot predate combat start."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2619:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2628:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2794:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2817:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2857:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2939:    input: ApplyDefeatSettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2968:        "Defeat settlement character does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2977:        "Defeat settlement monster does not match the locked session."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:2986:        "Defeat Blessing result does not match the locked settlement context."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3046:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3093:        "Defeat settlement could not update character statistics."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3097:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3122:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3156:        await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3206:      await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3214:  public async applyDefeatSettlement(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3215:    input: ApplyDefeatSettlementInput
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3216:  ): Promise<CombatSettlement> {
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3222:        "Defeat settlement requires a player Defeat state."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3230:        "Defeat settlement requires a defeat reason."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3241:        "Defeat settlement time is invalid."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3251:        "Defeat settlement cannot predate combat start."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3266:        "Defeat settlement could not map the terminal state."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3275:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3449:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3472:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3513:    await this.injectSettlementFailure(
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3739:        "Terminal combat must use settlement persistence."
+src/modules/combat/infrastructure/postgres-combat-session.repository.ts:3896:              .settlementFailureInjector
 src/modules/combat/ports/random-source.ts:1:export interface RandomSource {
+src/modules/items/application/loot-settlement.service.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/application/loot-settlement.service.ts:3:  LootGenerationContext,
+src/modules/items/application/loot-settlement.service.ts:4:  LootRepository,
+src/modules/items/application/loot-settlement.service.ts:5:  LootSettlementTransaction,
+src/modules/items/application/loot-settlement.service.ts:7:} from "./loot.repository.js";
+src/modules/items/application/loot-settlement.service.ts:9:import { rollItemLevel } from "../domain/item-loot-level.js";
+src/modules/items/application/loot-settlement.service.ts:10:import { generateOtherLoot } from "../domain/other-loot-generator.js";
+src/modules/items/application/loot-settlement.service.ts:13:  GeneratedOtherLoot,
+src/modules/items/application/loot-settlement.service.ts:16:  ItemLootContext,
+src/modules/items/application/loot-settlement.service.ts:21:export type LootLossReason = "InventoryFull";
+src/modules/items/application/loot-settlement.service.ts:23:export type EquipmentSettlementResult<TItem> =
+src/modules/items/application/loot-settlement.service.ts:26:  | { generated: TItem; persisted: null; lossReason: LootLossReason };
+src/modules/items/application/loot-settlement.service.ts:28:export type SettleLootInput = LootGenerationContext & {
+src/modules/items/application/loot-settlement.service.ts:30:  bossBonusLootLevel: number;
+src/modules/items/application/loot-settlement.service.ts:34:export type LootSettlementResult = {
+src/modules/items/application/loot-settlement.service.ts:35:  regularEquipment: EquipmentSettlementResult<GeneratedRegularItem>;
+src/modules/items/application/loot-settlement.service.ts:36:  specialEquipment: EquipmentSettlementResult<GeneratedSpecialItem>;
+src/modules/items/application/loot-settlement.service.ts:38:  otherLoot: GeneratedOtherLoot | null;
+src/modules/items/application/loot-settlement.service.ts:42:type GeneratedSettlement = {
+src/modules/items/application/loot-settlement.service.ts:44:  other: GeneratedOtherLoot | null;
+src/modules/items/application/loot-settlement.service.ts:48:export type LootSettlementDependencies = {
+src/modules/items/application/loot-settlement.service.ts:50:  generateOther: typeof generateOtherLoot;
+src/modules/items/application/loot-settlement.service.ts:55:const defaultDependencies: LootSettlementDependencies = {
+src/modules/items/application/loot-settlement.service.ts:57:  generateOther: generateOtherLoot,
+src/modules/items/application/loot-settlement.service.ts:74:function emptyEquipmentResult<TItem>(): EquipmentSettlementResult<TItem> {
+src/modules/items/application/loot-settlement.service.ts:78:async function persistGeneratedLoot(
+src/modules/items/application/loot-settlement.service.ts:79:  transaction: LootSettlementTransaction,
+src/modules/items/application/loot-settlement.service.ts:80:  generated: GeneratedSettlement
+src/modules/items/application/loot-settlement.service.ts:81:): Promise<LootSettlementResult> {
+src/modules/items/application/loot-settlement.service.ts:97:        lossReason: "InventoryFull",
+src/modules/items/application/loot-settlement.service.ts:121:        lossReason: "InventoryFull",
+src/modules/items/application/loot-settlement.service.ts:138:    await transaction.applyOtherLoot({
+src/modules/items/application/loot-settlement.service.ts:158:    otherLoot: generated.other,
+src/modules/items/application/loot-settlement.service.ts:163:export class LootSettlementService {
+src/modules/items/application/loot-settlement.service.ts:165:    private readonly repository: LootRepository,
+src/modules/items/application/loot-settlement.service.ts:166:    private readonly randomSource: RandomSource,
+src/modules/items/application/loot-settlement.service.ts:167:    private readonly dependencies: LootSettlementDependencies = defaultDependencies
+src/modules/items/application/loot-settlement.service.ts:170:  public async settle(input: SettleLootInput): Promise<LootSettlementResult> {
+src/modules/items/application/loot-settlement.service.ts:171:    const lootContext: ItemLootContext = {
+src/modules/items/application/loot-settlement.service.ts:173:      bossBonusLootLevel: input.bossBonusLootLevel,
+src/modules/items/application/loot-settlement.service.ts:176:    const repositoryContext: LootGenerationContext = {
+src/modules/items/application/loot-settlement.service.ts:182:    return this.repository.withSettlementTransaction(
+src/modules/items/application/loot-settlement.service.ts:188:          context: lootContext,
+src/modules/items/application/loot-settlement.service.ts:191:        }, this.randomSource);
+src/modules/items/application/loot-settlement.service.ts:195:          candidates: catalog.otherLootCandidates,
+src/modules/items/application/loot-settlement.service.ts:196:        }, this.randomSource);
+src/modules/items/application/loot-settlement.service.ts:199:          lootContext,
+src/modules/items/application/loot-settlement.service.ts:200:          this.randomSource
+src/modules/items/application/loot-settlement.service.ts:210:        }, this.randomSource);
+src/modules/items/application/loot-settlement.service.ts:212:        return persistGeneratedLoot(transaction, { regular, other, special });
+src/modules/items/application/loot.repository.ts:3:  GeneratedOtherLoot,
+src/modules/items/application/loot.repository.ts:7:  OtherLootCandidate,
+src/modules/items/application/loot.repository.ts:12:export type LootGenerationContext = {
+src/modules/items/application/loot.repository.ts:18:export type LootCatalogSnapshot = {
+src/modules/items/application/loot.repository.ts:20:  otherLootCandidates: readonly OtherLootCandidate[];
+src/modules/items/application/loot.repository.ts:25:export type LockedLootCharacter = {
+src/modules/items/application/loot.repository.ts:49:export type ApplyOtherLootInput = {
+src/modules/items/application/loot.repository.ts:51:  reward: GeneratedOtherLoot;
+src/modules/items/application/loot.repository.ts:59:export interface LootSettlementTransaction {
+src/modules/items/application/loot.repository.ts:60:  readonly character: LockedLootCharacter;
+src/modules/items/application/loot.repository.ts:63:    context: LootGenerationContext
+src/modules/items/application/loot.repository.ts:64:  ): Promise<LootCatalogSnapshot>;
+src/modules/items/application/loot.repository.ts:74:  applyOtherLoot(
+src/modules/items/application/loot.repository.ts:75:    input: ApplyOtherLootInput
+src/modules/items/application/loot.repository.ts:83:export interface LootRepository {
+src/modules/items/application/loot.repository.ts:84:  withSettlementTransaction<TResult>(
+src/modules/items/application/loot.repository.ts:85:    context: LootGenerationContext,
+src/modules/items/application/loot.repository.ts:87:      transaction: LootSettlementTransaction
+src/modules/items/domain/complete-regular-item-generator.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/complete-regular-item-generator.ts:7:} from "./item-loot-level.js";
+src/modules/items/domain/complete-regular-item-generator.ts:9:  BOSS_RARITY_PROFILE,
+src/modules/items/domain/complete-regular-item-generator.ts:10:  REGULAR_MONSTER_RARITY_PROFILE,
+src/modules/items/domain/complete-regular-item-generator.ts:11:} from "./item-rarity-affix.js";
+src/modules/items/domain/complete-regular-item-generator.ts:19:  randomSource: RandomSource
+src/modules/items/domain/complete-regular-item-generator.ts:21:  if (!rollRegularEquipmentSuccess(input.context.isBoss, randomSource)) {
+src/modules/items/domain/complete-regular-item-generator.ts:25:  const rolledItemLevel = rollItemLevel(input.context, randomSource);
+src/modules/items/domain/complete-regular-item-generator.ts:29:    randomSource
+src/modules/items/domain/complete-regular-item-generator.ts:47:      rarityProfile: input.context.isBoss
+src/modules/items/domain/complete-regular-item-generator.ts:48:        ? BOSS_RARITY_PROFILE
+src/modules/items/domain/complete-regular-item-generator.ts:49:        : REGULAR_MONSTER_RARITY_PROFILE,
+src/modules/items/domain/complete-regular-item-generator.ts:53:    randomSource
+src/modules/items/domain/item-base-selection.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/item-base-selection.ts:63:  randomSource: RandomSource
+src/modules/items/domain/item-base-selection.ts:72:  let selectedSlot = selectWeighted(canonicalSlotPool(), randomSource);
+src/modules/items/domain/item-base-selection.ts:74:    selectedSlot = selectWeighted(fallbackSlotPool(eligible), randomSource);
+src/modules/items/domain/item-base-selection.ts:86:    itemBase: selectWeighted(slotCandidates, randomSource),
+src/modules/items/domain/item-generation.constants.ts:1:export const ITEM_RARITY = {
+src/modules/items/domain/item-generation.constants.ts:20:export const ITEM_SCORE_COMPONENT = {
+src/modules/items/domain/item-generation.constants.ts:36:export const AFFIX_COUNT_BY_RARITY = {
+src/modules/items/domain/item-generation.errors.ts:3:  invalidRandomSource: "ITEM_GENERATION_INVALID_RANDOM_SOURCE",
+src/modules/items/domain/item-generation.errors.ts:4:  itemScoreOverflow: "ITEM_SCORE_OVERFLOW",
+src/modules/items/domain/item-generation.errors.ts:17:export class ItemGenerationRandomSourceError extends Error {
+src/modules/items/domain/item-generation.errors.ts:19:    ITEM_GENERATION_ERROR_CODE.invalidRandomSource;
+src/modules/items/domain/item-generation.errors.ts:23:    this.name = "ItemGenerationRandomSourceError";
+src/modules/items/domain/item-generation.types.ts:3:  ITEM_RARITY,
+src/modules/items/domain/item-generation.types.ts:4:  ITEM_SCORE_COMPONENT,
+src/modules/items/domain/item-generation.types.ts:8:export type ItemRarity =
+src/modules/items/domain/item-generation.types.ts:9:  (typeof ITEM_RARITY)[keyof typeof ITEM_RARITY];
+src/modules/items/domain/item-generation.types.ts:15:  (typeof ITEM_SCORE_COMPONENT)[keyof typeof ITEM_SCORE_COMPONENT];
+src/modules/items/domain/item-generation.types.ts:27:export type ItemLootContext = {
+src/modules/items/domain/item-generation.types.ts:29:  bossBonusLootLevel: number;
+src/modules/items/domain/item-generation.types.ts:34:  effectiveLootLevel: number;
+src/modules/items/domain/item-generation.types.ts:63:  context: ItemLootContext;
+src/modules/items/domain/item-generation.types.ts:68:export type OtherLootCandidate = {
+src/modules/items/domain/item-generation.types.ts:69:  otherLootTableId: string;
+src/modules/items/domain/item-generation.types.ts:78:export type GeneratedOtherLoot =
+src/modules/items/domain/item-generation.types.ts:81:      otherLootTableId: string;
+src/modules/items/domain/item-generation.types.ts:87:      otherLootTableId: string;
+src/modules/items/domain/item-generation.types.ts:92:export type GenerateOtherLootInput = {
+src/modules/items/domain/item-generation.types.ts:94:  candidates: readonly OtherLootCandidate[];
+src/modules/items/domain/item-generation.types.ts:197:  rarityProfile: readonly WeightedEntry<ItemRarity>[];
+src/modules/items/domain/item-generation.types.ts:213:  rarity: ItemRarity;
+src/modules/items/domain/item-generation.types.ts:224:  rarity: null;
+src/modules/items/domain/item-generator.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/item-generator.ts:2:import { AFFIX_COUNT_BY_RARITY } from "./item-generation.constants.js";
+src/modules/items/domain/item-generator.ts:5:import { filterEligibleAffixes } from "./item-rarity-affix.js";
+src/modules/items/domain/item-generator.ts:52:  randomSource: RandomSource
+src/modules/items/domain/item-generator.ts:71:      randomSource
+src/modules/items/domain/item-generator.ts:78:  randomSource: RandomSource
+src/modules/items/domain/item-generator.ts:116:        randomSource
+src/modules/items/domain/item-generator.ts:124:  randomSource: RandomSource
+src/modules/items/domain/item-generator.ts:127:  const rarity = selectWeighted(
+src/modules/items/domain/item-generator.ts:128:    input.rarityProfile,
+src/modules/items/domain/item-generator.ts:129:    randomSource
+src/modules/items/domain/item-generator.ts:131:  const affixCount = AFFIX_COUNT_BY_RARITY[rarity];
+src/modules/items/domain/item-generator.ts:138:      "Regular Item rarity requires a non-empty eligible affix pool."
+src/modules/items/domain/item-generator.ts:144:      randomSource
+src/modules/items/domain/item-generator.ts:147:      rollAffix(template, index + 1, randomSource)
+src/modules/items/domain/item-generator.ts:155:    rarity,
+src/modules/items/domain/item-generator.ts:171:  randomSource: RandomSource
+src/modules/items/domain/item-generator.ts:176:    randomSource
+src/modules/items/domain/item-generator.ts:183:    rarity: null,
+src/modules/items/domain/item-loot-level.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/item-loot-level.ts:9:  ItemGenerationRandomSourceError,
+src/modules/items/domain/item-loot-level.ts:13:  ItemLootContext,
+src/modules/items/domain/item-loot-level.ts:25:  context: ItemLootContext
+src/modules/items/domain/item-loot-level.ts:29:    !Number.isSafeInteger(context.bossBonusLootLevel) ||
+src/modules/items/domain/item-loot-level.ts:30:    context.bossBonusLootLevel < 0
+src/modules/items/domain/item-loot-level.ts:33:      "Boss bonus loot level must be a non-negative safe integer."
+src/modules/items/domain/item-loot-level.ts:36:  if (!context.isBoss && context.bossBonusLootLevel !== 0) {
+src/modules/items/domain/item-loot-level.ts:38:      "Regular Monsters must use boss bonus loot level 0."
+src/modules/items/domain/item-loot-level.ts:41:  const effectiveLootLevel =
+src/modules/items/domain/item-loot-level.ts:42:    context.monsterLevel + context.bossBonusLootLevel;
+src/modules/items/domain/item-loot-level.ts:43:  requirePositiveSafeInteger(effectiveLootLevel, "Effective Loot Level");
+src/modules/items/domain/item-loot-level.ts:44:  const maximumItemLevel = effectiveLootLevel + 5;
+src/modules/items/domain/item-loot-level.ts:51:    effectiveLootLevel,
+src/modules/items/domain/item-loot-level.ts:52:    minimumItemLevel: Math.max(1, effectiveLootLevel - 10),
+src/modules/items/domain/item-loot-level.ts:58:  context: ItemLootContext,
+src/modules/items/domain/item-loot-level.ts:59:  randomSource: RandomSource
+src/modules/items/domain/item-loot-level.ts:62:  const result = randomSource.nextInt(
+src/modules/items/domain/item-loot-level.ts:71:    throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/item-loot-level.ts:80:  randomSource: RandomSource
+src/modules/items/domain/item-loot-level.ts:82:  const roll = randomSource.nextInt(1, PROBABILITY_SCALE);
+src/modules/items/domain/item-loot-level.ts:84:    throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/item-random.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/item-random.ts:4:  ItemGenerationRandomSourceError,
+src/modules/items/domain/item-random.ts:19:  randomSource: RandomSource
+src/modules/items/domain/item-random.ts:25:  if (randomSource.nextBigInt) {
+src/modules/items/domain/item-random.ts:26:    const value = randomSource.nextBigInt(minimum, maximum);
+src/modules/items/domain/item-random.ts:28:      throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/item-random.ts:41:    throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/item-random.ts:42:      "RandomSource without nextBigInt cannot roll this bigint range."
+src/modules/items/domain/item-random.ts:46:  const value = randomSource.nextInt(minimumNumber, maximumNumber);
+src/modules/items/domain/item-random.ts:48:    throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/item-random.ts:57:  randomSource: RandomSource
+src/modules/items/domain/item-random.ts:75:  const roll = rollInclusiveBigInt(1n, totalWeight, randomSource);
+src/modules/items/domain/item-random.ts:82:  throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/item-rarity-affix.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/item-rarity-affix.ts:6:  ItemRarity,
+src/modules/items/domain/item-rarity-affix.ts:10:export const REGULAR_MONSTER_RARITY_PROFILE: readonly WeightedEntry<ItemRarity>[] = [
+src/modules/items/domain/item-rarity-affix.ts:18:export const BOSS_RARITY_PROFILE: readonly WeightedEntry<ItemRarity>[] = [
+src/modules/items/domain/item-rarity-affix.ts:25:export function rollCanonicalRarity(
+src/modules/items/domain/item-rarity-affix.ts:27:  randomSource: RandomSource
+src/modules/items/domain/item-rarity-affix.ts:28:): ItemRarity {
+src/modules/items/domain/item-rarity-affix.ts:30:    isBoss ? BOSS_RARITY_PROFILE : REGULAR_MONSTER_RARITY_PROFILE,
+src/modules/items/domain/item-rarity-affix.ts:31:    randomSource
+src/modules/items/domain/other-loot-generator.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/other-loot-generator.ts:5:  ItemGenerationRandomSourceError,
+src/modules/items/domain/other-loot-generator.ts:9:  GenerateOtherLootInput,
+src/modules/items/domain/other-loot-generator.ts:10:  GeneratedOtherLoot,
+src/modules/items/domain/other-loot-generator.ts:11:  OtherLootCandidate,
+src/modules/items/domain/other-loot-generator.ts:14:const REGULAR_MONSTER_OTHER_LOOT_THRESHOLD = 700;
+src/modules/items/domain/other-loot-generator.ts:15:const BOSS_OTHER_LOOT_THRESHOLD = 900;
+src/modules/items/domain/other-loot-generator.ts:17:function rollOtherLootSuccess(
+src/modules/items/domain/other-loot-generator.ts:19:  randomSource: RandomSource
+src/modules/items/domain/other-loot-generator.ts:21:  const roll = randomSource.nextInt(1, PROBABILITY_SCALE);
+src/modules/items/domain/other-loot-generator.ts:23:    throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/other-loot-generator.ts:24:      "Other Loot probability roll is outside the configured scale."
+src/modules/items/domain/other-loot-generator.ts:28:    ? BOSS_OTHER_LOOT_THRESHOLD
+src/modules/items/domain/other-loot-generator.ts:29:    : REGULAR_MONSTER_OTHER_LOOT_THRESHOLD);
+src/modules/items/domain/other-loot-generator.ts:32:function validateCandidate(candidate: OtherLootCandidate): void {
+src/modules/items/domain/other-loot-generator.ts:33:  if (candidate.otherLootTableId.length === 0) {
+src/modules/items/domain/other-loot-generator.ts:35:      "Other Loot Table ID cannot be empty."
+src/modules/items/domain/other-loot-generator.ts:43:      "Other Loot candidate must target exactly one Material or Consumable."
+src/modules/items/domain/other-loot-generator.ts:48:      "Other Loot selection weight must be positive."
+src/modules/items/domain/other-loot-generator.ts:56:      "Other Loot requires a positive inclusive quantity range."
+src/modules/items/domain/other-loot-generator.ts:61:export function generateOtherLoot(
+src/modules/items/domain/other-loot-generator.ts:62:  input: GenerateOtherLootInput,
+src/modules/items/domain/other-loot-generator.ts:63:  randomSource: RandomSource
+src/modules/items/domain/other-loot-generator.ts:64:): GeneratedOtherLoot | null {
+src/modules/items/domain/other-loot-generator.ts:65:  if (!rollOtherLootSuccess(input.isBoss, randomSource)) {
+src/modules/items/domain/other-loot-generator.ts:72:      "Other Loot roll succeeded but no eligible entry exists."
+src/modules/items/domain/other-loot-generator.ts:82:    randomSource
+src/modules/items/domain/other-loot-generator.ts:87:    randomSource
+src/modules/items/domain/other-loot-generator.ts:93:      otherLootTableId: selected.otherLootTableId,
+src/modules/items/domain/other-loot-generator.ts:100:      "Other Loot candidate has no valid target."
+src/modules/items/domain/other-loot-generator.ts:105:    otherLootTableId: selected.otherLootTableId,
+src/modules/items/domain/special-item-generator.ts:1:import type { RandomSource } from "../../combat/ports/random-source.js";
+src/modules/items/domain/special-item-generator.ts:5:  ItemGenerationRandomSourceError,
+src/modules/items/domain/special-item-generator.ts:100:function rollSuccess(chancePerMille: number, randomSource: RandomSource): boolean {
+src/modules/items/domain/special-item-generator.ts:101:  const roll = randomSource.nextInt(1, PITY_SCALE);
+src/modules/items/domain/special-item-generator.ts:103:    throw new ItemGenerationRandomSourceError(
+src/modules/items/domain/special-item-generator.ts:112:  randomSource: RandomSource
+src/modules/items/domain/special-item-generator.ts:126:  if (!rollSuccess(currentPity.chancePerMille, randomSource)) {
+src/modules/items/domain/special-item-generator.ts:140:    randomSource
+src/modules/items/domain/special-item-generator.ts:151:    randomSource
+src/modules/items/infrastructure/postgres-loot-catalog.ts:3:  LootCatalogSnapshot,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:4:  LootGenerationContext,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:5:} from "../application/loot.repository.js";
+src/modules/items/infrastructure/postgres-loot-catalog.ts:8:  ITEM_SCORE_COMPONENT,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:20:  OtherLootCandidate,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:24:export type LootCatalogQueryable = Pick<PoolClient, "query">;
+src/modules/items/infrastructure/postgres-loot-catalog.ts:27:  item_base_id: string;
+src/modules/items/infrastructure/postgres-loot-catalog.ts:31:  base_item_score: string;
+src/modules/items/infrastructure/postgres-loot-catalog.ts:43:  item_base_id: string;
+src/modules/items/infrastructure/postgres-loot-catalog.ts:52:type OtherLootRow = {
+src/modules/items/infrastructure/postgres-loot-catalog.ts:53:  other_loot_table_id: string;
+src/modules/items/infrastructure/postgres-loot-catalog.ts:73:  item_base_id: string;
+src/modules/items/infrastructure/postgres-loot-catalog.ts:87:const scoreComponents = new Set<string>(Object.values(ITEM_SCORE_COMPONENT));
+src/modules/items/infrastructure/postgres-loot-catalog.ts:137:export async function loadLootCatalog(
+src/modules/items/infrastructure/postgres-loot-catalog.ts:138:  client: LootCatalogQueryable,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:139:  context: LootGenerationContext
+src/modules/items/infrastructure/postgres-loot-catalog.ts:140:): Promise<LootCatalogSnapshot> {
+src/modules/items/infrastructure/postgres-loot-catalog.ts:145:    SELECT ib.item_base_id, ib.item_level, ib.slot,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:146:      lt.selection_weight, ib.base_item_score,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:149:    FROM loot_tables AS lt
+src/modules/items/infrastructure/postgres-loot-catalog.ts:150:    INNER JOIN item_bases AS ib ON ib.item_base_id = lt.item_base_id
+src/modules/items/infrastructure/postgres-loot-catalog.ts:153:    ORDER BY ib.item_base_id
+src/modules/items/infrastructure/postgres-loot-catalog.ts:156:  const regularIds = regularResult.rows.map((row) => row.item_base_id);
+src/modules/items/infrastructure/postgres-loot-catalog.ts:160:        SELECT ibaw.item_base_id, at.affix_template_id, at.affix_type,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:163:        FROM item_base_affix_weights AS ibaw
+src/modules/items/infrastructure/postgres-loot-catalog.ts:166:        WHERE ibaw.item_base_id = ANY($1::uuid[])
+src/modules/items/infrastructure/postgres-loot-catalog.ts:167:        ORDER BY ibaw.item_base_id, at.affix_template_id
+src/modules/items/infrastructure/postgres-loot-catalog.ts:172:    const entries = affixesByBase.get(row.item_base_id) ?? [];
+src/modules/items/infrastructure/postgres-loot-catalog.ts:184:    affixesByBase.set(row.item_base_id, entries);
+src/modules/items/infrastructure/postgres-loot-catalog.ts:188:    itemBaseId: requiredId(row.item_base_id, "Item Base ID"),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:195:    baseItemScore: bigint(row.base_item_score, 0n, "Base Item Score"),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:197:    affixPool: affixesByBase.get(row.item_base_id) ?? [],
+src/modules/items/infrastructure/postgres-loot-catalog.ts:200:  const otherResult = await client.query<OtherLootRow>(`
+src/modules/items/infrastructure/postgres-loot-catalog.ts:201:    SELECT other_loot_table_id, material_id, consumable_definition_id,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:203:    FROM other_loot_tables
+src/modules/items/infrastructure/postgres-loot-catalog.ts:205:    ORDER BY other_loot_table_id
+src/modules/items/infrastructure/postgres-loot-catalog.ts:207:  const otherLootCandidates: OtherLootCandidate[] = otherResult.rows.map((row) => ({
+src/modules/items/infrastructure/postgres-loot-catalog.ts:208:    otherLootTableId: requiredId(row.other_loot_table_id, "Other Loot Table ID"),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:211:    minimumQuantity: BigInt(integer(row.min_quantity, 1, "Other Loot minimum quantity")),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:212:    maximumQuantity: BigInt(integer(row.max_quantity, 1, "Other Loot maximum quantity")),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:213:    selectionWeight: bigint(row.selection_weight, 1n, "Other Loot selection weight"),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:220:      ib.item_base_id, ib.item_level, ib.slot, ib.base_item_score,
+src/modules/items/infrastructure/postgres-loot-catalog.ts:225:    INNER JOIN item_bases AS ib ON ib.item_base_id = sis.item_base_id
+src/modules/items/infrastructure/postgres-loot-catalog.ts:231:  const specialIds = specialResult.rows.map((row) => row.item_base_id);
+src/modules/items/infrastructure/postgres-loot-catalog.ts:235:        SELECT item_base_id, stat_position, stat_type, min_value, max_value
+src/modules/items/infrastructure/postgres-loot-catalog.ts:236:        FROM item_base_fixed_stat_ranges
+src/modules/items/infrastructure/postgres-loot-catalog.ts:237:        WHERE item_base_id = ANY($1::uuid[])
+src/modules/items/infrastructure/postgres-loot-catalog.ts:238:        ORDER BY item_base_id, stat_position
+src/modules/items/infrastructure/postgres-loot-catalog.ts:242:    const ranges = fixedByBase.get(row.item_base_id) ?? [];
+src/modules/items/infrastructure/postgres-loot-catalog.ts:249:    fixedByBase.set(row.item_base_id, ranges);
+src/modules/items/infrastructure/postgres-loot-catalog.ts:264:        itemBaseId: requiredId(row.item_base_id, "Special Item Base ID"),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:266:        baseItemScore: bigint(row.base_item_score, 0n, "Special Base Item Score"),
+src/modules/items/infrastructure/postgres-loot-catalog.ts:269:      fixedStatRanges: fixedByBase.get(row.item_base_id) ?? [],
+src/modules/items/infrastructure/postgres-loot-catalog.ts:275:    FROM item_score_coefficients
+src/modules/items/infrastructure/postgres-loot-catalog.ts:290:    otherLootCandidates,
+src/modules/items/infrastructure/postgres-loot-lock.ts:2:import type { LockedLootCharacter } from "../application/loot.repository.js";
+src/modules/items/infrastructure/postgres-loot-lock.ts:4:export type LootLockQueryable = Pick<PoolClient, "query">;
+src/modules/items/infrastructure/postgres-loot-lock.ts:39:export async function lockLootCharacterState(
+src/modules/items/infrastructure/postgres-loot-lock.ts:40:  client: LootLockQueryable,
+src/modules/items/infrastructure/postgres-loot-lock.ts:42:): Promise<LockedLootCharacter> {
+src/modules/items/infrastructure/postgres-loot-lock.ts:58:    throw new Error("Active loot character was not found.");
+src/modules/items/infrastructure/postgres-loot-lock.ts:63:    FROM inventory_items
+src/modules/items/infrastructure/postgres-loot-lock.ts:70:    INSERT INTO unique_pity_tracking (character_id)
+src/modules/items/infrastructure/postgres-loot-lock.ts:77:    FROM unique_pity_tracking
+src/modules/items/infrastructure/postgres-loot-persistence.ts:3:  ApplyOtherLootInput,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:8:} from "../application/loot.repository.js";
+src/modules/items/infrastructure/postgres-loot-persistence.ts:10:export type LootPersistenceQueryable = Pick<PoolClient, "query">;
+src/modules/items/infrastructure/postgres-loot-persistence.ts:24:  client: LootPersistenceQueryable,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:30:    INSERT INTO inventory_items (character_id, item_id, position)
+src/modules/items/infrastructure/postgres-loot-persistence.ts:35:export async function persistRegularLootItem(
+src/modules/items/infrastructure/postgres-loot-persistence.ts:36:  client: LootPersistenceQueryable,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:45:      item_base_id, item_level, required_level, rarity, item_score
+src/modules/items/infrastructure/postgres-loot-persistence.ts:52:    input.item.rarity,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:60:      INSERT INTO item_affixes (
+src/modules/items/infrastructure/postgres-loot-persistence.ts:61:        item_id, affix_template_id, affix_position, roll_value
+src/modules/items/infrastructure/postgres-loot-persistence.ts:69:export async function persistSpecialLootItem(
+src/modules/items/infrastructure/postgres-loot-persistence.ts:70:  client: LootPersistenceQueryable,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:76:  if (input.item.affixes.length !== 0 || input.item.rarity !== null) {
+src/modules/items/infrastructure/postgres-loot-persistence.ts:77:    throw new Error("Special Items cannot contain regular rarity or Affixes.");
+src/modules/items/infrastructure/postgres-loot-persistence.ts:82:      item_base_id, item_level, required_level, rarity, item_score
+src/modules/items/infrastructure/postgres-loot-persistence.ts:105:export async function applyOtherLootReward(
+src/modules/items/infrastructure/postgres-loot-persistence.ts:106:  client: LootPersistenceQueryable,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:107:  input: ApplyOtherLootInput
+src/modules/items/infrastructure/postgres-loot-persistence.ts:110:  if (input.reward.quantity < 1n) throw new Error("Other Loot quantity must be positive.");
+src/modules/items/infrastructure/postgres-loot-persistence.ts:133:  client: LootPersistenceQueryable,
+src/modules/items/infrastructure/postgres-loot-persistence.ts:146:    UPDATE unique_pity_tracking
+src/modules/items/infrastructure/postgres-loot-transaction.ts:3:  ApplyOtherLootInput,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:4:  LootGenerationContext,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:5:  LootSettlementTransaction,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:9:} from "../application/loot.repository.js";
+src/modules/items/infrastructure/postgres-loot-transaction.ts:10:import { loadLootCatalog } from "./postgres-loot-catalog.js";
+src/modules/items/infrastructure/postgres-loot-transaction.ts:11:import { lockLootCharacterState } from "./postgres-loot-lock.js";
+src/modules/items/infrastructure/postgres-loot-transaction.ts:13:  applyOtherLootReward,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:14:  persistRegularLootItem,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:15:  persistSpecialLootItem,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:17:} from "./postgres-loot-persistence.js";
+src/modules/items/infrastructure/postgres-loot-transaction.ts:19:export type SharedLootTransactionClient = Pick<PoolClient, "query">;
+src/modules/items/infrastructure/postgres-loot-transaction.ts:21:function requireContext(context: LootGenerationContext): void {
+src/modules/items/infrastructure/postgres-loot-transaction.ts:36:      "Loot persistence Character ID must match the locked Character."
+src/modules/items/infrastructure/postgres-loot-transaction.ts:41:export async function createPostgresLootSettlementTransaction(
+src/modules/items/infrastructure/postgres-loot-transaction.ts:42:  client: SharedLootTransactionClient,
+src/modules/items/infrastructure/postgres-loot-transaction.ts:43:  context: LootGenerationContext
+src/modules/items/infrastructure/postgres-loot-transaction.ts:44:): Promise<LootSettlementTransaction> {
+src/modules/items/infrastructure/postgres-loot-transaction.ts:47:  const character = await lockLootCharacterState(
+src/modules/items/infrastructure/postgres-loot-transaction.ts:62:          "Loot catalog context must match the settlement transaction."
+src/modules/items/infrastructure/postgres-loot-transaction.ts:65:      return loadLootCatalog(client, receivedContext);
+src/modules/items/infrastructure/postgres-loot-transaction.ts:70:      return persistRegularLootItem(client, input);
+src/modules/items/infrastructure/postgres-loot-transaction.ts:75:      return persistSpecialLootItem(client, input);
+src/modules/items/infrastructure/postgres-loot-transaction.ts:78:    applyOtherLoot: async (input: ApplyOtherLootInput) => {
+src/modules/items/infrastructure/postgres-loot-transaction.ts:80:      await applyOtherLootReward(client, input);
+src/modules/items/infrastructure/postgres-loot.repository.ts:4:  LootGenerationContext,
+src/modules/items/infrastructure/postgres-loot.repository.ts:5:  LootRepository,
+src/modules/items/infrastructure/postgres-loot.repository.ts:6:  LootSettlementTransaction,
+src/modules/items/infrastructure/postgres-loot.repository.ts:7:} from "../application/loot.repository.js";
+src/modules/items/infrastructure/postgres-loot.repository.ts:9:  createPostgresLootSettlementTransaction,
+src/modules/items/infrastructure/postgres-loot.repository.ts:10:} from "./postgres-loot-transaction.js";
+src/modules/items/infrastructure/postgres-loot.repository.ts:12:export type PostgresLootPool = Pick<Pool, "connect">;
+src/modules/items/infrastructure/postgres-loot.repository.ts:15:  context: LootGenerationContext
+src/modules/items/infrastructure/postgres-loot.repository.ts:26:export class PostgresLootRepository implements LootRepository {
+src/modules/items/infrastructure/postgres-loot.repository.ts:28:    private readonly pool: PostgresLootPool
+src/modules/items/infrastructure/postgres-loot.repository.ts:31:  public async withSettlementTransaction<TResult>(
+src/modules/items/infrastructure/postgres-loot.repository.ts:32:    context: LootGenerationContext,
+src/modules/items/infrastructure/postgres-loot.repository.ts:34:      transaction: LootSettlementTransaction
+src/modules/items/infrastructure/postgres-loot.repository.ts:43:          await createPostgresLootSettlementTransaction(
 src/modules/progression/domain/defeat-settlement.ts:2:  CombatSettlementContext,
 src/modules/progression/domain/defeat-settlement.ts:25:export type DefeatSettlementPlan = {
 src/modules/progression/domain/defeat-settlement.ts:70:export function planDefeatSettlement(
@@ -30333,27 +32943,28 @@ tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:1
 tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:112:          INSERT INTO item_bases (
 tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:117:          RETURNING item_base_id
 tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:122:      const itemBaseId = baseResult.rows[0]?.item_base_id;
-tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:128:          INSERT INTO items (item_base_id, item_level, rarity, item_score)
-tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:141:          INSERT INTO inventory_items (
+tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:129:            item_base_id, item_level, required_level, rarity, item_score
+tests/integration/characters/postgres-character-set-bonuses.repository.test.ts:143:          INSERT INTO inventory_items (
 tests/integration/characters/postgres-character-statistics.repository.test.ts:66:        await testPool.query("DELETE FROM item_bases WHERE item_base_id = $1", [itemBaseId]);
 tests/integration/characters/postgres-character-statistics.repository.test.ts:92:      const result = await testPool.query<{ item_base_id: string }>(
 tests/integration/characters/postgres-character-statistics.repository.test.ts:94:          INSERT INTO item_bases (
-tests/integration/characters/postgres-character-statistics.repository.test.ts:101:          RETURNING item_base_id
-tests/integration/characters/postgres-character-statistics.repository.test.ts:106:      const itemBaseId = result.rows[0]?.item_base_id;
-tests/integration/characters/postgres-character-statistics.repository.test.ts:118:          INSERT INTO items (item_base_id, item_level, rarity, item_score)
-tests/integration/characters/postgres-character-statistics.repository.test.ts:186:        INSERT INTO item_affixes (
-tests/integration/characters/postgres-character-statistics.repository.test.ts:204:        INSERT INTO inventory_items (
+tests/integration/characters/postgres-character-statistics.repository.test.ts:103:          RETURNING item_base_id
+tests/integration/characters/postgres-character-statistics.repository.test.ts:108:      const itemBaseId = result.rows[0]?.item_base_id;
+tests/integration/characters/postgres-character-statistics.repository.test.ts:121:            item_base_id, item_level, required_level, rarity, item_score
+tests/integration/characters/postgres-character-statistics.repository.test.ts:190:        INSERT INTO item_affixes (
+tests/integration/characters/postgres-character-statistics.repository.test.ts:193:          affix_position,
+tests/integration/characters/postgres-character-statistics.repository.test.ts:209:        INSERT INTO inventory_items (
 tests/integration/characters/postgres-equipment.repository.test.ts:67:    item_base_id: string;
 tests/integration/characters/postgres-equipment.repository.test.ts:70:      INSERT INTO item_bases (
 tests/integration/characters/postgres-equipment.repository.test.ts:92:      RETURNING item_base_id
 tests/integration/characters/postgres-equipment.repository.test.ts:108:    itemBaseResult.rows[0]?.item_base_id;
 tests/integration/characters/postgres-equipment.repository.test.ts:121:        item_base_id,
-tests/integration/characters/postgres-equipment.repository.test.ts:123:        rarity,
-tests/integration/characters/postgres-equipment.repository.test.ts:124:        item_score
-tests/integration/characters/postgres-equipment.repository.test.ts:144:      INSERT INTO inventory_items (
-tests/integration/characters/postgres-equipment.repository.test.ts:179:      FROM inventory_items
-tests/integration/characters/postgres-equipment.repository.test.ts:222:            DELETE FROM item_bases
-tests/integration/characters/postgres-equipment.repository.test.ts:223:            WHERE item_base_id = $1
+tests/integration/characters/postgres-equipment.repository.test.ts:124:        rarity,
+tests/integration/characters/postgres-equipment.repository.test.ts:125:        item_score
+tests/integration/characters/postgres-equipment.repository.test.ts:145:      INSERT INTO inventory_items (
+tests/integration/characters/postgres-equipment.repository.test.ts:180:      FROM inventory_items
+tests/integration/characters/postgres-equipment.repository.test.ts:223:            DELETE FROM item_bases
+tests/integration/characters/postgres-equipment.repository.test.ts:224:            WHERE item_base_id = $1
 tests/integration/combat/daily-boss-start.integration.test.ts:118:          loot_level_modifier,
 tests/integration/combat/daily-boss-start.integration.test.ts:139:          loot_level_modifier,
 tests/integration/combat/persistent-combat-schema.test.ts:230:  it("contains the M6 settlement schema", async () => {
@@ -30365,81 +32976,173 @@ tests/integration/combat/resolve-combat-action.integration.test.ts:89:class Defe
 tests/integration/combat/resolve-combat-action.integration.test.ts:90:  implements RandomSource {
 tests/integration/combat/resolve-combat-action.integration.test.ts:110:class VictoryRandomSource
 tests/integration/combat/resolve-combat-action.integration.test.ts:111:  implements RandomSource {
-tests/integration/combat/resolve-combat-action.integration.test.ts:360:  randomSource: RandomSource
-tests/integration/combat/resolve-combat-action.integration.test.ts:364:    randomSource,
-tests/integration/combat/resolve-combat-action.integration.test.ts:412:      "loads authoritative settlement context under transaction locks",
-tests/integration/combat/resolve-combat-action.integration.test.ts:429:                  .loadSettlementContext()
-tests/integration/combat/resolve-combat-action.integration.test.ts:481:          new MissRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:572:          new MissRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:615:          new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:707:          new DefeatRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:727:          settlement: {
-tests/integration/combat/resolve-combat-action.integration.test.ts:1007:          new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1016:          result.settlement
-tests/integration/combat/resolve-combat-action.integration.test.ts:1346:          new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1484:          new MissRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1501:        expect(result.settlement).toMatchObject({
-tests/integration/combat/resolve-combat-action.integration.test.ts:1581:          new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1595:          settlement: {
-tests/integration/combat/resolve-combat-action.integration.test.ts:1680:          new DefeatRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1696:          settlement: {
-tests/integration/combat/resolve-combat-action.integration.test.ts:1823:          new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1835:          settlement: {
-tests/integration/combat/resolve-combat-action.integration.test.ts:1961:          new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:1973:          settlement: {
-tests/integration/combat/resolve-combat-action.integration.test.ts:2012:      "rolls back every main Victory settlement phase",
-tests/integration/combat/resolve-combat-action.integration.test.ts:2015:          CombatSettlementFailurePoint[] = [
-tests/integration/combat/resolve-combat-action.integration.test.ts:2044:                settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:2058:              new VictoryRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:2082:      "rolls back every main Defeat settlement phase",
-tests/integration/combat/resolve-combat-action.integration.test.ts:2085:          CombatSettlementFailurePoint[] = [
-tests/integration/combat/resolve-combat-action.integration.test.ts:2145:                settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:2159:              new DefeatRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:2251:                settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:2266:              new VictoryRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:2373:              settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:2388:            new VictoryRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:2427:          CombatSettlementFailurePoint[] = [
-tests/integration/combat/resolve-combat-action.integration.test.ts:2546:                settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:2560:              new DefeatRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:2754:              settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:2769:            new VictoryRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:2863:                    loot_level_modifier,
-tests/integration/combat/resolve-combat-action.integration.test.ts:2884:                    loot_level_modifier,
-tests/integration/combat/resolve-combat-action.integration.test.ts:3224:              new VictoryRandomSource()
-tests/integration/combat/resolve-combat-action.integration.test.ts:3236:            settlement: {
-tests/integration/combat/resolve-combat-action.integration.test.ts:3438:                    loot_level_modifier,
-tests/integration/combat/resolve-combat-action.integration.test.ts:3459:                    loot_level_modifier,
-tests/integration/combat/resolve-combat-action.integration.test.ts:3806:                settlementFailureInjector:
-tests/integration/combat/resolve-combat-action.integration.test.ts:3821:              new VictoryRandomSource(),
-tests/integration/combat/resolve-combat-action.integration.test.ts:3961:          new MissRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:133:class BossLootLevelRandomSource
+tests/integration/combat/resolve-combat-action.integration.test.ts:134:  implements RandomSource {
+tests/integration/combat/resolve-combat-action.integration.test.ts:170:class InvalidLootRandomSource
+tests/integration/combat/resolve-combat-action.integration.test.ts:171:  implements RandomSource {
+tests/integration/combat/resolve-combat-action.integration.test.ts:431:  randomSource: RandomSource
+tests/integration/combat/resolve-combat-action.integration.test.ts:435:    randomSource,
+tests/integration/combat/resolve-combat-action.integration.test.ts:483:      "loads authoritative settlement context under transaction locks",
+tests/integration/combat/resolve-combat-action.integration.test.ts:500:                  .loadSettlementContext()
+tests/integration/combat/resolve-combat-action.integration.test.ts:552:          new MissRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:643:          new MissRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:686:          new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:740:      "rolls back Combat settlement when Loot generation fails",
+tests/integration/combat/resolve-combat-action.integration.test.ts:751:          new InvalidLootRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:815:          new DefeatRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:835:          settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:1115:          new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:1124:          result.settlement
+tests/integration/combat/resolve-combat-action.integration.test.ts:1454:          new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:1592:          new MissRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:1609:        expect(result.settlement).toMatchObject({
+tests/integration/combat/resolve-combat-action.integration.test.ts:1689:          new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:1703:          settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:1733:      "applies the boss loot level bonus to the rolled Item Level",
+tests/integration/combat/resolve-combat-action.integration.test.ts:1742:          loot_level_bonus: number;
+tests/integration/combat/resolve-combat-action.integration.test.ts:1749:              b.loot_level_bonus
+tests/integration/combat/resolve-combat-action.integration.test.ts:1753:            INNER JOIN loot_tables AS lt
+tests/integration/combat/resolve-combat-action.integration.test.ts:1766:            "Boss loot level fixture was not found."
+tests/integration/combat/resolve-combat-action.integration.test.ts:1782:        const randomSource =
+tests/integration/combat/resolve-combat-action.integration.test.ts:1783:          new BossLootLevelRandomSource();
+tests/integration/combat/resolve-combat-action.integration.test.ts:1786:          // Boss level 20 with loot level bonus 5 yields the canonical
+tests/integration/combat/resolve-combat-action.integration.test.ts:1787:          // Item Level range [15, 30] (effective loot level 25).
+tests/integration/combat/resolve-combat-action.integration.test.ts:1800:              SET loot_level_bonus = 5
+tests/integration/combat/resolve-combat-action.integration.test.ts:1807:            createService(randomSource);
+tests/integration/combat/resolve-combat-action.integration.test.ts:1817:            settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:1823:            result.loot === null ||
+tests/integration/combat/resolve-combat-action.integration.test.ts:1824:            result.loot.regularEquipment
+tests/integration/combat/resolve-combat-action.integration.test.ts:1833:            result.loot.regularEquipment
+tests/integration/combat/resolve-combat-action.integration.test.ts:1837:            result.loot.regularEquipment
+tests/integration/combat/resolve-combat-action.integration.test.ts:1846:          // Primary assertion: the boss loot level bonus reached the
+tests/integration/combat/resolve-combat-action.integration.test.ts:1855:            randomSource.itemLevelRange
+tests/integration/combat/resolve-combat-action.integration.test.ts:1899:              SET loot_level_bonus = $2
+tests/integration/combat/resolve-combat-action.integration.test.ts:1904:              bossRow.loot_level_bonus,
+tests/integration/combat/resolve-combat-action.integration.test.ts:1967:          new DefeatRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:1983:          settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:2110:          new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:2122:          settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:2248:          new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:2260:          settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:2299:      "rolls back every main Victory settlement phase",
+tests/integration/combat/resolve-combat-action.integration.test.ts:2302:          CombatSettlementFailurePoint[] = [
+tests/integration/combat/resolve-combat-action.integration.test.ts:2331:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2345:              new VictoryRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:2369:      "rolls back every main Defeat settlement phase",
+tests/integration/combat/resolve-combat-action.integration.test.ts:2372:          CombatSettlementFailurePoint[] = [
+tests/integration/combat/resolve-combat-action.integration.test.ts:2432:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2446:              new DefeatRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:2538:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2553:              new VictoryRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:2660:              settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2675:            new VictoryRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:2714:          CombatSettlementFailurePoint[] = [
+tests/integration/combat/resolve-combat-action.integration.test.ts:2833:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:2847:              new DefeatRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:3041:              settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:3056:            new VictoryRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:3150:                    loot_level_modifier,
+tests/integration/combat/resolve-combat-action.integration.test.ts:3171:                    loot_level_modifier,
+tests/integration/combat/resolve-combat-action.integration.test.ts:3511:              new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:3523:            settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:3725:                    loot_level_modifier,
+tests/integration/combat/resolve-combat-action.integration.test.ts:3746:                    loot_level_modifier,
+tests/integration/combat/resolve-combat-action.integration.test.ts:4093:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:4108:              new VictoryRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:4290:              new VictoryRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:4300:            settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:4427:              new DefeatRandomSource()
+tests/integration/combat/resolve-combat-action.integration.test.ts:4437:            settlement: {
+tests/integration/combat/resolve-combat-action.integration.test.ts:4580:                settlementFailureInjector:
+tests/integration/combat/resolve-combat-action.integration.test.ts:4595:              new DefeatRandomSource(),
+tests/integration/combat/resolve-combat-action.integration.test.ts:4645:          new MissRandomSource()
 tests/integration/http/combat.http.test.ts:26:  RandomSource,
-tests/integration/http/combat.http.test.ts:160:class DefeatRandomSource
-tests/integration/http/combat.http.test.ts:161:  implements RandomSource {
-tests/integration/http/combat.http.test.ts:187:class VictoryRandomSource
-tests/integration/http/combat.http.test.ts:188:  implements RandomSource {
-tests/integration/http/combat.http.test.ts:209:  randomSource?: RandomSource
-tests/integration/http/combat.http.test.ts:213:      randomSource,
-tests/integration/http/combat.http.test.ts:515:      "returns a terminal Victory settlement with string amounts",
-tests/integration/http/combat.http.test.ts:585:            new VictoryRandomSource()
-tests/integration/http/combat.http.test.ts:632:              settlement: {
-tests/integration/http/combat.http.test.ts:672:          body.data.settlement
-tests/integration/http/combat.http.test.ts:708:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:713:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:718:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:726:              body.data.settlement
-tests/integration/http/combat.http.test.ts:735:              body.data.settlement
-tests/integration/http/combat.http.test.ts:744:      "returns a terminal Defeat settlement with string amounts",
-tests/integration/http/combat.http.test.ts:815:            new DefeatRandomSource()
-tests/integration/http/combat.http.test.ts:864:              settlement: {
-tests/integration/http/combat.http.test.ts:904:          body.data.settlement
-tests/integration/http/combat.http.test.ts:933:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:938:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:943:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:948:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:953:          typeof body.data.settlement
-tests/integration/http/combat.http.test.ts:961:              body.data.settlement
-tests/integration/http/combat.http.test.ts:970:              body.data.settlement
+tests/integration/http/combat.http.test.ts:162:class DefeatRandomSource
+tests/integration/http/combat.http.test.ts:163:  implements RandomSource {
+tests/integration/http/combat.http.test.ts:189:class VictoryRandomSource
+tests/integration/http/combat.http.test.ts:190:  implements RandomSource {
+tests/integration/http/combat.http.test.ts:211: * Deterministic Victories that always succeed the Equipment and Other Loot
+tests/integration/http/combat.http.test.ts:217:class LootVictoryRandomSource
+tests/integration/http/combat.http.test.ts:218:  implements RandomSource {
+tests/integration/http/combat.http.test.ts:242:async function createLootBearingMonster() {
+tests/integration/http/combat.http.test.ts:252:  // files never observe or depend on each other's loot data.
+tests/integration/http/combat.http.test.ts:255:      item_base_id: string;
+tests/integration/http/combat.http.test.ts:258:        INSERT INTO item_bases (
+tests/integration/http/combat.http.test.ts:265:          base_item_score
+tests/integration/http/combat.http.test.ts:268:        RETURNING item_base_id
+tests/integration/http/combat.http.test.ts:271:        `loot_http_base_${suffix}`,
+tests/integration/http/combat.http.test.ts:272:        `Loot HTTP Base ${suffix}`,
+tests/integration/http/combat.http.test.ts:273:        "HTTP integration-test loot Item Base.",
+tests/integration/http/combat.http.test.ts:278:    itemBaseResult.rows[0]?.item_base_id;
+tests/integration/http/combat.http.test.ts:282:      "Could not create the HTTP loot Item Base."
+tests/integration/http/combat.http.test.ts:290:      INSERT INTO loot_tables (
+tests/integration/http/combat.http.test.ts:292:        item_base_id,
+tests/integration/http/combat.http.test.ts:314:          is_lootable
+tests/integration/http/combat.http.test.ts:320:        `loot_http_material_${suffix}`,
+tests/integration/http/combat.http.test.ts:321:        `Loot HTTP Material ${suffix}`,
+tests/integration/http/combat.http.test.ts:322:        "HTTP integration-test loot Material.",
+tests/integration/http/combat.http.test.ts:331:      "Could not create the HTTP loot Material."
+tests/integration/http/combat.http.test.ts:339:      INSERT INTO other_loot_tables (
+tests/integration/http/combat.http.test.ts:358:  randomSource?: RandomSource
+tests/integration/http/combat.http.test.ts:362:      randomSource,
+tests/integration/http/combat.http.test.ts:506:      // Monsters cascade loot_tables, other_loot_tables and any dependent
+tests/integration/http/combat.http.test.ts:524:      // Remove dedicated loot Item Bases and Materials after the Monsters
+tests/integration/http/combat.http.test.ts:531:                DELETE FROM item_bases
+tests/integration/http/combat.http.test.ts:532:                WHERE item_base_id = $1
+tests/integration/http/combat.http.test.ts:751:      "returns a terminal Victory settlement with string amounts",
+tests/integration/http/combat.http.test.ts:821:            new VictoryRandomSource()
+tests/integration/http/combat.http.test.ts:868:              settlement: {
+tests/integration/http/combat.http.test.ts:907:        const settlement =
+tests/integration/http/combat.http.test.ts:908:          body.data.settlement;
+tests/integration/http/combat.http.test.ts:912:        expect(settlement).toMatchObject({
+tests/integration/http/combat.http.test.ts:948:          settlement.experience,
+tests/integration/http/combat.http.test.ts:952:          settlement.gold,
+tests/integration/http/combat.http.test.ts:956:          settlement.statistics,
+tests/integration/http/combat.http.test.ts:967:              settlement
+tests/integration/http/combat.http.test.ts:976:              settlement
+tests/integration/http/combat.http.test.ts:985:      "returns a terminal Defeat settlement with string amounts",
+tests/integration/http/combat.http.test.ts:1056:            new DefeatRandomSource()
+tests/integration/http/combat.http.test.ts:1105:              loot: unknown;
+tests/integration/http/combat.http.test.ts:1106:              settlement: {
+tests/integration/http/combat.http.test.ts:1141:        expect(body.data.loot).toBeNull();
+tests/integration/http/combat.http.test.ts:1148:          body.data.settlement
+tests/integration/http/combat.http.test.ts:1177:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:1182:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:1187:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:1192:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:1197:          typeof body.data.settlement
+tests/integration/http/combat.http.test.ts:1205:              body.data.settlement
+tests/integration/http/combat.http.test.ts:1214:              body.data.settlement
+tests/integration/http/combat.http.test.ts:1223:      "returns Loot settlement for terminal Victory",
+tests/integration/http/combat.http.test.ts:1241:                `Http-Loot-${randomUUID()
+tests/integration/http/combat.http.test.ts:1264:          await createLootBearingMonster();
+tests/integration/http/combat.http.test.ts:1287:            new LootVictoryRandomSource()
+tests/integration/http/combat.http.test.ts:1326:              loot: {
+tests/integration/http/combat.http.test.ts:1331:                    rarity: string;
+tests/integration/http/combat.http.test.ts:1343:                    "InventoryFull" | null;
+tests/integration/http/combat.http.test.ts:1349:                    "InventoryFull" | null;
+tests/integration/http/combat.http.test.ts:1352:                otherLoot: {
+tests/integration/http/combat.http.test.ts:1354:                  otherLootTableId: string;
+tests/integration/http/combat.http.test.ts:1369:        const loot = body.data.loot;
+tests/integration/http/combat.http.test.ts:1371:        expect(loot).not.toBeNull();
+tests/integration/http/combat.http.test.ts:1375:          loot.regularEquipment.generated
+tests/integration/http/combat.http.test.ts:1379:          loot.regularEquipment.persisted
+tests/integration/http/combat.http.test.ts:1383:          loot.regularEquipment.lossReason
+tests/integration/http/combat.http.test.ts:1388:          typeof loot.regularEquipment
+tests/integration/http/combat.http.test.ts:1393:          typeof loot.regularEquipment
+tests/integration/http/combat.http.test.ts:1398:          typeof loot.regularEquipment
+tests/integration/http/combat.http.test.ts:1403:          loot.regularEquipment
+tests/integration/http/combat.http.test.ts:1416:          loot.specialEquipment.generated
+tests/integration/http/combat.http.test.ts:1420:          loot.specialEquipment.persisted
+tests/integration/http/combat.http.test.ts:1424:          loot.specialEquipment.lossReason
+tests/integration/http/combat.http.test.ts:1432:          loot.specialRollOutcome
+tests/integration/http/combat.http.test.ts:1436:          loot.specialRollOutcome
+tests/integration/http/combat.http.test.ts:1439:        // otherLoot: present with a string-serialized quantity.
+tests/integration/http/combat.http.test.ts:1440:        expect(loot.otherLoot).not.toBeNull();
+tests/integration/http/combat.http.test.ts:1443:          typeof loot.otherLoot?.quantity
+tests/integration/http/combat.http.test.ts:1450:          loot.otherLoot?.kind
+tests/integration/http/combat.http.test.ts:1455:          typeof loot.pity
+tests/integration/http/combat.http.test.ts:1460:          typeof loot.pity
 tests/integration/monsters/daily-boss-discovery.repository.test.ts:114:          loot_level_modifier,
 tests/integration/monsters/daily-boss-discovery.repository.test.ts:134:          loot_level_modifier,
 tests/unit/combat/combat-attack.test.ts:9:  InvalidRandomSourceError,
@@ -30491,8 +33194,10 @@ tests/unit/combat/combat-engine.test.ts:220:    const randomSource =
 tests/unit/combat/combat-engine.test.ts:221:      new SequenceRandomSource(
 tests/unit/combat/combat-engine.test.ts:229:      randomSource
 tests/unit/combat/combat-retrieval.services.test.ts:94:      settlement: null,
-tests/unit/combat/combat-retrieval.services.test.ts:135:      settlement: null,
-tests/unit/combat/combat-retrieval.services.test.ts:167:      settlement: null,
+tests/unit/combat/combat-retrieval.services.test.ts:95:      loot: null,
+tests/unit/combat/combat-retrieval.services.test.ts:136:      settlement: null,
+tests/unit/combat/combat-retrieval.services.test.ts:137:      loot: null,
+tests/unit/combat/combat-retrieval.services.test.ts:169:      settlement: null,
 tests/unit/combat/combat-validation.test.ts:14:  InvalidRandomSourceError,
 tests/unit/combat/combat-validation.test.ts:242:    ).toThrow(InvalidRandomSourceError);
 tests/unit/combat/combat-validation.test.ts:246:    ).toThrow(InvalidRandomSourceError);
@@ -30532,13 +33237,25 @@ tests/unit/combat/crypto-random-source.test.ts:168:      new CryptoRandomSource(
 tests/unit/combat/crypto-random-source.test.ts:171:      randomSource.nextBigInt(
 tests/unit/combat/resolve-combat-action.service.test.ts:34:  RandomSource,
 tests/unit/combat/resolve-combat-action.service.test.ts:67:  randomSource: RandomSource = {
-tests/unit/combat/resolve-combat-action.service.test.ts:110:    loadSettlementContext:
-tests/unit/combat/resolve-combat-action.service.test.ts:180:    applyVictorySettlement:
-tests/unit/combat/resolve-combat-action.service.test.ts:269:    applyDefeatSettlement:
-tests/unit/combat/resolve-combat-action.service.test.ts:385:      randomSource,
-tests/unit/combat/resolve-combat-action.service.test.ts:392:    randomSource,
-tests/unit/combat/resolve-combat-action.service.test.ts:451:        settlement: null,
-tests/unit/combat/resolve-combat-action.service.test.ts:478:        fixture.randomSource.nextFloat
+tests/unit/combat/resolve-combat-action.service.test.ts:77:  const withLootSettlement = vi.fn(async (
+tests/unit/combat/resolve-combat-action.service.test.ts:89:      otherLootCandidates: [],
+tests/unit/combat/resolve-combat-action.service.test.ts:99:    applyOtherLoot: vi.fn(),
+tests/unit/combat/resolve-combat-action.service.test.ts:135:    withLootSettlement,
+tests/unit/combat/resolve-combat-action.service.test.ts:136:    loadSettlementContext:
+tests/unit/combat/resolve-combat-action.service.test.ts:200:          lootLevelBonus: 0,
+tests/unit/combat/resolve-combat-action.service.test.ts:209:    applyVictorySettlement:
+tests/unit/combat/resolve-combat-action.service.test.ts:298:    applyDefeatSettlement:
+tests/unit/combat/resolve-combat-action.service.test.ts:414:      randomSource,
+tests/unit/combat/resolve-combat-action.service.test.ts:421:    randomSource,
+tests/unit/combat/resolve-combat-action.service.test.ts:423:    withLootSettlement,
+tests/unit/combat/resolve-combat-action.service.test.ts:481:        settlement: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:482:        loot: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:509:        fixture.randomSource.nextFloat
+tests/unit/combat/resolve-combat-action.service.test.ts:555:      expect(fixture.withLootSettlement).toHaveBeenCalledOnce();
+tests/unit/combat/resolve-combat-action.service.test.ts:556:      expect(result.loot).toMatchObject({
+tests/unit/combat/resolve-combat-action.service.test.ts:558:        otherLoot: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:608:        loot: null,
+tests/unit/combat/resolve-combat-action.service.test.ts:610:      expect(fixture.withLootSettlement).not.toHaveBeenCalled();
 tests/unit/http/combat-http.handler.test.ts:71:    settlement: null,
 tests/unit/http/combat-http.handler.test.ts:302:  it("returns settlement null for a continuing action", async () => {
 tests/unit/http/combat-http.handler.test.ts:323:          settlement:
@@ -30547,18 +33264,310 @@ tests/unit/http/combat-http.handler.test.ts:333:  it("serializes a terminal sett
 tests/unit/http/combat-http.handler.test.ts:358:        settlement: {
 tests/unit/http/combat-http.handler.test.ts:446:          settlement: unknown;
 tests/unit/http/combat-http.handler.test.ts:451:      body.data.settlement
+tests/unit/items/complete-regular-item-generator.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/complete-regular-item-generator.test.ts:11:class TrackingRandomSource implements RandomSource {
+tests/unit/items/complete-regular-item-generator.test.ts:87:    const random = new TrackingRandomSource([301], []);
+tests/unit/items/complete-regular-item-generator.test.ts:89:      context: { monsterLevel: 20, bossBonusLootLevel: 0, isBoss: false },
+tests/unit/items/complete-regular-item-generator.test.ts:99:    const random = new TrackingRandomSource(
+tests/unit/items/complete-regular-item-generator.test.ts:104:      context: { monsterLevel: 20, bossBonusLootLevel: 0, isBoss: false },
+tests/unit/items/complete-regular-item-generator.test.ts:114:      rarity: "Common",
+tests/unit/items/complete-regular-item-generator.test.ts:128:    const random = new TrackingRandomSource(
+tests/unit/items/complete-regular-item-generator.test.ts:133:      context: { monsterLevel: 20, bossBonusLootLevel: 5, isBoss: true },
+tests/unit/items/complete-regular-item-generator.test.ts:143:      rarity: "Magic",
+tests/unit/items/complete-regular-item-generator.test.ts:156:    const random = new TrackingRandomSource([1, 10], []);
+tests/unit/items/complete-regular-item-generator.test.ts:158:      context: { monsterLevel: 20, bossBonusLootLevel: 0, isBoss: false },
+tests/unit/items/complete-regular-item-generator.test.ts:166:      context: { monsterLevel: 20, bossBonusLootLevel: 0, isBoss: false },
+tests/unit/items/complete-regular-item-generator.test.ts:172:      new TrackingRandomSource([300, 10], [1n, 1n, 701n, 1n, 15n])
+tests/unit/items/complete-regular-item-generator.test.ts:176:      new TrackingRandomSource([300, 10], [1n, 1n, 701n, 1n, 15n])
+tests/unit/items/item-base-selection.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/item-base-selection.test.ts:7:function source(values: bigint[]): RandomSource {
+tests/unit/items/item-generator.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/item-generator.test.ts:13:class SequenceRandomSource implements RandomSource {
+tests/unit/items/item-generator.test.ts:64:const rarityProfile = [
+tests/unit/items/item-generator.test.ts:85:  it("maps Common rarity to zero affixes", () => {
+tests/unit/items/item-generator.test.ts:87:      { base, rarityProfile, affixPool: [], coefficients },
+tests/unit/items/item-generator.test.ts:88:      new SequenceRandomSource([1n])
+tests/unit/items/item-generator.test.ts:92:      rarity: "Common",
+tests/unit/items/item-generator.test.ts:101:  it("does not inspect or consume the Affix pool for Common rarity", () => {
+tests/unit/items/item-generator.test.ts:116:        rarityProfile,
+tests/unit/items/item-generator.test.ts:120:      new SequenceRandomSource([1n])
+tests/unit/items/item-generator.test.ts:122:    expect(result.rarity).toBe("Common");
+tests/unit/items/item-generator.test.ts:127:  it("maps every rarity to the authoritative affix count", () => {
+tests/unit/items/item-generator.test.ts:129:      { rarityRoll: 1n, expected: 0 },
+tests/unit/items/item-generator.test.ts:130:      { rarityRoll: 2n, expected: 1 },
+tests/unit/items/item-generator.test.ts:131:      { rarityRoll: 3n, expected: 2 },
+tests/unit/items/item-generator.test.ts:132:      { rarityRoll: 4n, expected: 3 },
+tests/unit/items/item-generator.test.ts:133:      { rarityRoll: 5n, expected: 4 },
+tests/unit/items/item-generator.test.ts:136:      const values = [testCase.rarityRoll];
+tests/unit/items/item-generator.test.ts:141:        { base, rarityProfile, affixPool: repeatedAttackAffixPool, coefficients },
+tests/unit/items/item-generator.test.ts:142:        new SequenceRandomSource(values)
+tests/unit/items/item-generator.test.ts:150:      { base, rarityProfile, affixPool: repeatedAttackAffixPool, coefficients },
+tests/unit/items/item-generator.test.ts:151:      new SequenceRandomSource([
+tests/unit/items/item-generator.test.ts:159:    expect(result.rarity).toBe("Legendary");
+tests/unit/items/item-generator.test.ts:191:      { base, rarityProfile, affixPool, coefficients },
+tests/unit/items/item-generator.test.ts:192:      new SequenceRandomSource([3n, 1n, 2n])
+tests/unit/items/item-generator.test.ts:208:      new SequenceRandomSource([4n, 9n])
+tests/unit/items/item-generator.test.ts:212:      rarity: null,
+tests/unit/items/item-generator.test.ts:225:    const input = { base, rarityProfile, affixPool: repeatedAttackAffixPool, coefficients };
+tests/unit/items/item-generator.test.ts:227:    expect(generateRegularItem(input, new SequenceRandomSource([...sequence])))
+tests/unit/items/item-generator.test.ts:228:      .toEqual(generateRegularItem(input, new SequenceRandomSource([...sequence])));
+tests/unit/items/item-generator.test.ts:231:  it("rejects a rarity that needs affixes when the pool is empty", () => {
+tests/unit/items/item-generator.test.ts:233:      { base, rarityProfile, affixPool: [], coefficients },
+tests/unit/items/item-generator.test.ts:234:      new SequenceRandomSource([2n])
+tests/unit/items/item-generator.test.ts:238:  it("rejects a rarity when every Affix is above the rolled Item Level", () => {
+tests/unit/items/item-generator.test.ts:250:      { base, rarityProfile, affixPool: ineligiblePool, coefficients },
+tests/unit/items/item-generator.test.ts:251:      new SequenceRandomSource([2n])
+tests/unit/items/item-generator.test.ts:252:    )).toThrow("Regular Item rarity requires a non-empty eligible affix pool.");
+tests/unit/items/item-generator.test.ts:258:      new SequenceRandomSource([])
+tests/unit/items/item-generator.test.ts:272:      new SequenceRandomSource([])
+tests/unit/items/item-generator.test.ts:283:      new SequenceRandomSource([])
+tests/unit/items/item-loot-level.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/item-loot-level.test.ts:8:} from "../../../src/modules/items/domain/item-loot-level.js";
+tests/unit/items/item-loot-level.test.ts:10:function source(values: number[]): RandomSource {
+tests/unit/items/item-loot-level.test.ts:21:describe("item loot level and Equipment chance", () => {
+tests/unit/items/item-loot-level.test.ts:25:      bossBonusLootLevel: 0,
+tests/unit/items/item-loot-level.test.ts:28:      effectiveLootLevel: 1,
+tests/unit/items/item-loot-level.test.ts:34:  it("applies the authoritative Boss loot level bonus", () => {
+tests/unit/items/item-loot-level.test.ts:37:      bossBonusLootLevel: 5,
+tests/unit/items/item-loot-level.test.ts:40:      effectiveLootLevel: 25,
+tests/unit/items/item-loot-level.test.ts:47:    const context = { monsterLevel: 20, bossBonusLootLevel: 0, isBoss: false };
+tests/unit/items/item-loot-level.test.ts:66:      bossBonusLootLevel: 0,
+tests/unit/items/item-loot-level.test.ts:71:      bossBonusLootLevel: -1,
+tests/unit/items/item-loot-level.test.ts:76:      bossBonusLootLevel: 1,
+tests/unit/items/item-random.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/item-random.test.ts:5:  ItemGenerationRandomSourceError,
+tests/unit/items/item-random.test.ts:12:function randomSource(value: bigint): RandomSource {
+tests/unit/items/item-random.test.ts:22:    expect(rollInclusiveBigInt(10n, 20n, randomSource(10n))).toBe(10n);
+tests/unit/items/item-random.test.ts:23:    expect(rollInclusiveBigInt(10n, 20n, randomSource(20n))).toBe(20n);
+tests/unit/items/item-random.test.ts:27:    const source = randomSource(999n);
+tests/unit/items/item-random.test.ts:33:    const source: RandomSource = {
+tests/unit/items/item-random.test.ts:41:    expect(() => rollInclusiveBigInt(2n, 1n, randomSource(1n)))
+tests/unit/items/item-random.test.ts:43:    expect(() => rollInclusiveBigInt(1n, 2n, randomSource(3n)))
+tests/unit/items/item-random.test.ts:44:      .toThrow(ItemGenerationRandomSourceError);
+tests/unit/items/item-random.test.ts:52:    expect(selectWeighted(entries, randomSource(1n))).toBe("first");
+tests/unit/items/item-random.test.ts:53:    expect(selectWeighted(entries, randomSource(2n))).toBe("first");
+tests/unit/items/item-random.test.ts:54:    expect(selectWeighted(entries, randomSource(3n))).toBe("second");
+tests/unit/items/item-random.test.ts:55:    expect(selectWeighted(entries, randomSource(5n))).toBe("second");
+tests/unit/items/item-random.test.ts:59:    expect(() => selectWeighted([], randomSource(1n)))
+tests/unit/items/item-random.test.ts:63:      randomSource(1n)
+tests/unit/items/item-rarity-affix.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/item-rarity-affix.test.ts:10:  rollCanonicalRarity,
+tests/unit/items/item-rarity-affix.test.ts:11:} from "../../../src/modules/items/domain/item-rarity-affix.js";
+tests/unit/items/item-rarity-affix.test.ts:13:function source(value: bigint): RandomSource {
+tests/unit/items/item-rarity-affix.test.ts:40:describe("canonical rarity profiles", () => {
+tests/unit/items/item-rarity-affix.test.ts:41:  it("covers every regular Monster rarity boundary", () => {
+tests/unit/items/item-rarity-affix.test.ts:42:    expect(rollCanonicalRarity(false, source(1n))).toBe("Common");
+tests/unit/items/item-rarity-affix.test.ts:43:    expect(rollCanonicalRarity(false, source(700n))).toBe("Common");
+tests/unit/items/item-rarity-affix.test.ts:44:    expect(rollCanonicalRarity(false, source(701n))).toBe("Magic");
+tests/unit/items/item-rarity-affix.test.ts:45:    expect(rollCanonicalRarity(false, source(900n))).toBe("Magic");
+tests/unit/items/item-rarity-affix.test.ts:46:    expect(rollCanonicalRarity(false, source(901n))).toBe("Rare");
+tests/unit/items/item-rarity-affix.test.ts:47:    expect(rollCanonicalRarity(false, source(980n))).toBe("Rare");
+tests/unit/items/item-rarity-affix.test.ts:48:    expect(rollCanonicalRarity(false, source(981n))).toBe("Epic");
+tests/unit/items/item-rarity-affix.test.ts:49:    expect(rollCanonicalRarity(false, source(998n))).toBe("Epic");
+tests/unit/items/item-rarity-affix.test.ts:50:    expect(rollCanonicalRarity(false, source(999n))).toBe("Legendary");
+tests/unit/items/item-rarity-affix.test.ts:51:    expect(rollCanonicalRarity(false, source(1000n))).toBe("Legendary");
+tests/unit/items/item-rarity-affix.test.ts:54:  it("covers every Boss rarity boundary and never returns Common", () => {
+tests/unit/items/item-rarity-affix.test.ts:55:    expect(rollCanonicalRarity(true, source(1n))).toBe("Magic");
+tests/unit/items/item-rarity-affix.test.ts:56:    expect(rollCanonicalRarity(true, source(700n))).toBe("Magic");
+tests/unit/items/item-rarity-affix.test.ts:57:    expect(rollCanonicalRarity(true, source(701n))).toBe("Rare");
+tests/unit/items/item-rarity-affix.test.ts:58:    expect(rollCanonicalRarity(true, source(900n))).toBe("Rare");
+tests/unit/items/item-rarity-affix.test.ts:59:    expect(rollCanonicalRarity(true, source(901n))).toBe("Epic");
+tests/unit/items/item-rarity-affix.test.ts:60:    expect(rollCanonicalRarity(true, source(990n))).toBe("Epic");
+tests/unit/items/item-rarity-affix.test.ts:61:    expect(rollCanonicalRarity(true, source(991n))).toBe("Legendary");
+tests/unit/items/item-rarity-affix.test.ts:62:    expect(rollCanonicalRarity(true, source(1000n))).toBe("Legendary");
+tests/unit/items/item-score.test.ts:62:  it("scores fixed stats without a rarity bonus", () => {
+tests/unit/items/loot-repository-contract.test.ts:3:  LootCatalogSnapshot,
+tests/unit/items/loot-repository-contract.test.ts:4:  LootGenerationContext,
+tests/unit/items/loot-repository-contract.test.ts:5:  LootRepository,
+tests/unit/items/loot-repository-contract.test.ts:6:  LootSettlementTransaction,
+tests/unit/items/loot-repository-contract.test.ts:7:  LockedLootCharacter,
+tests/unit/items/loot-repository-contract.test.ts:8:} from "../../../src/modules/items/application/loot.repository.js";
+tests/unit/items/loot-repository-contract.test.ts:10:const context: LootGenerationContext = {
+tests/unit/items/loot-repository-contract.test.ts:16:const character: LockedLootCharacter = {
+tests/unit/items/loot-repository-contract.test.ts:23:const catalog: LootCatalogSnapshot = {
+tests/unit/items/loot-repository-contract.test.ts:25:  otherLootCandidates: [],
+tests/unit/items/loot-repository-contract.test.ts:40:describe("LootRepository contract", () => {
+tests/unit/items/loot-repository-contract.test.ts:41:  it("executes settlement work through one locked transaction boundary", async () => {
+tests/unit/items/loot-repository-contract.test.ts:42:    const transaction: LootSettlementTransaction = {
+tests/unit/items/loot-repository-contract.test.ts:47:      applyOtherLoot: vi.fn(),
+tests/unit/items/loot-repository-contract.test.ts:50:    const repository: LootRepository = {
+tests/unit/items/loot-repository-contract.test.ts:51:      withSettlementTransaction: async (received, operation) => {
+tests/unit/items/loot-repository-contract.test.ts:57:    const result = await repository.withSettlementTransaction(
+tests/unit/items/loot-repository-contract.test.ts:71:    const transaction: LootSettlementTransaction = {
+tests/unit/items/loot-repository-contract.test.ts:82:      applyOtherLoot: vi.fn(async () => {
+tests/unit/items/loot-repository-contract.test.ts:98:        rarity: null,
+tests/unit/items/loot-repository-contract.test.ts:116:        rarity: "Common",
+tests/unit/items/loot-repository-contract.test.ts:122:    await transaction.applyOtherLoot({
+tests/unit/items/loot-repository-contract.test.ts:126:        otherLootTableId: "other-1",
+tests/unit/items/loot-settlement.service.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/loot-settlement.service.test.ts:4:  LootCatalogSnapshot,
+tests/unit/items/loot-settlement.service.test.ts:5:  LootRepository,
+tests/unit/items/loot-settlement.service.test.ts:6:  LootSettlementTransaction,
+tests/unit/items/loot-settlement.service.test.ts:7:} from "../../../src/modules/items/application/loot.repository.js";
+tests/unit/items/loot-settlement.service.test.ts:9:  LootSettlementService,
+tests/unit/items/loot-settlement.service.test.ts:10:  type LootSettlementDependencies,
+tests/unit/items/loot-settlement.service.test.ts:11:} from "../../../src/modules/items/application/loot-settlement.service.js";
+tests/unit/items/loot-settlement.service.test.ts:24:const catalog: LootCatalogSnapshot = {
+tests/unit/items/loot-settlement.service.test.ts:25:  regularItemBases: [], otherLootCandidates: [], specialItemCandidates: [],
+tests/unit/items/loot-settlement.service.test.ts:30:  rarity: "Common", affixes: [], fixedStats: [], itemScore: 10n,
+tests/unit/items/loot-settlement.service.test.ts:34:  rarity: null, affixes: [], fixedStats: [
+tests/unit/items/loot-settlement.service.test.ts:38:const randomSource: RandomSource = {
+tests/unit/items/loot-settlement.service.test.ts:46:  bossBonusLootLevel: 0, isBoss: false,
+tests/unit/items/loot-settlement.service.test.ts:56:  const transaction: LootSettlementTransaction = {
+tests/unit/items/loot-settlement.service.test.ts:72:    applyOtherLoot: vi.fn(async () => { calls.push("persist-other"); }),
+tests/unit/items/loot-settlement.service.test.ts:77:  const repository: LootRepository = {
+tests/unit/items/loot-settlement.service.test.ts:78:    withSettlementTransaction: async (_context, operation) => operation(transaction),
+tests/unit/items/loot-settlement.service.test.ts:84:  const dependencies: LootSettlementDependencies = {
+tests/unit/items/loot-settlement.service.test.ts:87:      kind: "Material" as const, otherLootTableId: "other",
+tests/unit/items/loot-settlement.service.test.ts:94:    service: new LootSettlementService(repository, randomSource, dependencies),
+tests/unit/items/loot-settlement.service.test.ts:99:describe("Loot settlement service", () => {
+tests/unit/items/loot-settlement.service.test.ts:124:    expect(result.specialEquipment.lossReason).toBe("InventoryFull");
+tests/unit/items/loot-settlement.service.test.ts:125:    expect(result.regularEquipment.lossReason).toBe("InventoryFull");
+tests/unit/items/loot-settlement.service.test.ts:126:    expect(result.otherLoot?.kind).toBe("Material");
+tests/unit/items/loot-settlement.service.test.ts:130:    expect(transaction.applyOtherLoot).toHaveBeenCalledOnce();
+tests/unit/items/loot-settlement.service.test.ts:138:    expect(result.regularEquipment.lossReason).toBe("InventoryFull");
+tests/unit/items/other-loot-generator.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/other-loot-generator.test.ts:4:import type { OtherLootCandidate } from "../../../src/modules/items/domain/item-generation.types.js";
+tests/unit/items/other-loot-generator.test.ts:5:import { generateOtherLoot } from "../../../src/modules/items/domain/other-loot-generator.js";
+tests/unit/items/other-loot-generator.test.ts:7:class SequenceRandomSource implements RandomSource {
+tests/unit/items/other-loot-generator.test.ts:28:function material(overrides: Partial<OtherLootCandidate> = {}): OtherLootCandidate {
+tests/unit/items/other-loot-generator.test.ts:30:    otherLootTableId: "material-entry",
+tests/unit/items/other-loot-generator.test.ts:41:function consumable(overrides: Partial<OtherLootCandidate> = {}): OtherLootCandidate {
+tests/unit/items/other-loot-generator.test.ts:43:    otherLootTableId: "consumable-entry",
+tests/unit/items/other-loot-generator.test.ts:54:describe("Other Loot generator", () => {
+tests/unit/items/other-loot-generator.test.ts:56:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:58:      new SequenceRandomSource([701], [])
+tests/unit/items/other-loot-generator.test.ts:60:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:62:      new SequenceRandomSource([700], [])
+tests/unit/items/other-loot-generator.test.ts:65:      otherLootTableId: "material-entry",
+tests/unit/items/other-loot-generator.test.ts:72:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:74:      new SequenceRandomSource([901], [])
+tests/unit/items/other-loot-generator.test.ts:76:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:78:      new SequenceRandomSource([900], [])
+tests/unit/items/other-loot-generator.test.ts:84:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:86:      new SequenceRandomSource([1], [1n, 2n])
+tests/unit/items/other-loot-generator.test.ts:88:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:90:      new SequenceRandomSource([1], [5n, 3n])
+tests/unit/items/other-loot-generator.test.ts:95:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:97:      new SequenceRandomSource([1], [5n])
+tests/unit/items/other-loot-generator.test.ts:100:      otherLootTableId: "material-entry",
+tests/unit/items/other-loot-generator.test.ts:104:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:106:      new SequenceRandomSource([1], [3n])
+tests/unit/items/other-loot-generator.test.ts:109:      otherLootTableId: "consumable-entry",
+tests/unit/items/other-loot-generator.test.ts:116:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:118:      new SequenceRandomSource([1], [2n])
+tests/unit/items/other-loot-generator.test.ts:120:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:122:      new SequenceRandomSource([1], [5n])
+tests/unit/items/other-loot-generator.test.ts:127:    const random = new SequenceRandomSource([1], []);
+tests/unit/items/other-loot-generator.test.ts:128:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:136:    const random = new SequenceRandomSource([701], [999n]);
+tests/unit/items/other-loot-generator.test.ts:137:    expect(generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:145:    expect(() => generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:147:      new SequenceRandomSource([1], [])
+tests/unit/items/other-loot-generator.test.ts:148:    )).toThrow("Other Loot roll succeeded but no eligible entry exists.");
+tests/unit/items/other-loot-generator.test.ts:152:    expect(() => generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:154:      new SequenceRandomSource([1], [])
+tests/unit/items/other-loot-generator.test.ts:156:    expect(() => generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:158:      new SequenceRandomSource([1], [])
+tests/unit/items/other-loot-generator.test.ts:160:    expect(() => generateOtherLoot(
+tests/unit/items/other-loot-generator.test.ts:162:      new SequenceRandomSource([1], [])
+tests/unit/items/other-loot-generator.test.ts:168:    const first = generateOtherLoot(input, new SequenceRandomSource([1], [2n, 3n]));
+tests/unit/items/other-loot-generator.test.ts:169:    const second = generateOtherLoot(input, new SequenceRandomSource([1], [2n, 3n]));
+tests/unit/items/postgres-loot-catalog.test.ts:3:import { loadLootCatalog } from "../../../src/modules/items/infrastructure/postgres-loot-catalog.js";
+tests/unit/items/postgres-loot-catalog.test.ts:16:  item_base_id: "00000000-0000-0000-0000-000000000001",
+tests/unit/items/postgres-loot-catalog.test.ts:20:  base_item_score: "100",
+tests/unit/items/postgres-loot-catalog.test.ts:29:describe("PostgreSQL Loot Catalog", () => {
+tests/unit/items/postgres-loot-catalog.test.ts:30:  it("maps regular bases, Affixes, Other Loot, special Items and coefficients", async () => {
+tests/unit/items/postgres-loot-catalog.test.ts:34:        item_base_id: regular.item_base_id,
+tests/unit/items/postgres-loot-catalog.test.ts:40:        other_loot_table_id: "00000000-0000-0000-0000-000000000003",
+tests/unit/items/postgres-loot-catalog.test.ts:53:        item_base_id: regular.item_base_id, stat_position: 1,
+tests/unit/items/postgres-loot-catalog.test.ts:59:    const catalog = await loadLootCatalog(client as any, {
+tests/unit/items/postgres-loot-catalog.test.ts:66:      itemBaseId: regular.item_base_id,
+tests/unit/items/postgres-loot-catalog.test.ts:75:    expect(catalog.otherLootCandidates[0]).toMatchObject({
+tests/unit/items/postgres-loot-catalog.test.ts:89:    const catalog = await loadLootCatalog(client as any, {
+tests/unit/items/postgres-loot-catalog.test.ts:101:    await expect(loadLootCatalog(client as any, {
+tests/unit/items/postgres-loot-catalog.test.ts:108:    await expect(loadLootCatalog(client as any, {
+tests/unit/items/postgres-loot-lock.test.ts:3:import { lockLootCharacterState, type LootLockQueryable } from "../../../src/modules/items/infrastructure/postgres-loot-lock.js";
+tests/unit/items/postgres-loot-lock.test.ts:9:describe("PostgreSQL loot locking", () => {
+tests/unit/items/postgres-loot-lock.test.ts:16:    const locked = await lockLootCharacterState({ query } as unknown as LootLockQueryable, "character-1");
+tests/unit/items/postgres-loot-lock.test.ts:32:    await expect(lockLootCharacterState({ query } as unknown as LootLockQueryable, "missing"))
+tests/unit/items/postgres-loot-lock.test.ts:33:      .rejects.toThrow("Active loot character was not found.");
+tests/unit/items/postgres-loot-lock.test.ts:48:      lockLootCharacterState(
+tests/unit/items/postgres-loot-lock.test.ts:49:        { query } as unknown as LootLockQueryable,
+tests/unit/items/postgres-loot-lock.test.ts:71:      lockLootCharacterState(
+tests/unit/items/postgres-loot-lock.test.ts:72:        { query } as unknown as LootLockQueryable,
+tests/unit/items/postgres-loot-persistence.test.ts:3:  applyOtherLootReward,
+tests/unit/items/postgres-loot-persistence.test.ts:4:  persistRegularLootItem,
+tests/unit/items/postgres-loot-persistence.test.ts:5:  persistSpecialLootItem,
+tests/unit/items/postgres-loot-persistence.test.ts:7:} from "../../../src/modules/items/infrastructure/postgres-loot-persistence.js";
+tests/unit/items/postgres-loot-persistence.test.ts:22:describe("PostgreSQL loot persistence", () => {
+tests/unit/items/postgres-loot-persistence.test.ts:25:    const result = await persistRegularLootItem(db as never, {
+tests/unit/items/postgres-loot-persistence.test.ts:28:        requiredLevel: 10, rarity: "Rare", itemScore: 50n, fixedStats: [],
+tests/unit/items/postgres-loot-persistence.test.ts:38:  it("persists a Special Item with NULL rarity and all fixed stats", async () => {
+tests/unit/items/postgres-loot-persistence.test.ts:40:    await persistSpecialLootItem(db as never, {
+tests/unit/items/postgres-loot-persistence.test.ts:43:        requiredLevel: 20, rarity: null, itemScore: 200n, affixes: [],
+tests/unit/items/postgres-loot-persistence.test.ts:55:    await applyOtherLootReward(db as never, { characterId: "c", reward: {
+tests/unit/items/postgres-loot-persistence.test.ts:56:      kind: "Material", otherLootTableId: "o1", materialId: "m1", quantity: 2n } });
+tests/unit/items/postgres-loot-persistence.test.ts:57:    await applyOtherLootReward(db as never, { characterId: "c", reward: {
+tests/unit/items/postgres-loot-persistence.test.ts:58:      kind: "Consumable", otherLootTableId: "o2", consumableDefinitionId: "x1", quantity: 3n } });
+tests/unit/items/postgres-loot-transaction.test.ts:2:import { createPostgresLootSettlementTransaction } from "../../../src/modules/items/infrastructure/postgres-loot-transaction.js";
+tests/unit/items/postgres-loot-transaction.test.ts:18:    if (normalized.includes("SELECT position") && normalized.includes("inventory_items")) {
+tests/unit/items/postgres-loot-transaction.test.ts:21:    if (normalized.includes("INSERT INTO unique_pity_tracking")) return { rows: [] };
+tests/unit/items/postgres-loot-transaction.test.ts:25:    if (normalized.includes("UPDATE unique_pity_tracking")) return { rows: [] };
+tests/unit/items/postgres-loot-transaction.test.ts:31:describe("shared PostgreSQL loot transaction", () => {
+tests/unit/items/postgres-loot-transaction.test.ts:34:    const transaction = await createPostgresLootSettlementTransaction(
+tests/unit/items/postgres-loot-transaction.test.ts:56:    const transaction = await createPostgresLootSettlementTransaction(
+tests/unit/items/postgres-loot-transaction.test.ts:69:      "Loot persistence Character ID must match the locked Character."
+tests/unit/items/postgres-loot.repository.test.ts:2:import { PostgresLootRepository } from "../../../src/modules/items/infrastructure/postgres-loot.repository.js";
+tests/unit/items/postgres-loot.repository.test.ts:29:    if (normalized.includes("SELECT position") && normalized.includes("inventory_items")) {
+tests/unit/items/postgres-loot.repository.test.ts:32:    if (normalized.includes("INSERT INTO unique_pity_tracking")) {
+tests/unit/items/postgres-loot.repository.test.ts:40:    if (options.failCatalog && normalized.includes("FROM loot_tables")) {
+tests/unit/items/postgres-loot.repository.test.ts:43:    if (normalized.includes("FROM loot_tables")) return { rows: [] };
+tests/unit/items/postgres-loot.repository.test.ts:44:    if (normalized.includes("FROM other_loot_tables")) return { rows: [] };
+tests/unit/items/postgres-loot.repository.test.ts:46:    if (normalized.includes("FROM item_score_coefficients")) {
+tests/unit/items/postgres-loot.repository.test.ts:61:    if (normalized.includes("UPDATE unique_pity_tracking")) return { rows: [] };
+tests/unit/items/postgres-loot.repository.test.ts:71:describe("PostgresLootRepository", () => {
+tests/unit/items/postgres-loot.repository.test.ts:74:    const repository = new PostgresLootRepository(db.pool as never);
+tests/unit/items/postgres-loot.repository.test.ts:76:    const result = await repository.withSettlementTransaction(
+tests/unit/items/postgres-loot.repository.test.ts:101:  it("rolls back and releases the client when settlement work fails", async () => {
+tests/unit/items/postgres-loot.repository.test.ts:103:    const repository = new PostgresLootRepository(db.pool as never);
+tests/unit/items/postgres-loot.repository.test.ts:105:    await expect(repository.withSettlementTransaction(
+tests/unit/items/postgres-loot.repository.test.ts:117:    const repository = new PostgresLootRepository(db.pool as never);
+tests/unit/items/postgres-loot.repository.test.ts:119:    await expect(repository.withSettlementTransaction(
+tests/unit/items/postgres-loot.repository.test.ts:126:      "Loot catalog context must match the settlement transaction."
+tests/unit/items/postgres-loot.repository.test.ts:133:    const repository = new PostgresLootRepository(db.pool as never);
+tests/unit/items/postgres-loot.repository.test.ts:135:    await expect(repository.withSettlementTransaction(
+tests/unit/items/postgres-loot.repository.test.ts:142:      "Loot persistence Character ID must match the locked Character."
+tests/unit/items/postgres-loot.repository.test.ts:149:    const repository = new PostgresLootRepository(db.pool as never);
+tests/unit/items/postgres-loot.repository.test.ts:151:    await expect(repository.withSettlementTransaction(
+tests/unit/items/special-item-generator.test.ts:2:import type { RandomSource } from "../../../src/modules/combat/ports/random-source.js";
+tests/unit/items/special-item-generator.test.ts:12:class SequenceRandomSource implements RandomSource {
+tests/unit/items/special-item-generator.test.ts:71:    const random = new SequenceRandomSource([], []);
+tests/unit/items/special-item-generator.test.ts:78:    expect(generateSpecialItemReward(input(), new SequenceRandomSource([2], [])))
+tests/unit/items/special-item-generator.test.ts:83:    expect(generateSpecialItemReward(input({ pity: { eligibleKillCount: 99, chancePerMille: 100 } }), new SequenceRandomSource([101], [])))
+tests/unit/items/special-item-generator.test.ts:88:    const result = generateSpecialItemReward(input(), new SequenceRandomSource([1], [7n]));
+tests/unit/items/special-item-generator.test.ts:104:    const result = generateSpecialItemReward(input({ candidates: [set] }), new SequenceRandomSource([1], [5n]));
+tests/unit/items/special-item-generator.test.ts:116:    expect(generateSpecialItemReward(input({ candidates }), new SequenceRandomSource([], []))?.outcome)
+tests/unit/items/special-item-generator.test.ts:123:      new SequenceRandomSource([1], [5n])
+tests/unit/items/special-item-generator.test.ts:131:    expect(generateSpecialItemReward(input({ candidates: [first, last] }), new SequenceRandomSource([1], [1n, 5n])).selectedCategory).toBe("Unique");
+tests/unit/items/special-item-generator.test.ts:132:    expect(generateSpecialItemReward(input({ candidates: [first, last] }), new SequenceRandomSource([1], [5n, 5n])).selectedCategory).toBe("Set");
+tests/unit/items/special-item-generator.test.ts:136:    expect(() => generateSpecialItemReward(input({ pity: { eligibleKillCount: 1, chancePerMille: 1 } }), new SequenceRandomSource([], [])))
+tests/unit/items/special-item-generator.test.ts:138:    expect(() => generateSpecialItemReward(input({ candidates: [candidate({ monsterFamilyId: "family-1" })] }), new SequenceRandomSource([], [])))
+tests/unit/items/special-item-generator.test.ts:143:    const first = generateSpecialItemReward(input(), new SequenceRandomSource([1], [8n]));
+tests/unit/items/special-item-generator.test.ts:144:    const second = generateSpecialItemReward(input(), new SequenceRandomSource([1], [8n]));
 tests/unit/progression/defeat-settlement.test.ts:8:  CombatSettlementContext,
 tests/unit/progression/defeat-settlement.test.ts:18:  planDefeatSettlement,
 tests/unit/progression/defeat-settlement.test.ts:19:} from "../../../src/modules/progression/domain/defeat-settlement.js";
 tests/unit/progression/defeat-settlement.test.ts:22:CombatSettlementContext {
-tests/unit/progression/defeat-settlement.test.ts:108:  "M6 Defeat settlement plan",
-tests/unit/progression/defeat-settlement.test.ts:114:          planDefeatSettlement(
-tests/unit/progression/defeat-settlement.test.ts:161:          planDefeatSettlement(
-tests/unit/progression/defeat-settlement.test.ts:198:          planDefeatSettlement(
-tests/unit/progression/defeat-settlement.test.ts:218:          planDefeatSettlement(
-tests/unit/progression/defeat-settlement.test.ts:240:          planDefeatSettlement(
-tests/unit/progression/defeat-settlement.test.ts:256:          planDefeatSettlement(
-tests/unit/progression/defeat-settlement.test.ts:278:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:81:      lootLevelBonus: 0,
+tests/unit/progression/defeat-settlement.test.ts:111:  "M6 Defeat settlement plan",
+tests/unit/progression/defeat-settlement.test.ts:117:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:164:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:201:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:221:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:243:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:259:          planDefeatSettlement(
+tests/unit/progression/defeat-settlement.test.ts:281:          planDefeatSettlement(
 tests/unit/progression/gold-roll.test.ts:9:  RandomSource,
 tests/unit/progression/gold-roll.test.ts:20:    const randomSource: RandomSource = {
 tests/unit/progression/gold-roll.test.ts:29:        randomSource
@@ -30599,23 +33608,24 @@ tests/unit/progression/victory-settlement.test.ts:23:  RandomSource,
 tests/unit/progression/victory-settlement.test.ts:26:  planVictorySettlement,
 tests/unit/progression/victory-settlement.test.ts:27:} from "../../../src/modules/progression/domain/victory-settlement.js";
 tests/unit/progression/victory-settlement.test.ts:65:CombatSettlementContext {
-tests/unit/progression/victory-settlement.test.ts:141:describe("M6 Victory settlement plan", () => {
-tests/unit/progression/victory-settlement.test.ts:143:    const randomSource: RandomSource = {
-tests/unit/progression/victory-settlement.test.ts:149:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:154:        randomSource
-tests/unit/progression/victory-settlement.test.ts:194:      randomSource.nextInt
-tests/unit/progression/victory-settlement.test.ts:207:    const randomSource: RandomSource = {
-tests/unit/progression/victory-settlement.test.ts:213:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:218:        randomSource
-tests/unit/progression/victory-settlement.test.ts:231:      randomSource.nextInt
-tests/unit/progression/victory-settlement.test.ts:242:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:253:      "Settlement monster does not match combat session."
-tests/unit/progression/victory-settlement.test.ts:264:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:304:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:334:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:375:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:420:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:448:      planVictorySettlement(
-tests/unit/progression/victory-settlement.test.ts:470:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:116:      lootLevelBonus: 0,
+tests/unit/progression/victory-settlement.test.ts:144:describe("M6 Victory settlement plan", () => {
+tests/unit/progression/victory-settlement.test.ts:146:    const randomSource: RandomSource = {
+tests/unit/progression/victory-settlement.test.ts:152:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:157:        randomSource
+tests/unit/progression/victory-settlement.test.ts:197:      randomSource.nextInt
+tests/unit/progression/victory-settlement.test.ts:210:    const randomSource: RandomSource = {
+tests/unit/progression/victory-settlement.test.ts:216:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:221:        randomSource
+tests/unit/progression/victory-settlement.test.ts:234:      randomSource.nextInt
+tests/unit/progression/victory-settlement.test.ts:245:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:256:      "Settlement monster does not match combat session."
+tests/unit/progression/victory-settlement.test.ts:267:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:307:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:337:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:378:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:423:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:451:      planVictorySettlement(
+tests/unit/progression/victory-settlement.test.ts:473:      planVictorySettlement(
 ```
 

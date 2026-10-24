@@ -6,9 +6,14 @@ M7: Item and Loot Generation
 
 ### Status
 
-Planning checkpoint in progress.
+Backend M7 item and loot generation implemented and regression-green. Developer UI
+(P20) fully implemented on branch `m7/developer-ui`; typecheck and production build
+pass.
 
-Functional M7 implementation has not started.
+M7 is in closure: it is fully implemented and awaiting manual V23 verification
+(`developer-ui/V23_MANUAL_EVIDENCE.md`) and merge of `m7/developer-ui`. No further
+implementation work remains — see the "Developer UI implementation state" section
+below.
 
 ### Objective
 
@@ -245,13 +250,59 @@ M7 cannot be completed until this flow has been manually exercised in addition t
 
 Implementation will follow `M7_IMPLEMENTATION_PLAN.md` phases P1 through P25.
 
-The first implementation phase is:
+The first implementation phase was:
 
 ```text
 P1: Baseline and implementation inventory
 ```
 
-P1 must not create migration 090 or functional M7 runtime code.
+### Developer UI implementation state
+
+Backend M7 phases P1–P19 are implemented and committed on `m7/item-loot-generation`.
+Developer UI work (P20) is implemented on the separate branch `m7/developer-ui`.
+
+Implemented Developer UI features:
+
+- [x] P20.0 Safety checkpoint (separate `developer-ui/` app, own branch).
+- [x] P20.1 HTTP contract inventory (`developer-ui/HTTP_CONTRACT.md`).
+- [x] P20.2 Vite + TypeScript foundation, plain CSS, typed API client, connection
+      panel, sanitized diagnostics history.
+- [x] P20.3 Character list/creation/selection, snapshot with progression and
+      resources, manual and optional 10s auto-refresh, `resourcesUpdatedAt`.
+- [x] P20.4 Monster discovery/details, eligibility, Energy cost, server
+      `availableAt`, approximate presentation-only countdown, 10s server refresh.
+- [x] P20.5 Combat start, active-combat recovery, Basic Attack with `expectedTurn`,
+      events and current state, Victory/Defeat, stale-turn and terminal handling.
+- [x] P20.6 M6 and M7 settlement inspection: Experience, Gold, level, statistics,
+      regular Equipment, Other Loot, Unique/Set and pity, Affixes and fixed stats,
+      persisted/lost status, `InventoryFull`, raw settlement JSON fallback.
+- [x] P20.7 Recovery and diagnostics: Character selected from local storage,
+      active-combat recovery after browser refresh, manual session/log reload,
+      duplicate-submission blocking, raw diagnostics.
+- [x] Backend hook `GET /characters/:characterId/combat/:combatSessionId` and
+      local session cache/history for reloading completed sessions.
+- [x] HTML sanitization standard (`escapeHtml`) and BIGINT-as-string handling
+      documented in `developer-ui/HTTP_CONTRACT.md`.
+
+Latest verified Developer UI state on `m7/developer-ui`:
+
+```text
+UI typecheck:      passing (npm run ui:typecheck)
+UI build:          passing (npm run ui:build)
+Backend typecheck: passing (npm run typecheck)
+```
+
+Remaining M7 closure work (implementation complete):
+
+- [x] Full backend regression (`npm test` — 84 files / 585 tests), `npm run build`,
+      `npm run ui:typecheck`, `npm run ui:build` — all green.
+- [x] `MASTER_PROJECT_PLAN.md` current-status block synchronized for M7.
+- [x] `developer-ui/V23_MANUAL_EVIDENCE.md` template created.
+- [ ] Run the manual V23 click-through and fill in
+      `developer-ui/V23_MANUAL_EVIDENCE.md`.
+- [ ] Merge `m7/developer-ui` after V23 sign-off.
+- [ ] Refresh `M7_TECHNICAL_DUMP.md` / `M7_SCHEMA_DATA_DUMP.md` if the schema or
+      source snapshot changed during the final verification round.
 
 ### Mandatory verification
 
@@ -272,7 +323,7 @@ M7 cannot be completed until:
 - documentation matches implementation,
 - the branch is committed, pushed, synchronized and clean.
 
-### Planning checkpoint state
+### Checkpoint state
 
 Completed:
 
@@ -282,15 +333,23 @@ Completed:
 4. `M7_MASTER_PROMPT.md`
 5. fresh `M7_TECHNICAL_DUMP.md`
 6. fresh `M7_SCHEMA_DATA_DUMP.md`
+7. `CURRENT_MILESTONE.md` planning checkpoint
+8. backend M7 phases P1–P18 (`m7/item-loot-generation`)
+9. backend Developer UI readiness P19 (`GET .../combat/:combatSessionId`)
+10. Developer UI P20.0–P20.7 on `m7/developer-ui`
+11. loot HTTP contract and serialization/sanitization documentation
+    (`developer-ui/HTTP_CONTRACT.md`)
 
 Current step:
 
-7. update `CURRENT_MILESTONE.md`
+12. Developer UI manual V23 evidence and final P20 verification
 
-Remaining before implementation:
+Remaining before the Pull Request:
 
-8. validate planning documentation
-9. commit and push planning documentation
+13. focused Developer UI tests (optional)
+14. full regression, `git diff --check`
+15. update `MASTER_PROJECT_PLAN.md` status
+16. commit and push `m7/developer-ui`
 
 ### Previous milestone
 

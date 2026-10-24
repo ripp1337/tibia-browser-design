@@ -2,7 +2,10 @@
 
 ## Status
 
-Planned.
+Implementation in progress on branch `m7/developer-ui`. Most UI phases are
+implemented and passing typecheck/build; the milestone cannot be closed until the
+remaining items in "Remaining tasks before Pull Request" are done. See that
+section at the end of this document for the current open checklist.
 
 ## Baseline and safety
 
@@ -499,7 +502,7 @@ P20 is complete when:
 
 - the P19 backend recovery tag and separate UI branch exist,
 - the minimal Developer UI runs in a browser,
-- the complete authenticated Character → Monster → Combat → Settlement flow works,
+- the complete authenticated Character â†’ Monster â†’ Combat â†’ Settlement flow works,
 - server-authoritative resource regeneration is observable,
 - server-authoritative Monster cooldown activation and expiry are observable,
 - active combat survives browser refresh,
@@ -510,3 +513,47 @@ P20 is complete when:
 - `git diff --check` passes,
 - V23 manual evidence is recorded,
 - the UI branch is committed, pushed and clean.
+
+---
+
+# Remaining tasks before Pull Request
+
+State as of the `m7/developer-ui` branch checkpoint. Re-run the canonical scripts
+before opening the PR.
+
+Implemented and passing:
+
+- [x] `developer-ui/` Vite + TypeScript app (P20.2).
+- [x] Connection panel, local token store, typed API client, sanitized
+      diagnostics history.
+- [x] Character list/creation/selection, snapshot resources and progression,
+      optional 10s auto-refresh (P20.3).
+- [x] Monster list/details, eligibility, Energy cost, cooldown `availableAt`,
+      10s server refresh (P20.4).
+- [x] Combat start, active-combat recovery, Basic Attack with `expectedTurn`
+      (P20.5).
+- [x] Settlement panel: Experience, Gold, level, statistics, regular Equipment,
+      Other Loot, Unique/Set and pity, Affixes/fixed stats, persisted/lost status,
+      `InventoryFull`, raw JSON fallback (P20.6).
+- [x] Session history/cache, manual session reload, duplicate-submission blocking
+      (P20.7).
+- [x] `escapeHtml` sanitization for all server-authored strings.
+- [x] BIGINT-as-string handling in the typed contract and renderer.
+- [x] Loot HTTP contract + serialization/sanitization documented in
+      `developer-ui/HTTP_CONTRACT.md`.
+- [x] `npm run ui:typecheck`, `npm run ui:build`, `npm run typecheck` pass.
+
+Open before the Pull Request:
+
+- [ ] P20.9 manual V23 verification recorded in
+      `developer-ui/V23_MANUAL_EVIDENCE.md` (file not created yet). Gate V23
+      cannot close without it, and M7 cannot close without V23.
+- [ ] P20.8 focused API-client / formatter tests (optional per plan, "where
+      valuable" â€” no UI test files exist yet).
+- [ ] Full backend regression (`npm test`) and `npm run build` before commit.
+- [ ] `git diff --check` clean.
+- [ ] Update `documentation/game-design/MASTER_PROJECT_PLAN.md` current-status
+      block (still lists M6 as the latest completed milestone).
+- [ ] Confirm no `dist/` build output is accidentally committed (currently
+      present under `developer-ui/dist/`; ensure `.gitignore` covers it).
+- [ ] Commit, push `m7/developer-ui`, verify clean synchronized tree.

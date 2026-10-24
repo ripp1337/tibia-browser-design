@@ -2691,6 +2691,19 @@ M6 completed with:
 
 ## M7: ITEM AND LOOT GENERATION
 
+### Status
+
+Implemented. Awaiting manual V23 Developer UI verification and merge.
+
+The backend M7 item and loot generation pipeline is implemented and
+regression-green on `m7/item-loot-generation`. The Developer UI checkpoint (P20)
+is implemented on `m7/developer-ui` and passes typecheck and production build.
+M7 remains formally open until:
+
+- Gate V23 manual Developer UI verification is recorded in
+  `developer-ui/V23_MANUAL_EVIDENCE.md`, and
+- the `m7/developer-ui` branch is reviewed and merged.
+
 ### Canonical item generator
 
 generateItem({
@@ -3372,6 +3385,12 @@ Start Gathering
 - M5: Persistent Combat API
 - M6: Victory, Death, and Progression
 
+#### Milestone in closure
+- M7: Item and Loot Generation — backend implemented and regression-green;
+  Developer UI implemented and passing typecheck/build on `m7/developer-ui`;
+  awaiting manual V23 verification (`developer-ui/V23_MANUAL_EVIDENCE.md`) and
+  merge.
+
 #### Completed platform foundations
 - Database architecture established.
 - Production migrations implemented through migration 089.
@@ -3385,6 +3404,12 @@ Start Gathering
 - Exactly-once Victory and Defeat settlement implemented.
 - Experience, Gold, level, death, Bestiary, Task Boss, Daily Boss, cooldown, boost, Blessing, and final-log settlement implemented.
 - Combat concurrency and rollback protection verified.
+- Canonical item generator, item-level and rarity selection, affix rolls, and Item Score implemented.
+- Regular equipment, Other Loot (materials/consumables), and shared Unique/Set generation implemented.
+- Per-character Unique/Set pity with fixed-stat rolls implemented.
+- Deterministic inventory placement and `InventoryFull` lost-item results implemented.
+- Transactional loot settlement integrated with M6 Victory settlement.
+- Developer UI (Vite + TypeScript) integration surface implemented.
 
 #### Current development content
 - 29 authored-content worksheets.
@@ -3403,9 +3428,8 @@ Development definitions remain synthetic fixtures rather than final production c
 #### Current technical state
 
 ```text
-Database schema: Ready through M6
+Database schema: Ready through M7
 Database migrations: 89 applied, 0 pending
-Database tables: 81
 Character foundation: Implemented
 Effective statistics: Implemented
 Monster discovery: Implemented
@@ -3418,12 +3442,25 @@ Daily Boss attempt and Victory progression: Implemented
 Final combat logs and retention: Implemented
 Authenticated combat routes: Implemented
 Combat integration flow: Verified
-Test files: 68 passing
-Tests: 470 passing
-TypeScript typecheck: Passing
-Production build: Passing
-Current milestone: M7 Item and Loot Generation
+Item and loot generation: Implemented
+Regular equipment / Other Loot / Unique-Set generation: Implemented
+Unique/Set pity and fixed-stat rolls: Implemented
+InventoryFull lost-item handling: Implemented
+Transactional loot settlement: Implemented
+Developer UI: Implemented (typecheck + build passing)
+Manual V23 Developer UI verification: Pending
+Backend test files: 84 passing
+Backend tests: 585 passing
+Backend typecheck: Passing
+Backend production build: Passing
+Developer UI typecheck: Passing
+Developer UI build: Passing
+Current milestone: M7 Item and Loot Generation (closure pending V23 + merge)
 ```
+
+The M7 loot migration and database table count are tracked in the M7 schema
+context dump (`M7_SCHEMA_DATA_DUMP.md`); refresh that dump during the final V23
+verification round if the schema changed after the last dump.
 
 #### Current playable backend flow
 
@@ -3441,39 +3478,38 @@ Create Character
 → Apply Experience, Gold, Levels, Death Penalties, and Resources
 → Update Statistics, Bestiary, Tasks, Boss Progress, Cooldowns, and Boosts
 → Persist Final Combat Summary and Ten-Log Retention
-→ Return Committed Settlement Through HTTP
+→ Generate Regular Equipment, Other Loot, and Unique/Set Independently
+→ Roll Item Level, Rarity, Affixes, and Item Score
+→ Assign Deterministic Inventory Positions (or return InventoryFull)
+→ Persist Loot Transactionally Within the Victory Settlement
+→ Return Committed Settlement (including loot) Through HTTP
 → Retrieve Active or Completed Session and Ordered Events
 ```
 
-The backend does not yet generate equipment, materials, consumables, uniques, sets, or other loot from combat. Those rewards belong to M7 and later milestones.
+The backend now generates equipment, materials, consumables, uniques, and sets
+from combat as part of the M7 Victory settlement. The Developer UI
+(`developer-ui/`) exposes the complete Character → Monster → Combat → Settlement
+flow for manual verification.
 
 ## IMMEDIATE NEXT TASK
 
-Prepare and approve the implementation context for:
+Close M7 by completing its remaining formalities:
 
 ```text
-M7: Item and Loot Generation
+M7 closure: manual V23 verification + merge
 ```
 
-The M7 discovery and planning package must inspect and resolve:
-- existing item, affix, inventory, and loot-definition schemas,
-- the authoritative item and loot workbook pipeline,
-- the canonical deterministic item generator,
-- item-level and rarity selection,
-- rarity-to-affix-count rules,
-- eligible-affix filtering and duplicate-affix behavior,
-- affix value rolling and Item Score calculation,
-- regular equipment, material, and consumable drops,
-- unique and set reward boundaries relative to M19,
-- inventory-capacity behavior,
-- integration with M6 terminal settlement,
-- exactly-once persistence and rollback,
-- deterministic randomness and ownership isolation,
-- reuse by future chests, gambling, bosses, milestones, and administration.
+Required steps:
 
-M7 must preserve every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
+1. Run the Developer UI end-to-end flow and record manual Gate V23 evidence in
+   `developer-ui/V23_MANUAL_EVIDENCE.md`.
+2. Complete the final verification round (`npm test`, `npm run build`,
+   `npm run ui:typecheck`, `npm run ui:build`, `git diff --check`).
+3. Review and merge `m7/developer-ui` into the M7 backend baseline.
+4. Refresh `M7_TECHNICAL_DUMP.md` and `M7_SCHEMA_DATA_DUMP.md` if required.
+5. Mark M7 completed and advance `CURRENT_MILESTONE.md` to M8.
 
-Do not begin M7 implementation until its source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt are approved.
+M7 preserves every verified M1 through M6 guarantee, including server authority, ownership isolation, one active fight per Character, expected-turn protection, atomic settlement, exactly-once value creation, rollback, reconnect recovery, and separation between pure generation logic and persistence.
 
 ### M7 TRANSITION AND DEVELOPER UI POLICY
 
@@ -3523,4 +3559,7 @@ Fight
 → Observe Statistics Change
 → Fight Again
 
-The immediate next task is to prepare and approve the M7 source audit, gameplay decisions, schema implications, verification plan, implementation plan, and master prompt.
+The M7 planning package (source audit, gameplay decisions, schema implications,
+verification plan, implementation plan, and master prompt) is approved and the
+backend plus Developer UI are implemented. The immediate next task is to record
+manual V23 evidence and merge `m7/developer-ui`, then advance to M8.

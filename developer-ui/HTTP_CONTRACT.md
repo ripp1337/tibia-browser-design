@@ -2,7 +2,11 @@
 
 ## Status
 
-P20.1 contract inventory for the `m7/developer-ui` branch.
+P20.1 contract inventory for the `m7/developer-ui` branch. Updated for Milestone 7
+closure: the M7 loot settlement section now documents the full
+`regularEquipment` / `specialEquipment` / `otherLoot` / `pity` structure, and a
+new "Serialization and rendering standards" section records the BIGINT-as-string
+and `escapeHtml` rules.
 
 ## Rules
 
@@ -11,7 +15,10 @@ P20.1 contract inventory for the `m7/developer-ui` branch.
 - The token must never be committed, printed in diagnostics or included in screenshots.
 - Successful responses use `{ "data": ... }`.
 - Error responses use `{ "error": { "code": string, "message": string } }`.
-- Database `BIGINT` values are serialized as JSON strings.
+- Database `BIGINT` values are serialized as JSON strings (see "Serialization and
+  rendering standards" for the precision rationale).
+- All server-authored strings rendered by the UI pass through `escapeHtml` (see
+  "Serialization and rendering standards").
 - Dates are serialized as ISO date strings.
 - The server is authoritative for resources, cooldowns, eligibility, combat, settlement and loot.
 
@@ -381,24 +388,82 @@ The UI refreshes Character and Monster data after a terminal response.
 Top-level fields:
 
 ```text
-regularEquipment
-specialEquipment
-specialRollOutcome
-otherLoot
-pity
+loot.regularEquipment
+loot.specialEquipment
+loot.specialRollOutcome
+loot.otherLoot
+loot.pity
 ```
 
-## Equipment settlement result
+The five fields are always present on a Victory `loot` object. The type is defined
+in `src/modules/items/application/loot-settlement.service.ts`
+(`LootSettlementResult`) and mirrored in the UI in `developer-ui/src/api-contract.ts`
+(`LootSettlement`).
 
-Each of `regularEquipment` and `specialEquipment` has:
+## `regularEquipment` — regular Equipment outcome
+
+`regularEquipment` is an `EquipmentSettlementResult<GeneratedRegularItem>`. It is
+the result of the independent regular Equipment roll, resolved before Other Loot
+and Unique/Set and persisted (after any Unique/Set Item) in the same Victory
+transaction.
+
+Structure:
 
 ```text
-generated
-persisted
-lossReason
+regularEquipment.generated    GeneratedRegularItem | null
+regularEquipment.persisted    { itemId, inventoryPosition } | null
+regularEquipment.lossReason   "InventoryFull" | null
 ```
 
-Possible states:
+`GeneratedRegularItem` fields:
+
+```text
+kind          "Regular"
+itemBaseId    string
+itemLevel     number
+requiredLevel number
+rarity        "Common" | "Magic" | "Rare" | "Epic" | "Legendary"
+affixes[]     { affixTemplateId, affixPosition, statType, rollValue }
+fixedStats[]  always [] for a regular Item
+itemScore     BIGINT string
+```
+
+`affixes[]` carries one entry per Affix slot. Each occurrence has its own
+`affixPosition` (1..4, unique within the Item) and its own `rollValue`. Identical
+`affixTemplateId` values may repeat across positions.
+
+## `specialEquipment` — Unique/Set outcome
+
+`specialEquipment` is an `EquipmentSettlementResult<GeneratedSpecialItem>`. It is
+the result of the shared Unique/Set roll and is persisted first in the Victory
+transaction (before a regular Item) when Inventory space exists.
+
+Structure:
+
+```text
+specialEquipment.generated    GeneratedSpecialItem | null
+specialEquipment.persisted    { itemId, inventoryPosition } | null
+specialEquipment.lossReason   "InventoryFull" | null
+```
+
+`GeneratedSpecialItem` fields:
+
+```text
+kind          "Special"
+itemBaseId    string
+itemLevel     number
+requiredLevel number
+rarity        null
+affixes[]     always [] for a special Item
+fixedStats[]  { statPosition, statType, rollValue }
+itemScore     BIGINT string
+```
+
+`fixedStats[]` carries the actual rolled Unique/Set fixed-stat values. Special
+Items never create regular `item_affixes`. The special category (Unique vs Set)
+is not repeated on the Item itself; it is conveyed by `specialRollOutcome`.
+
+### Equipment result state matrix
 
 ```text
 No generated Item:
@@ -408,35 +473,66 @@ No generated Item:
 
 Persisted Item:
   generated = complete generated Item
-  persisted = persisted identity and inventory information
+  persisted = { itemId, inventoryPosition }
   lossReason = null
 
-Lost Item:
+Lost Item (full Inventory):
   generated = complete generated Item
   persisted = null
   lossReason = "InventoryFull"
 ```
 
-The UI must display `InventoryFull` as an expected loot result, not as a failed Victory.
+The UI must display `InventoryFull` as an expected loot result, not as a failed
+Victory: the Victory still commits, Gold/Experience/Other Loot are still granted,
+and the complete generated Item is returned so it can be inspected.
 
-## Special roll outcome
+## `specialRollOutcome` — Unique/Set roll classification
 
-Display the exact server-returned `specialRollOutcome` value. Do not infer a different label.
-
-## Other Loot
-
-`otherLoot` is either `null` or the complete server-returned Material or Consumable reward. The first UI version may render known fields and always retain the raw JSON fallback.
-
-## Pity
-
-Display:
+Exact server-returned classification of the shared special roll:
 
 ```text
-pity.eligibleKillCount
-pity.chancePerMille
+"Ineligible"  source had no eligible Unique/Set candidate pool
+"Failed"      an eligible roll was made but did not succeed (pity may increase)
+"Generated"   a Unique/Set Item was generated (see specialEquipment)
 ```
 
-The UI must not calculate the next pity state.
+Display the exact value. Do not infer a different label from
+`specialEquipment.generated`.
+
+## `otherLoot` — Material or Consumable outcome
+
+`otherLoot` is either `null` (no Other Loot this kill) or one typed reward.
+Other Loot is independent of Equipment and is not affected by Inventory
+capacity (Materials and Consumables use separate storage).
+
+```text
+Material:
+  otherLoot.kind                  "Material"
+  otherLoot.otherLootTableId      string
+  otherLoot.materialId            string
+  otherLoot.quantity              BIGINT string
+
+Consumable:
+  otherLoot.kind                  "Consumable"
+  otherLoot.otherLootTableId      string
+  otherLoot.consumableDefinitionId string
+  otherLoot.quantity              BIGINT string
+```
+
+The UI renders known fields and always retains the raw JSON fallback.
+
+## `pity` — committed Unique/Set pity state
+
+The committed pity state after settlement (unchanged for a lost Item):
+
+```text
+pity.eligibleKillCount   number
+pity.chancePerMille      number
+```
+
+`chancePerMille` is the current success chance in per-mille units (e.g. `1` =
+0.1%, `100` = 10%). The UI must not calculate the next pity state; it only
+displays the committed value.
 
 ## Generated Item presentation
 
@@ -455,7 +551,71 @@ Inventory position
 lossReason
 ```
 
-The UI does not calculate Item Score, rarity, Affixes, fixed stats or persistence priority.
+The UI does not calculate Item Score, rarity, Affixes, fixed stats, persistence
+priority or pity.
+
+---
+
+# Serialization and rendering standards
+
+## BIGINT values are serialized as JSON strings
+
+PostgreSQL `BIGINT` columns are read as JavaScript `bigint`, and the HTTP layer
+serializes every `bigint` as a decimal **string**. This is implemented by the
+`JSON.stringify` replacer in `src/http/http-json.ts` (`stringifyJson`):
+
+```ts
+JSON.stringify(value, (_key, nestedValue) =>
+  typeof nestedValue === "bigint" ? nestedValue.toString() : nestedValue
+);
+```
+
+Reason: JavaScript `number` is an IEEE-754 double and is only exact up to
+`Number.MAX_SAFE_INTEGER` (`2^53 - 1`). Game values such as lifetime
+`experience`, `gold`, combat statistics, `itemScore`, Affix/fixed-stat
+`rollValue` and Other Loot `quantity` can exceed that bound. Coercing a `BIGINT`
+to `number` (via `Number()`, `parseInt()` or unary `+`) would silently lose
+precision, so any code that touches a large value could display or compare a
+wrong number.
+
+Client rules:
+
+- Treat every field typed `BigIntString` as an opaque decimal string.
+- Never run `Number()`, `parseInt()`, `parseFloat()` or unary `+` on a
+  `BigIntString`.
+- Use string comparison or `BigInt(value)` only where numeric comparison is
+  genuinely required; render the original string for display.
+- The typed contract in `developer-ui/src/api-contract.ts` (`BigIntString`)
+  encodes this rule at the type level; the renderer escapes these strings like
+  any other untrusted text.
+
+## HTML sanitization in views (`escapeHtml`)
+
+All dynamic values are inserted into the DOM through `escapeHtml`, defined in
+`developer-ui/src/main.ts`:
+
+```ts
+function escapeHtml(value: unknown): string {
+  const element = document.createElement("span");
+  element.textContent = typeof value === "string" ? value : String(value ?? "");
+  return element.innerHTML;
+}
+```
+
+Standard:
+
+- Every server-provided string interpolated into a rendered template must pass
+  through `escapeHtml` — Character names, Monster names/descriptions, loot
+  identities, Affix/fixed-stat labels and raw JSON dumps included.
+- `escapeHtml` escapes text via `textContent` then reads `innerHTML`, so `<`,
+  `>`, `&`, `"` and `'` become inert entities and cannot break out of markup or
+  inject scripts into the Developer UI.
+- Numeric fields returned as JSON numbers may be interpolated directly; string
+  fields and `BigIntString` fields must be escaped.
+- Raw settlement/loot JSON fallbacks are rendered inside `<pre>` via
+  `escapeHtml(JSON.stringify(...))`, never as live HTML.
+- Do not introduce `innerHTML` assignments that bypass `escapeHtml` for any
+  server-authored value (XSS protection for the developer surface).
 
 ---
 

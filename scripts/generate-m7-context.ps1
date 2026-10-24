@@ -125,7 +125,8 @@ $schemaFiles = @(
   "database/migrations/060_set_progress.sql",
   "database/migrations/082_add_item_handedness.sql",
   "database/migrations/088_persistent_combat_api.sql",
-  "database/migrations/089_victory_death_progression.sql"
+  "database/migrations/089_victory_death_progression.sql",
+  "database/migrations/090_item_loot_generation.sql"
 )
 
 $requiredPlanningFiles = @(
