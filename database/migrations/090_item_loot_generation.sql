@@ -99,19 +99,6 @@ CREATE INDEX ix_items_required_level
     ON items(required_level);
 
 -- -----------------------------------------------------
--- Regular Items use rarity; Unique/Set Items use NULL.
--- Item Base template constraints identify special items.
--- -----------------------------------------------------
-ALTER TABLE items
-    DROP CONSTRAINT chk_items_rarity,
-    ALTER COLUMN rarity DROP NOT NULL,
-    ADD CONSTRAINT chk_items_rarity
-        CHECK (
-            rarity IS NULL
-            OR rarity IN ('Common', 'Magic', 'Rare', 'Epic', 'Legendary')
-        );
-
--- -----------------------------------------------------
 -- Whole-integer authored and generated values
 -- -----------------------------------------------------
 ALTER TABLE affix_templates
